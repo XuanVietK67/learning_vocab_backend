@@ -4,7 +4,8 @@ import { UserRole } from '@/users/entities/user.entity';
 export class UserResponseDto {
   @Expose() id!: string;
   @Expose() email!: string;
-  @Expose() username!: string;
+  @Expose() username!: string | null;
+  @Expose() avatarUrl!: string | null;
   @Expose() role!: UserRole;
   @Expose() isEmailVerified!: boolean;
   @Expose() isActive!: boolean;
