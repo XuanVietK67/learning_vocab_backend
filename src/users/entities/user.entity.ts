@@ -3,9 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { UserIdentity } from '@/users/entities/user-identity.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -21,12 +23,19 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   email!: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255 })
-  passwordHash!: string;
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  passwordHash!: string | null;
 
-  @Index({ unique: true })
-  @Column({ type: 'varchar', length: 30 })
-  username!: string;
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  username!: string | null;
+
+  @Column({ name: 'avatar_url', type: 'varchar', length: 512, nullable: true })
+  avatarUrl!: string | null;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
   role!: UserRole;
@@ -45,4 +54,7 @@ export class User {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
+
+  @OneToMany(() => UserIdentity, (identity) => identity.user)
+  identities!: UserIdentity[];
 }
