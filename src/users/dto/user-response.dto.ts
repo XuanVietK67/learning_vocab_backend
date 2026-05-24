@@ -1,4 +1,5 @@
 import { Expose } from 'class-transformer';
+import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { UserRole } from '@/users/entities/user.entity';
 
 export class UserResponseDto {
@@ -10,6 +11,10 @@ export class UserResponseDto {
   @Expose() isEmailVerified!: boolean;
   @Expose() isActive!: boolean;
   @Expose() isOnboarded!: boolean;
+  @Expose() nativeLanguage!: string | null;
+  @Expose() targetLanguage!: string | null;
+  @Expose() proficiencyLevel!: ProficiencyLevel | null;
+  @Expose() dailyGoalMinutes!: number | null;
   @Expose() createdAt!: Date;
   @Expose() updatedAt!: Date;
 }

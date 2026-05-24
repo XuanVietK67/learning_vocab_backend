@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { AuthProvider, UserIdentity } from './entities/user-identity.entity';
 import { User } from './entities/user.entity';
@@ -78,7 +80,7 @@ export class UsersService {
       email,
       username,
       passwordHash,
-      isOnboarded: true,
+      isOnboarded: false,
     });
     return this.usersRepo.save(user);
   }
@@ -120,6 +122,49 @@ export class UsersService {
   async verifyPassword(user: User, password: string): Promise<boolean> {
     if (!user.passwordHash) return false;
     return bcrypt.compare(password, user.passwordHash);
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateUserProfileDto,
+  ): Promise<User> {
+    const user = await this.findById(userId);
+
+    const merged = {
+      nativeLanguage: dto.nativeLanguage ?? user.nativeLanguage,
+      targetLanguage: dto.targetLanguage ?? user.targetLanguage,
+      proficiencyLevel: dto.proficiencyLevel ?? user.proficiencyLevel,
+      dailyGoalMinutes: dto.dailyGoalMinutes ?? user.dailyGoalMinutes,
+    };
+
+    if (
+      merged.nativeLanguage &&
+      merged.targetLanguage &&
+      merged.nativeLanguage === merged.targetLanguage
+    ) {
+      throw new BadRequestException(
+        'targetLanguage must differ from nativeLanguage',
+      );
+    }
+
+    const allOnboardingFieldsPresent =
+      merged.nativeLanguage !== null &&
+      merged.targetLanguage !== null &&
+      merged.proficiencyLevel !== null &&
+      merged.dailyGoalMinutes !== null;
+
+    if (!user.isOnboarded && !allOnboardingFieldsPresent) {
+      throw new BadRequestException(
+        'onboarding requires nativeLanguage, targetLanguage, proficiencyLevel, and dailyGoalMinutes',
+      );
+    }
+
+    Object.assign(user, merged);
+    if (!user.isOnboarded && allOnboardingFieldsPresent) {
+      user.isOnboarded = true;
+    }
+
+    return this.usersRepo.save(user);
   }
 
   toResponse(user: User): UserResponseDto {

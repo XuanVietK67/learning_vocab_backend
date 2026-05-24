@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { UserIdentity } from '@/users/entities/user-identity.entity';
 
 export enum UserRole {
@@ -48,6 +49,38 @@ export class User {
 
   @Column({ name: 'is_onboarded', type: 'boolean', default: false })
   isOnboarded!: boolean;
+
+  @Column({
+    name: 'native_language',
+    type: 'varchar',
+    length: 8,
+    nullable: true,
+  })
+  nativeLanguage!: string | null;
+
+  @Column({
+    name: 'target_language',
+    type: 'varchar',
+    length: 8,
+    nullable: true,
+  })
+  targetLanguage!: string | null;
+
+  @Column({
+    name: 'proficiency_level',
+    type: 'enum',
+    enum: ProficiencyLevel,
+    enumName: 'proficiency_level_enum',
+    nullable: true,
+  })
+  proficiencyLevel!: ProficiencyLevel | null;
+
+  @Column({
+    name: 'daily_goal_minutes',
+    type: 'smallint',
+    nullable: true,
+  })
+  dailyGoalMinutes!: number | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
