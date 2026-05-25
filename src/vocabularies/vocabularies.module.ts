@@ -7,6 +7,7 @@ import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { AdminVocabulariesController } from '@/vocabularies/admin-vocabularies.controller';
 import { VocabulariesController } from '@/vocabularies/vocabularies.controller';
 import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 
@@ -26,7 +27,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       DeckVocabulary,
     ]),
   ],
-  controllers: [VocabulariesController],
+  controllers: [VocabulariesController, AdminVocabulariesController],
   providers: [VocabulariesService],
   exports: [VocabulariesService],
 })

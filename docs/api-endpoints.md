@@ -53,3 +53,16 @@ Public read access to the curated system vocabulary catalog. User-created words 
 | --- | --- | --- | --- |
 | GET | `/v1/vocabularies` | none | List system vocabulary, ordered by frequency rank then lemma. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `translationLang` (filters nested translations), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with translations inlined. |
 | GET | `/v1/vocabularies/:id` | none | Fetch a single vocabulary by UUID with its examples and translations. Query: `translationLang` to restrict translations to one language. |
+
+## Admin Vocabularies — `/v1/admin/vocabularies`
+
+Source: [src/vocabularies/admin-vocabularies.controller.ts](../src/vocabularies/admin-vocabularies.controller.ts)
+
+Write surface for the curated system catalog. All endpoints require JWT auth **and** the caller's `role = 'admin'` (returns 403 otherwise). Each write runs in a transaction so partial failures roll back.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/admin/vocabularies` | JWT (admin) | Create one system vocabulary with optional nested translations, examples, and topic links (by slug). Returns 409 if `(language, lemma, partOfSpeech)` already exists — use bulk-import for upsert semantics. |
+| POST | `/v1/admin/vocabularies/bulk-import` | JWT (admin) | Idempotent upsert of up to 500 vocabularies in one transaction. Body: `{ items: CreateVocabularyDto[] }`. Returns summary `{ upserted, inserted, updated, translationsAdded, examplesAdded, topicLinksAdded }`. Topic slugs must already exist. |
+| PATCH | `/v1/admin/vocabularies/:id` | JWT (admin) | Partial update of top-level fields only (`ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`, `imageUrl`, and the natural-key fields). Translations / examples / topic links are not patched here — use bulk-import or DELETE + POST. |
+| DELETE | `/v1/admin/vocabularies/:id` | JWT (admin) | Hard-delete a system vocabulary. Cascades to its translations, examples, topic links, and deck memberships. Returns 204. |
