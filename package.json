@@ -23,6 +23,7 @@
     "db:migration:create": "typeorm-ts-node-commonjs migration:create",
     "db:migration:run": "npm run typeorm -- migration:run",
     "db:migration:revert": "npm run typeorm -- migration:revert",
+    "db:seed": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/seeds/seed.ts",
     "db:up": "docker compose up -d postgres pgadmin",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"

@@ -31,6 +31,23 @@
 $ npm install
 ```
 
+## Database
+
+```bash
+# start Postgres (and pgAdmin) via docker compose
+$ npm run db:up
+
+# run / revert migrations
+$ npm run db:migration:run
+$ npm run db:migration:revert
+
+# seed the curated vocabulary catalog (topics, vocabularies, decks)
+# - idempotent: safe to re-run; existing rows are upserted in place
+$ npm run db:seed
+```
+
+Seed data lives under [src/database/seeds/data/](src/database/seeds/data/) — edit those JSON files to extend the catalog, then re-run `npm run db:seed`.
+
 ## Compile and run the project
 
 ```bash
