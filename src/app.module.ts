@@ -6,6 +6,8 @@ import { AppService } from './app.service';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import { AuthModule } from './auth/auth.module';
+import { DecksModule } from './decks/decks.module';
+import { TopicsModule } from './topics/topics.module';
 import { UsersModule } from './users/users.module';
 import { VocabulariesModule } from './vocabularies/vocabularies.module';
 
@@ -32,6 +34,8 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     UsersModule,
     AuthModule,
     VocabulariesModule,
+    TopicsModule,
+    DecksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

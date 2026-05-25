@@ -66,3 +66,26 @@ Write surface for the curated system catalog. All endpoints require JWT auth **a
 | POST | `/v1/admin/vocabularies/bulk-import` | JWT (admin) | Idempotent upsert of up to 500 vocabularies in one transaction. Body: `{ items: CreateVocabularyDto[] }`. Returns summary `{ upserted, inserted, updated, translationsAdded, examplesAdded, topicLinksAdded }`. Topic slugs must already exist. |
 | PATCH | `/v1/admin/vocabularies/:id` | JWT (admin) | Partial update of top-level fields only (`ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`, `imageUrl`, and the natural-key fields). Translations / examples / topic links are not patched here — use bulk-import or DELETE + POST. |
 | DELETE | `/v1/admin/vocabularies/:id` | JWT (admin) | Hard-delete a system vocabulary. Cascades to its translations, examples, topic links, and deck memberships. Returns 204. |
+
+## Topics — `/v1/topics`
+
+Source: [src/topics/topics.controller.ts](../src/topics/topics.controller.ts)
+
+Public read access to the curated topic taxonomy used to tag vocabularies.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/topics` | none | List every topic, ordered by name. Returns a flat array (no pagination — set is small). |
+| GET | `/v1/topics/:slug` | none | Fetch one topic by its slug (e.g. `food`, `travel`). Returns 404 if unknown. |
+
+## Decks — `/v1/decks` and `/v1/me/decks`
+
+Source: [src/decks/decks.controller.ts](../src/decks/decks.controller.ts)
+
+Public catalog of system-curated learning decks plus the per-user "suggested for me" endpoint. User-owned decks are out of scope for these routes; they will land on `/v1/me/decks` in a later phase.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/decks` | none | List system decks (those with `owner_id IS NULL`). Query: `language`, `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with summary fields only — no vocab inlined. |
+| GET | `/v1/decks/:id` | none | Fetch one deck with its ordered vocabulary list (each vocab includes its translations). Query: `translationLang` restricts the nested translations to one language. |
+| GET | `/v1/me/decks/suggested` | JWT | Returns system decks matching the authenticated user's `targetLanguage` and `proficiencyLevel` from onboarding. Returns an empty array if either onboarding field is unset. |
