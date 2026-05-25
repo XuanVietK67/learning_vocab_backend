@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { UserRole } from '@/users/entities/user.entity';
 import { UsersService } from '@/users/users.service';
 
 export interface JwtPayload {
@@ -12,6 +13,7 @@ export interface JwtPayload {
 export interface AuthenticatedUser {
   id: string;
   email: string;
+  role: UserRole;
 }
 
 @Injectable()
@@ -34,6 +36,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user || !user.isActive) {
       throw new UnauthorizedException('invalid token');
     }
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, role: user.role };
   }
 }
