@@ -4,6 +4,7 @@ import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.en
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 import { AdminVocabulariesController } from '@/vocabularies/admin-vocabularies.controller';
+import { MeVocabulariesController } from '@/vocabularies/me-vocabularies.controller';
 import { VocabulariesController } from '@/vocabularies/vocabularies.controller';
 import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 
@@ -15,7 +16,11 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       VocabularyExample,
     ]),
   ],
-  controllers: [VocabulariesController, AdminVocabulariesController],
+  controllers: [
+    VocabulariesController,
+    MeVocabulariesController,
+    AdminVocabulariesController,
+  ],
   providers: [VocabulariesService],
   exports: [VocabulariesService],
 })

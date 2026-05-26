@@ -44,11 +44,20 @@ export class ProgressService {
       return { enrolled: 0, alreadyEnrolled: 0, unknownVocabularyIds: [] };
     }
 
-    // Filter to system vocab IDs that actually exist.
-    const existing = await this.vocabRepo.find({
-      where: { id: In(requested), source: VocabularySource.SYSTEM },
-      select: { id: true },
-    });
+    // Accept system vocab (anyone can enroll) plus the caller's own private vocab.
+    const existing = await this.vocabRepo
+      .createQueryBuilder('v')
+      .select('v.id', 'id')
+      .where('v.id IN (:...ids)', { ids: requested })
+      .andWhere(
+        '(v.source = :system OR (v.source = :user AND v.created_by_user_id = :userId))',
+        {
+          system: VocabularySource.SYSTEM,
+          user: VocabularySource.USER,
+          userId,
+        },
+      )
+      .getRawMany<{ id: string }>();
     const knownIds = new Set(existing.map((v) => v.id));
     const unknownVocabularyIds = requested.filter((id) => !knownIds.has(id));
     const knownRequested = requested.filter((id) => knownIds.has(id));
