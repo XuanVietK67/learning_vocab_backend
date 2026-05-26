@@ -116,6 +116,24 @@ Public catalog of system-curated learning decks plus the per-user "suggested for
 | GET | `/v1/decks/:id` | none | Fetch one deck with its ordered vocabulary list (each vocab includes its translations). Query: `translationLang` restricts the nested translations to one language. |
 | GET | `/v1/me/decks/suggested` | JWT | Returns system decks matching the authenticated user's `targetLanguage` and `proficiencyLevel` from onboarding. Returns an empty array if either onboarding field is unset. |
 
+## My Decks — `/v1/me/decks`
+
+Source: [src/decks/decks.controller.ts](../src/decks/decks.controller.ts)
+
+Personal decks owned by the authenticated caller (`owner_id = me`, `visibility = 'private'`). Membership accepts system vocabularies plus the caller's own (`source='user'`) words — other users' private words are dropped into `inaccessibleVocabularyIds`. All endpoints require JWT auth; cross-user access returns 403.
+
+Route ordering note: `GET /v1/me/decks/suggested` is a literal path declared before `/:id`, so it resolves correctly. The collection endpoints below coexist with it.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/me/decks` | JWT | Create a personal deck. Body: `{ name, description?, language, cefrLevel?, vocabularyIds? }`. If `vocabularyIds` is provided, members are appended in array order (inaccessible IDs surfaced via the membership endpoint instead — for create they are silently skipped). Server sets `owner_id`, `visibility='private'`, `vocab_count`. Returns the full deck detail. |
+| GET | `/v1/me/decks` | JWT | List the caller's own decks, newest first. Query: `language`, `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` — summary fields only. |
+| GET | `/v1/me/decks/:id` | JWT | Fetch one of the caller's decks with its ordered vocabulary list. Query: `translationLang`. 403 if owned by someone else. |
+| PATCH | `/v1/me/decks/:id` | JWT | Top-level updates only (`name`, `description`, `language`, `cefrLevel`). Membership has its own endpoints. |
+| DELETE | `/v1/me/decks/:id` | JWT | Hard-delete the caller's deck. Cascades to `deck_vocabularies` (vocabularies themselves stay). Returns 204. |
+| POST | `/v1/me/decks/:id/vocabularies` | JWT | Append words to the deck. Body: `{ vocabularyIds: string[] }` (1–500). Returns `{ added, alreadyMember, inaccessibleVocabularyIds, vocabCount }`. Positions are assigned after the current max. |
+| DELETE | `/v1/me/decks/:id/vocabularies/:vocabularyId` | JWT | Remove a word from the deck. 404 if it isn't in the deck. Returns 204. Decrements `vocab_count`. |
+
 ## Learning Progress — `/v1/me/progress` and `/v1/me/stats`
 
 Source: [src/progress/progress.controller.ts](../src/progress/progress.controller.ts)
