@@ -54,6 +54,20 @@ Public read access to the curated system vocabulary catalog. User-created words 
 | GET | `/v1/vocabularies` | none | List system vocabulary, ordered by frequency rank then lemma. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `translationLang` (filters nested translations), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with translations inlined. |
 | GET | `/v1/vocabularies/:id` | none | Fetch a single vocabulary by UUID with its examples and translations. Query: `translationLang` to restrict translations to one language. |
 
+## My Vocabularies — `/v1/me/vocabularies`
+
+Source: [src/vocabularies/me-vocabularies.controller.ts](../src/vocabularies/me-vocabularies.controller.ts)
+
+User-created (`source = 'user'`) words owned by the authenticated caller. Private by default (`visibility = 'private'`, `is_approved = false`). They share storage with system vocabularies but are scoped to the owner — they don't appear on the public `/v1/vocabularies` surface. All endpoints require JWT auth; cross-user access returns 403.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/me/vocabularies` | JWT | Create a personal vocabulary with optional nested translations, examples, and topic links (topic slugs must already exist in the system catalog). Returns 409 if the caller already has a word for `(language, lemma, partOfSpeech)`. |
+| GET | `/v1/me/vocabularies` | JWT | List the caller's own vocabularies, newest first. Query: `language`, `q` (lemma prefix), `translationLang`, `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }`. |
+| GET | `/v1/me/vocabularies/:id` | JWT | Fetch one of the caller's vocabularies with its examples and translations. Query: `translationLang`. 403 if the row exists but isn't owned by the caller. |
+| PATCH | `/v1/me/vocabularies/:id` | JWT | Partial update of top-level fields. Translations / examples / topic links are not patched here. |
+| DELETE | `/v1/me/vocabularies/:id` | JWT | Hard-delete the caller's vocabulary. Cascades to its translations, examples, topic links, deck memberships, and progress rows. Returns 204. |
+
 ## Admin Vocabularies — `/v1/admin/vocabularies`
 
 Source: [src/vocabularies/admin-vocabularies.controller.ts](../src/vocabularies/admin-vocabularies.controller.ts)
@@ -98,7 +112,7 @@ Per-user spaced-repetition state and study stats. All endpoints require JWT auth
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/me/progress/enroll` | JWT | Add words to the caller's learning queue. Body: `{ vocabularyIds: string[] }` or `{ deckId: string }` (exactly one). Idempotent — already-enrolled words are skipped. Returns `{ enrolled, alreadyEnrolled, unknownVocabularyIds }`. |
+| POST | `/v1/me/progress/enroll` | JWT | Add words to the caller's learning queue. Body: `{ vocabularyIds: string[] }` or `{ deckId: string }` (exactly one). Accepts system vocabularies plus the caller's own (`source='user'`) words — other users' private words are silently dropped into `unknownVocabularyIds`. Idempotent — already-enrolled words are skipped. Returns `{ enrolled, alreadyEnrolled, unknownVocabularyIds }`. |
 | GET | `/v1/me/progress/due` | JWT | Fetch due cards (`next_review_at <= now`), oldest-due first. Query: `limit` (default 20, max 100), `translationLang` (filters nested translations). Each item includes the progress row and its full vocabulary (with translations). |
 | POST | `/v1/me/progress/review` | JWT | Submit a review grade. Body: `{ vocabularyId, quality }` where quality is 0–5 (≥3 counts as correct). Runs SM-2; updates `repetitions`, `easeFactor`, `intervalDays`, `nextReviewAt`, status, and correct/incorrect counters. Returns the updated progress row. Returns 404 if the user is not enrolled in that word. |
 | GET | `/v1/me/stats` | JWT | Snapshot for the home screen: `{ streakDays, dueNow, reviewedToday, dailyGoalMinutes, counts: { new, learning, review, mastered } }`. Streak is consecutive UTC days with at least one review ending at the most recent review date (counts only if that date is today or yesterday). |

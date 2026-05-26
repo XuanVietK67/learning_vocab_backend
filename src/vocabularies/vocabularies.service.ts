@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,8 +14,13 @@ import {
   BulkImportSummaryDto,
   BulkImportVocabulariesDto,
 } from '@/vocabularies/dto/bulk-import-vocabularies.dto';
-import { CreateVocabularyDto } from '@/vocabularies/dto/create-vocabulary.dto';
+import {
+  CreateExampleDto,
+  CreateTranslationDto,
+  CreateVocabularyDto,
+} from '@/vocabularies/dto/create-vocabulary.dto';
 import { UpdateVocabularyDto } from '@/vocabularies/dto/update-vocabulary.dto';
+import { UserVocabularyQueryDto } from '@/vocabularies/dto/user-vocabulary-query.dto';
 import { VocabularyQueryDto } from '@/vocabularies/dto/vocabulary-query.dto';
 import {
   PaginatedVocabulariesResponseDto,
@@ -33,6 +39,10 @@ interface UpsertOutcome {
   examplesAdded: number;
   topicLinksAdded: number;
 }
+
+type Ownership =
+  | { source: VocabularySource.SYSTEM }
+  | { source: VocabularySource.USER; userId: string };
 
 @Injectable()
 export class VocabulariesService {
@@ -164,7 +174,7 @@ export class VocabulariesService {
     }
 
     const outcome = await this.dataSource.transaction((manager) =>
-      this.upsertSystemVocabulary(manager, dto),
+      this.upsertVocabulary(manager, dto, { source: VocabularySource.SYSTEM }),
     );
     return this.findById(outcome.vocab.id);
   }
@@ -206,7 +216,9 @@ export class VocabulariesService {
       let topicLinksAdded = 0;
 
       for (const item of dto.items) {
-        const r = await this.upsertSystemVocabulary(manager, item);
+        const r = await this.upsertVocabulary(manager, item, {
+          source: VocabularySource.SYSTEM,
+        });
         if (r.created) inserted++;
         else updated++;
         translationsAdded += r.translationsAdded;
@@ -225,15 +237,165 @@ export class VocabulariesService {
     });
   }
 
-  private async upsertSystemVocabulary(
+  // ---- User-owned (UGC) vocabularies ----
+
+  async createUserVocabulary(
+    userId: string,
+    dto: CreateVocabularyDto,
+  ): Promise<VocabularyResponseDto> {
+    const existing = await this.vocabRepo.findOne({
+      where: {
+        createdByUserId: userId,
+        language: dto.language,
+        lemma: dto.lemma,
+        partOfSpeech: dto.partOfSpeech,
+        source: VocabularySource.USER,
+      },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `you already have a vocabulary for (${dto.language}, ${dto.lemma}, ${dto.partOfSpeech})`,
+      );
+    }
+
+    const outcome = await this.dataSource.transaction((manager) =>
+      this.upsertVocabulary(manager, dto, {
+        source: VocabularySource.USER,
+        userId,
+      }),
+    );
+    return this.findById(outcome.vocab.id);
+  }
+
+  async findMyVocabularies(
+    userId: string,
+    query: UserVocabularyQueryDto,
+  ): Promise<PaginatedVocabulariesResponseDto> {
+    const { language, q, translationLang, page, limit } = query;
+
+    const baseQb = this.vocabRepo
+      .createQueryBuilder('vocab')
+      .where('vocab.source = :source', { source: VocabularySource.USER })
+      .andWhere('vocab.created_by_user_id = :userId', { userId });
+
+    if (language) baseQb.andWhere('vocab.language = :language', { language });
+    if (q) baseQb.andWhere('vocab.lemma ILIKE :q', { q: `${q}%` });
+
+    const total = await baseQb.getCount();
+
+    const rows = await baseQb
+      .clone()
+      .select('vocab.id', 'id')
+      .orderBy('vocab.created_at', 'DESC')
+      .offset((page - 1) * limit)
+      .limit(limit)
+      .getRawMany<{ id: string }>();
+
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) {
+      return plainToInstance(
+        PaginatedVocabulariesResponseDto,
+        { data: [], page, limit, total },
+        { excludeExtraneousValues: true },
+      );
+    }
+
+    const hydrateQb = this.vocabRepo
+      .createQueryBuilder('vocab')
+      .whereInIds(ids);
+
+    if (translationLang) {
+      hydrateQb.leftJoinAndSelect(
+        'vocab.translations',
+        'translations',
+        'translations.language = :translationLang',
+        { translationLang },
+      );
+    } else {
+      hydrateQb.leftJoinAndSelect('vocab.translations', 'translations');
+    }
+
+    const unordered = await hydrateQb
+      .orderBy('vocab.created_at', 'DESC')
+      .getMany();
+
+    const byId = new Map(unordered.map((v) => [v.id, v]));
+    const data = ids
+      .map((id) => byId.get(id))
+      .filter((v): v is Vocabulary => v !== undefined);
+
+    return plainToInstance(
+      PaginatedVocabulariesResponseDto,
+      { data, page, limit, total },
+      { excludeExtraneousValues: true },
+    );
+  }
+
+  async findMyVocabularyById(
+    userId: string,
+    id: string,
+    translationLang?: string,
+  ): Promise<VocabularyResponseDto> {
+    await this.assertOwnedByUser(userId, id);
+    return this.findById(id, translationLang);
+  }
+
+  async updateUserVocabulary(
+    userId: string,
+    id: string,
+    dto: UpdateVocabularyDto,
+  ): Promise<VocabularyResponseDto> {
+    const vocab = await this.assertOwnedByUser(userId, id);
+    Object.assign(vocab, dto);
+    await this.vocabRepo.save(vocab);
+    return this.findById(vocab.id);
+  }
+
+  async deleteUserVocabulary(userId: string, id: string): Promise<void> {
+    await this.assertOwnedByUser(userId, id);
+    await this.vocabRepo.delete({ id });
+  }
+
+  // ---- Internal helpers ----
+
+  private async assertOwnedByUser(
+    userId: string,
+    id: string,
+  ): Promise<Vocabulary> {
+    const vocab = await this.vocabRepo.findOne({ where: { id } });
+    if (!vocab) {
+      throw new NotFoundException('vocabulary not found');
+    }
+    if (
+      vocab.source !== VocabularySource.USER ||
+      vocab.createdByUserId !== userId
+    ) {
+      throw new ForbiddenException('not your vocabulary');
+    }
+    return vocab;
+  }
+
+  private async upsertVocabulary(
     manager: EntityManager,
     dto: CreateVocabularyDto,
+    ownership: Ownership,
   ): Promise<UpsertOutcome> {
     const vocabRepo = manager.getRepository(Vocabulary);
-    const translationRepo = manager.getRepository(VocabularyTranslation);
-    const exampleRepo = manager.getRepository(VocabularyExample);
-    const topicRepo = manager.getRepository(Topic);
-    const vtRepo = manager.getRepository(VocabularyTopic);
+
+    const ownershipFields =
+      ownership.source === VocabularySource.SYSTEM
+        ? {
+            source: VocabularySource.SYSTEM,
+            createdByUserId: null,
+            visibility: Visibility.SYSTEM,
+            isApproved: true,
+          }
+        : {
+            source: VocabularySource.USER,
+            createdByUserId: ownership.userId,
+            visibility: Visibility.PRIVATE,
+            isApproved: false,
+          };
 
     const fields = {
       language: dto.language,
@@ -244,20 +406,26 @@ export class VocabulariesService {
       frequencyRank: dto.frequencyRank ?? null,
       audioUrl: dto.audioUrl ?? null,
       imageUrl: dto.imageUrl ?? null,
-      source: VocabularySource.SYSTEM,
-      createdByUserId: null,
-      visibility: Visibility.SYSTEM,
-      isApproved: true,
+      ...ownershipFields,
     };
 
-    let vocab = await vocabRepo.findOne({
-      where: {
-        language: dto.language,
-        lemma: dto.lemma,
-        partOfSpeech: dto.partOfSpeech,
-        source: VocabularySource.SYSTEM,
-      },
-    });
+    const findWhere =
+      ownership.source === VocabularySource.SYSTEM
+        ? {
+            language: dto.language,
+            lemma: dto.lemma,
+            partOfSpeech: dto.partOfSpeech,
+            source: VocabularySource.SYSTEM,
+          }
+        : {
+            language: dto.language,
+            lemma: dto.lemma,
+            partOfSpeech: dto.partOfSpeech,
+            source: VocabularySource.USER,
+            createdByUserId: ownership.userId,
+          };
+
+    let vocab = await vocabRepo.findOne({ where: findWhere });
     const created = !vocab;
     if (vocab) {
       Object.assign(vocab, fields);
@@ -266,61 +434,21 @@ export class VocabulariesService {
     }
     vocab = await vocabRepo.save(vocab);
 
-    let translationsAdded = 0;
-    for (const tr of dto.translations ?? []) {
-      const exists = await translationRepo.findOne({
-        where: {
-          vocabularyId: vocab.id,
-          language: tr.language,
-          translation: tr.translation,
-        },
-      });
-      if (!exists) {
-        await translationRepo.save(
-          translationRepo.create({
-            vocabularyId: vocab.id,
-            language: tr.language,
-            translation: tr.translation,
-            note: tr.note ?? null,
-          }),
-        );
-        translationsAdded++;
-      }
-    }
-
-    let examplesAdded = 0;
-    const existingExampleCount = await exampleRepo.count({
-      where: { vocabularyId: vocab.id },
-    });
-    if (existingExampleCount === 0 && (dto.examples?.length ?? 0) > 0) {
-      const rows = (dto.examples ?? []).map((e) =>
-        exampleRepo.create({
-          vocabularyId: vocab.id,
-          sentence: e.sentence,
-          translation: e.translation ?? null,
-          source: e.source ?? 'manual',
-        }),
-      );
-      await exampleRepo.save(rows);
-      examplesAdded = rows.length;
-    }
-
-    let topicLinksAdded = 0;
-    for (const slug of dto.topics ?? []) {
-      const topic = await topicRepo.findOne({ where: { slug } });
-      if (!topic) {
-        throw new BadRequestException(`unknown topic slug: ${slug}`);
-      }
-      const link = await vtRepo.findOne({
-        where: { vocabularyId: vocab.id, topicId: topic.id },
-      });
-      if (!link) {
-        await vtRepo.save(
-          vtRepo.create({ vocabularyId: vocab.id, topicId: topic.id }),
-        );
-        topicLinksAdded++;
-      }
-    }
+    const translationsAdded = await this.upsertTranslations(
+      manager,
+      vocab.id,
+      dto.translations,
+    );
+    const examplesAdded = await this.upsertExamples(
+      manager,
+      vocab.id,
+      dto.examples,
+    );
+    const topicLinksAdded = await this.upsertTopicLinks(
+      manager,
+      vocab.id,
+      dto.topics,
+    );
 
     return {
       vocab,
@@ -329,5 +457,85 @@ export class VocabulariesService {
       examplesAdded,
       topicLinksAdded,
     };
+  }
+
+  private async upsertTranslations(
+    manager: EntityManager,
+    vocabId: string,
+    translations: CreateTranslationDto[] | undefined,
+  ): Promise<number> {
+    if (!translations || translations.length === 0) return 0;
+    const repo = manager.getRepository(VocabularyTranslation);
+    let added = 0;
+    for (const tr of translations) {
+      const exists = await repo.findOne({
+        where: {
+          vocabularyId: vocabId,
+          language: tr.language,
+          translation: tr.translation,
+        },
+      });
+      if (!exists) {
+        await repo.save(
+          repo.create({
+            vocabularyId: vocabId,
+            language: tr.language,
+            translation: tr.translation,
+            note: tr.note ?? null,
+          }),
+        );
+        added++;
+      }
+    }
+    return added;
+  }
+
+  // Examples are skip-if-vocab-has-any since they have no natural key.
+  private async upsertExamples(
+    manager: EntityManager,
+    vocabId: string,
+    examples: CreateExampleDto[] | undefined,
+  ): Promise<number> {
+    if (!examples || examples.length === 0) return 0;
+    const repo = manager.getRepository(VocabularyExample);
+    const existing = await repo.count({ where: { vocabularyId: vocabId } });
+    if (existing > 0) return 0;
+    const rows = examples.map((e) =>
+      repo.create({
+        vocabularyId: vocabId,
+        sentence: e.sentence,
+        translation: e.translation ?? null,
+        source: e.source ?? 'manual',
+      }),
+    );
+    await repo.save(rows);
+    return rows.length;
+  }
+
+  private async upsertTopicLinks(
+    manager: EntityManager,
+    vocabId: string,
+    slugs: string[] | undefined,
+  ): Promise<number> {
+    if (!slugs || slugs.length === 0) return 0;
+    const topicRepo = manager.getRepository(Topic);
+    const vtRepo = manager.getRepository(VocabularyTopic);
+    let added = 0;
+    for (const slug of slugs) {
+      const topic = await topicRepo.findOne({ where: { slug } });
+      if (!topic) {
+        throw new BadRequestException(`unknown topic slug: ${slug}`);
+      }
+      const link = await vtRepo.findOne({
+        where: { vocabularyId: vocabId, topicId: topic.id },
+      });
+      if (!link) {
+        await vtRepo.save(
+          vtRepo.create({ vocabularyId: vocabId, topicId: topic.id }),
+        );
+        added++;
+      }
+    }
+    return added;
   }
 }
