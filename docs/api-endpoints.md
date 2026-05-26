@@ -89,3 +89,16 @@ Public catalog of system-curated learning decks plus the per-user "suggested for
 | GET | `/v1/decks` | none | List system decks (those with `owner_id IS NULL`). Query: `language`, `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with summary fields only — no vocab inlined. |
 | GET | `/v1/decks/:id` | none | Fetch one deck with its ordered vocabulary list (each vocab includes its translations). Query: `translationLang` restricts the nested translations to one language. |
 | GET | `/v1/me/decks/suggested` | JWT | Returns system decks matching the authenticated user's `targetLanguage` and `proficiencyLevel` from onboarding. Returns an empty array if either onboarding field is unset. |
+
+## Learning Progress — `/v1/me/progress` and `/v1/me/stats`
+
+Source: [src/progress/progress.controller.ts](../src/progress/progress.controller.ts)
+
+Per-user spaced-repetition state and study stats. All endpoints require JWT auth. Scheduling uses the SM-2 algorithm ([src/progress/srs.ts](../src/progress/srs.ts)); a card moves from `new` → `learning` on first review, `learning` → `review` after 3 correct repetitions in a row, and `review` → `mastered` once its interval reaches 90 days.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/me/progress/enroll` | JWT | Add words to the caller's learning queue. Body: `{ vocabularyIds: string[] }` or `{ deckId: string }` (exactly one). Idempotent — already-enrolled words are skipped. Returns `{ enrolled, alreadyEnrolled, unknownVocabularyIds }`. |
+| GET | `/v1/me/progress/due` | JWT | Fetch due cards (`next_review_at <= now`), oldest-due first. Query: `limit` (default 20, max 100), `translationLang` (filters nested translations). Each item includes the progress row and its full vocabulary (with translations). |
+| POST | `/v1/me/progress/review` | JWT | Submit a review grade. Body: `{ vocabularyId, quality }` where quality is 0–5 (≥3 counts as correct). Runs SM-2; updates `repetitions`, `easeFactor`, `intervalDays`, `nextReviewAt`, status, and correct/incorrect counters. Returns the updated progress row. Returns 404 if the user is not enrolled in that word. |
+| GET | `/v1/me/stats` | JWT | Snapshot for the home screen: `{ streakDays, dueNow, reviewedToday, dailyGoalMinutes, counts: { new, learning, review, mastered } }`. Streak is consecutive UTC days with at least one review ending at the most recent review date (counts only if that date is today or yesterday). |
