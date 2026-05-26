@@ -92,6 +92,18 @@ Public read access to the curated topic taxonomy used to tag vocabularies.
 | GET | `/v1/topics` | none | List every topic, ordered by name. Returns a flat array (no pagination — set is small). |
 | GET | `/v1/topics/:slug` | none | Fetch one topic by its slug (e.g. `food`, `travel`). Returns 404 if unknown. |
 
+## Admin Topics — `/v1/admin/topics`
+
+Source: [src/topics/admin-topics.controller.ts](../src/topics/admin-topics.controller.ts)
+
+Write surface for the topic taxonomy. All endpoints require JWT auth **and** `role = 'admin'` (403 otherwise).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/admin/topics` | JWT (admin) | Create a topic. Body: `{ slug, name, description?, iconUrl? }`. Slug must match `[a-z0-9-]+` (2–64 chars). Returns 409 if the slug already exists. |
+| PATCH | `/v1/admin/topics/:slug` | JWT (admin) | Update `name`, `description`, or `iconUrl`. Slug itself is the identifier and not editable — to rename, DELETE then POST. |
+| DELETE | `/v1/admin/topics/:slug` | JWT (admin) | Remove the topic. Cascades to `vocabulary_topics` (vocabularies stay, just lose this tag). Returns 204. |
+
 ## Decks — `/v1/decks` and `/v1/me/decks`
 
 Source: [src/decks/decks.controller.ts](../src/decks/decks.controller.ts)
