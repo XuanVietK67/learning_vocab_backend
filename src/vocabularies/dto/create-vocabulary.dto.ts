@@ -75,12 +75,15 @@ export class CreateSenseDto {
   @Type(() => CreateTranslationDto)
   translations?: CreateTranslationDto[];
 
-  @IsOptional()
+  // Two examples minimum: one is shown during study/reveal, others are held out
+  // as test sentences by the learning-session feature so the learner doesn't
+  // just memorize the single sentence they saw on study day.
   @IsArray()
+  @ArrayMinSize(2)
   @ArrayMaxSize(16)
   @ValidateNested({ each: true })
   @Type(() => CreateExampleDto)
-  examples?: CreateExampleDto[];
+  examples!: CreateExampleDto[];
 }
 
 export class CreateVocabularyDto {

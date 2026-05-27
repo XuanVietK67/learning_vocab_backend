@@ -134,7 +134,18 @@ Route ordering note: `GET /v1/me/decks/suggested` is a literal path declared bef
 | POST | `/v1/me/decks/:id/vocabularies` | JWT | Append words to the deck. Body: `{ vocabularyIds: string[] }` (1–500). Returns `{ added, alreadyMember, inaccessibleVocabularyIds, vocabCount }`. Positions are assigned after the current max. |
 | DELETE | `/v1/me/decks/:id/vocabularies/:vocabularyId` | JWT | Remove a word from the deck. 404 if it isn't in the deck. Returns 204. Decrements `vocab_count`. |
 
-## Learning Progress — `/v1/me/progress` and `/v1/me/stats`
+## Learn — `/v1/me/learn`
+
+Source: [src/learn/learn.controller.ts](../src/learn/learn.controller.ts)
+
+Context-anchored learning sessions: the server picks due cards, generates one question per card from its example sentences, and HMAC-signs each item so answers can be graded statelessly. Six question types: cloze MCQ, cloze typing, meaning-in-context, sentence build, sense disambiguation, listening cloze. Type selection is driven by SRS status; styles requiring extra data (audio, multiple senses, translation language) are skipped silently when unavailable. All endpoints require JWT auth.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/me/learn/session` | JWT | Build a session of N questions from the caller's due cards. Body: `{ deckId?, limit?: 1–50 (default 15), translationLang? }`. Returns `{ sessionId, items[] }`. Each item carries an HMAC signature + nonce + issuedAtMs that the client echoes back when submitting an answer. Returns an empty `items[]` if nothing is due. |
+| POST | `/v1/me/learn/answer` | JWT | Submit one answer. Body: `{ vocabularyId, type, exampleId, userAnswer, latencyMs, nonce, issuedAtMs, signature, translationLang? }`. Server verifies HMAC (30 min TTL), re-derives the correct answer, grades the response (mapping to SM-2 quality 0–5), then updates progress via the same SM-2 pipeline as `/v1/me/progress/review`. Returns `{ correct, correctAnswer, quality, progress }`. 401 if the signature is invalid or expired. |
+
+
 
 Source: [src/progress/progress.controller.ts](../src/progress/progress.controller.ts)
 
