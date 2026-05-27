@@ -1,4 +1,11 @@
+import { LearnSessionMode } from '@/learn/enums/learn-session-mode.enum';
 import { QuestionType } from '@/learn/enums/question-type.enum';
+
+export type SessionEmptyReason =
+  | 'no_due_cards'
+  | 'no_more_at_level'
+  | 'no_enrollment'
+  | 'deck_exhausted';
 
 // Discriminated union by `type`. The frontend should switch on `type`
 // and render the matching prompt shape. All payloads share the envelope
@@ -77,5 +84,12 @@ export interface SessionItemDto extends SessionItemEnvelope {
 
 export interface CreateSessionResponseDto {
   sessionId: string;
+  mode: LearnSessionMode;
+  // Number of words newly enrolled into the user's progress as a side effect
+  // of this call. Always 0 for mode=review.
+  enrolledNewlyCount: number;
+  // Non-null only when items is empty — tells the frontend which empty-state
+  // screen to show. Null when items.length > 0.
+  emptyReason: SessionEmptyReason | null;
   items: SessionItemDto[];
 }

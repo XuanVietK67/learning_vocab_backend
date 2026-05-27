@@ -7,8 +7,11 @@ import { HmacSignerService } from '@/learn/hmac-signer.service';
 import { LearnController } from '@/learn/learn.controller';
 import { LearnService } from '@/learn/learn.service';
 import { QuestionBuilderService } from '@/learn/question-builder.service';
+import { VocabPickerService } from '@/learn/vocab-picker.service';
 import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
 import { ProgressModule } from '@/progress/progress.module';
+import { Topic } from '@/topics/entities/topic.entity';
+import { User } from '@/users/entities/user.entity';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 
@@ -19,6 +22,8 @@ import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
       Vocabulary,
       VocabularyTranslation,
       DeckVocabulary,
+      Topic,
+      User,
     ]),
     ProgressModule,
   ],
@@ -29,6 +34,7 @@ import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
     DistractorService,
     AnswerGraderService,
     HmacSignerService,
+    VocabPickerService,
   ],
 })
 export class LearnModule {}

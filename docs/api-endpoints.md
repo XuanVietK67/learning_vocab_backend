@@ -140,9 +140,11 @@ Source: [src/learn/learn.controller.ts](../src/learn/learn.controller.ts)
 
 Context-anchored learning sessions: the server picks due cards, generates one question per card from its example sentences, and HMAC-signs each item so answers can be graded statelessly. Six question types: cloze MCQ, cloze typing, meaning-in-context, sentence build, sense disambiguation, listening cloze. Type selection is driven by SRS status; styles requiring extra data (audio, multiple senses, translation language) are skipped silently when unavailable. All endpoints require JWT auth.
 
+`POST /v1/me/learn/session` is mode-driven — the caller picks one of `daily | topic | deck | review`. The server's `VocabPickerService` ([src/learn/vocab-picker.service.ts](../src/learn/vocab-picker.service.ts)) selects suitable vocab for each mode; for `daily/topic/deck` it auto-enrolls fresh picks into the user's progress as a side effect (`enrolledNewlyCount` in the response says how many). `daily` and `topic` require onboarding to be complete (`targetLanguage` and `proficiencyLevel`), else 400.
+
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/me/learn/session` | JWT | Build a session of N questions from the caller's due cards. Body: `{ deckId?, limit?: 1–50 (default 15), translationLang? }`. Returns `{ sessionId, items[] }`. Each item carries an HMAC signature + nonce + issuedAtMs that the client echoes back when submitting an answer. Returns an empty `items[]` if nothing is due. |
+| POST | `/v1/me/learn/session` | JWT | Build a session of N questions for a learning mode. Body: `{ mode, topicSlug?, deckId?, limit?: 1–50 (default 15), translationLang? }`. `topicSlug` required iff `mode=topic`; `deckId` required iff `mode=deck`. Returns `{ sessionId, mode, enrolledNewlyCount, emptyReason, items[] }`. `emptyReason` is one of `no_due_cards | no_more_at_level | no_enrollment | deck_exhausted` (null when `items[]` is non-empty). Each item carries an HMAC signature + nonce + issuedAtMs the client echoes when submitting an answer. |
 | POST | `/v1/me/learn/answer` | JWT | Submit one answer. Body: `{ vocabularyId, type, exampleId, userAnswer, latencyMs, nonce, issuedAtMs, signature, translationLang? }`. Server verifies HMAC (30 min TTL), re-derives the correct answer, grades the response (mapping to SM-2 quality 0–5), then updates progress via the same SM-2 pipeline as `/v1/me/progress/review`. Returns `{ correct, correctAnswer, quality, progress }`. 401 if the signature is invalid or expired. |
 
 
