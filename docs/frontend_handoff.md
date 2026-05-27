@@ -657,3 +657,176 @@ Home-screen snapshot.
 ```
 
 `streakDays` counts only if the most recent review date is today or yesterday (UTC days).
+
+---
+
+## Learn — `/v1/me/learn`
+
+Context-anchored learning sessions. The server picks due cards, generates one question per card from its example sentences, and HMAC-signs each item. Submit each answer separately; the server grades it and feeds the existing SM-2 pipeline.
+
+**Six question types** (discriminated by `prompt.type`):
+- `cloze_mcq` — sentence with a blank, 4 word options
+- `cloze_typing` — sentence with a blank, free-text answer
+- `meaning_in_context` — sentence with highlighted word, 4 translation options (one is the trap from a different sense)
+- `sentence_build` — translation prompt, shuffled tokens to arrange
+- `sense_disambiguation` — two example sentences side-by-side, match each to its sense's translation
+- `listening_cloze` — audio + sentence with a blank, 4 word options
+
+**Type selection** is driven by SRS status: `new`/`learning` → recognition (`cloze_mcq`, `meaning_in_context`); `review` → production (`cloze_typing`, `sentence_build`); `mastered` → `sentence_build` or `sense_disambiguation`. `listening_cloze` is substituted in when audio is available. Types requiring extra data (multiple senses, translation language) are skipped silently if the card lacks it.
+
+### `POST /v1/me/learn/session`
+Build a session of N questions from the caller's due cards. Stateless — no server-side session row is created; the `sessionId` is purely a client-side correlation id.
+
+**Request body**
+
+```json
+{
+  "deckId": "8c1f7d34-...",
+  "limit": 15,
+  "translationLang": "vi"
+}
+```
+
+All three fields are optional. `limit` is clamped to `[1, 50]` (default 15). `deckId` restricts the due queue to one deck; omit for the global due queue. `translationLang` enables the styles that need a target-language translation (`meaning_in_context`, `sentence_build`, `sense_disambiguation`) and provides `hintTranslation` for cloze styles.
+
+**Response 200**
+
+```json
+{
+  "sessionId": "f3c8a212-7e0b-4b27-9a8e-7e1c1c1d8a2e",
+  "items": [
+    {
+      "sessionItemId": "0c2b9f1a-...",
+      "vocabularyId": "a4d2...",
+      "lemma": "study",
+      "exampleId": "7b2e...",
+      "type": "cloze_mcq",
+      "nonce": "1c8f9b22-...",
+      "issuedAtMs": 1748284800000,
+      "signature": "9f7e6b3a1c2d...",
+      "prompt": {
+        "type": "cloze_mcq",
+        "sentenceWithBlank": "She _____ biology at university.",
+        "hintTranslation": "Cô ấy ___ sinh học ở trường đại học.",
+        "audioUrl": "https://cdn.example/audio/study.mp3",
+        "options": ["studies", "teaches", "writes", "speaks"]
+      }
+    }
+  ]
+}
+```
+
+Returns `items: []` if nothing is due. Each item has an envelope (`sessionItemId`, `vocabularyId`, `lemma`, `exampleId`, `type`, `nonce`, `issuedAtMs`, `signature`) plus a typed `prompt`. **Echo `nonce`, `issuedAtMs`, `signature` verbatim** in the answer payload — they prove the item was issued to this user for this card.
+
+#### `prompt` shapes by type
+
+**`cloze_mcq`** — show `sentenceWithBlank`, render `options` as 4 buttons. `hintTranslation` and `audioUrl` are nullable.
+
+```json
+{ "type": "cloze_mcq", "sentenceWithBlank": "She _____ biology at university.",
+  "hintTranslation": "Cô ấy ___ sinh học ở trường đại học.",
+  "audioUrl": null, "options": ["studies", "teaches", "writes", "speaks"] }
+```
+
+**`cloze_typing`** — show `sentenceWithBlank` + a text input. No `options`.
+
+```json
+{ "type": "cloze_typing", "sentenceWithBlank": "I need to _____ for the exam tomorrow.",
+  "hintTranslation": "Tôi cần ___ cho kỳ thi ngày mai.", "audioUrl": null }
+```
+
+**`meaning_in_context`** — show `sentence`, highlight the substring at `[highlightedSpan.start, highlightedSpan.end)`, render `options` as 4 buttons (translations in `translationLang`).
+
+```json
+{ "type": "meaning_in_context",
+  "sentence": "Scientists are studying the effects of climate change.",
+  "highlightedSpan": { "start": 15, "end": 23 },
+  "options": ["nghiên cứu", "học tập", "giảng dạy", "viết ra"] }
+```
+
+**`sentence_build`** — show `translation` (L1 prompt), render `tokens` as drag-and-drop tiles in the given (already shuffled) order. User submits the joined sequence.
+
+```json
+{ "type": "sentence_build",
+  "translation": "Anh ấy đã học tiếng Pháp trong ba năm.",
+  "tokens": ["French", "He", "for", "studied", "three", "years"] }
+```
+
+**`sense_disambiguation`** — show both `sentences[]` side by side, render the two `options[]` as choices. User picks the option that matches the **first** sentence; the answer should be that option's translation string.
+
+```json
+{ "type": "sense_disambiguation",
+  "sentences": [
+    { "exampleId": "7b2e...", "sentence": "She studies biology at university." },
+    { "exampleId": "9d3f...", "sentence": "She studied his face for any sign of emotion." }
+  ],
+  "options": ["nghiên cứu", "học tập"] }
+```
+
+**`listening_cloze`** — play `audioUrl`, show `sentenceWithBlank`, render `options` as 4 buttons.
+
+```json
+{ "type": "listening_cloze", "audioUrl": "https://cdn.example/audio/study.mp3",
+  "sentenceWithBlank": "He _____ French for three years.",
+  "hintTranslation": "Anh ấy đã ___ tiếng Pháp trong ba năm.",
+  "options": ["studied", "spoke", "wrote", "taught"] }
+```
+
+### `POST /v1/me/learn/answer`
+Submit one answer. Server verifies the HMAC + 30-min TTL, re-derives the correct answer, grades the response, and updates the user's SRS state (same SM-2 pipeline as `/v1/me/progress/review`).
+
+**Request body**
+
+```json
+{
+  "vocabularyId": "a4d2...",
+  "type": "cloze_mcq",
+  "exampleId": "7b2e...",
+  "userAnswer": "studies",
+  "latencyMs": 4200,
+  "nonce": "1c8f9b22-...",
+  "issuedAtMs": 1748284800000,
+  "signature": "9f7e6b3a1c2d...",
+  "translationLang": "vi",
+  "sessionId": "f3c8a212-..."
+}
+```
+
+`userAnswer` encoding by type:
+- `cloze_mcq`, `listening_cloze`, `meaning_in_context`, `sense_disambiguation` — the **string** of the chosen option (not its index)
+- `cloze_typing` — the user's typed answer (free text)
+- `sentence_build` — the tokens joined by single spaces in the order the user arranged them (e.g. `"He studied French for three years"`)
+
+`translationLang` must match what was sent to `/v1/me/learn/session` — it's part of the HMAC. `sessionId` is optional and ignored by the server. `latencyMs` is the time (ms) between question display and answer submit; the server uses it to choose between quality 5 (fast) and 4 (slow) for correct answers.
+
+**Response 200**
+
+```json
+{
+  "correct": true,
+  "correctAnswer": "studies",
+  "quality": 5,
+  "progress": {
+    "id": "p1...",
+    "vocabularyId": "a4d2...",
+    "status": "learning",
+    "repetitions": 1,
+    "easeFactor": 2.6,
+    "intervalDays": 1,
+    "nextReviewAt": "2026-05-28T08:30:00.000Z",
+    "lastReviewedAt": "2026-05-27T08:30:00.000Z",
+    "correctCount": 4,
+    "incorrectCount": 1
+  }
+}
+```
+
+**Quality mapping** (SM-2 scale 0–5):
+- MCQ-style (`cloze_mcq`, `meaning_in_context`, `sense_disambiguation`, `listening_cloze`): correct + fast (`latencyMs ≤ 8000`) → 5; correct + slow → 4; wrong → 2.
+- `cloze_typing`: exact match → 5/4 by latency; Levenshtein distance 1 → 3 (not counted as correct); else 2.
+- `sentence_build`: exact joined match → 5/4 by latency; same tokens with exactly one swap (2 positions off) → 3; else 2.
+
+**Errors**
+- `400` validation (missing/invalid body fields)
+- `401` invalid or expired signature (TTL is 30 minutes — refresh by calling `/session` again)
+- `404` vocabulary not found, or the user is not enrolled in it (call `/v1/me/progress/enroll` first)
