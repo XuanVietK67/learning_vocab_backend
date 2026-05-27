@@ -15,8 +15,7 @@ import {
   BulkImportVocabulariesDto,
 } from '@/vocabularies/dto/bulk-import-vocabularies.dto';
 import {
-  CreateExampleDto,
-  CreateTranslationDto,
+  CreateSenseDto,
   CreateVocabularyDto,
 } from '@/vocabularies/dto/create-vocabulary.dto';
 import { UpdateVocabularyDto } from '@/vocabularies/dto/update-vocabulary.dto';
@@ -27,6 +26,7 @@ import {
   VocabularyResponseDto,
 } from '@/vocabularies/dto/vocabulary-response.dto';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
+import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
@@ -35,6 +35,7 @@ import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 interface UpsertOutcome {
   vocab: Vocabulary;
   created: boolean;
+  sensesAdded: number;
   translationsAdded: number;
   examplesAdded: number;
   topicLinksAdded: number;
@@ -94,27 +95,8 @@ export class VocabulariesService {
       );
     }
 
-    const hydrateQb = this.vocabRepo
-      .createQueryBuilder('vocab')
-      .whereInIds(ids);
-
-    if (translationLang) {
-      hydrateQb.leftJoinAndSelect(
-        'vocab.translations',
-        'translations',
-        'translations.language = :translationLang',
-        { translationLang },
-      );
-    } else {
-      hydrateQb.leftJoinAndSelect('vocab.translations', 'translations');
-    }
-
-    const unordered = await hydrateQb
-      .orderBy('vocab.frequency_rank', 'ASC', 'NULLS LAST')
-      .addOrderBy('vocab.lemma', 'ASC')
-      .getMany();
-
-    const byId = new Map(unordered.map((v) => [v.id, v]));
+    const hydrated = await this.hydrateVocabulariesByIds(ids, translationLang);
+    const byId = new Map(hydrated.map((v) => [v.id, v]));
     const data = ids
       .map((id) => byId.get(id))
       .filter((v): v is Vocabulary => v !== undefined);
@@ -130,27 +112,10 @@ export class VocabulariesService {
     id: string,
     translationLang?: string,
   ): Promise<VocabularyResponseDto> {
-    const qb = this.vocabRepo
-      .createQueryBuilder('vocab')
-      .leftJoinAndSelect('vocab.examples', 'examples')
-      .where('vocab.id = :id', { id });
-
-    if (translationLang) {
-      qb.leftJoinAndSelect(
-        'vocab.translations',
-        'translations',
-        'translations.language = :translationLang',
-        { translationLang },
-      );
-    } else {
-      qb.leftJoinAndSelect('vocab.translations', 'translations');
-    }
-
-    const vocab = await qb.getOne();
+    const [vocab] = await this.hydrateVocabulariesByIds([id], translationLang);
     if (!vocab) {
       throw new NotFoundException('vocabulary not found');
     }
-
     return plainToInstance(VocabularyResponseDto, vocab, {
       excludeExtraneousValues: true,
     });
@@ -211,6 +176,7 @@ export class VocabulariesService {
     return this.dataSource.transaction(async (manager) => {
       let inserted = 0;
       let updated = 0;
+      let sensesAdded = 0;
       let translationsAdded = 0;
       let examplesAdded = 0;
       let topicLinksAdded = 0;
@@ -221,6 +187,7 @@ export class VocabulariesService {
         });
         if (r.created) inserted++;
         else updated++;
+        sensesAdded += r.sensesAdded;
         translationsAdded += r.translationsAdded;
         examplesAdded += r.examplesAdded;
         topicLinksAdded += r.topicLinksAdded;
@@ -230,6 +197,7 @@ export class VocabulariesService {
         upserted: dto.items.length,
         inserted,
         updated,
+        sensesAdded,
         translationsAdded,
         examplesAdded,
         topicLinksAdded,
@@ -300,26 +268,8 @@ export class VocabulariesService {
       );
     }
 
-    const hydrateQb = this.vocabRepo
-      .createQueryBuilder('vocab')
-      .whereInIds(ids);
-
-    if (translationLang) {
-      hydrateQb.leftJoinAndSelect(
-        'vocab.translations',
-        'translations',
-        'translations.language = :translationLang',
-        { translationLang },
-      );
-    } else {
-      hydrateQb.leftJoinAndSelect('vocab.translations', 'translations');
-    }
-
-    const unordered = await hydrateQb
-      .orderBy('vocab.created_at', 'DESC')
-      .getMany();
-
-    const byId = new Map(unordered.map((v) => [v.id, v]));
+    const hydrated = await this.hydrateVocabulariesByIds(ids, translationLang);
+    const byId = new Map(hydrated.map((v) => [v.id, v]));
     const data = ids
       .map((id) => byId.get(id))
       .filter((v): v is Vocabulary => v !== undefined);
@@ -357,6 +307,30 @@ export class VocabulariesService {
   }
 
   // ---- Internal helpers ----
+
+  private async hydrateVocabulariesByIds(
+    ids: string[],
+    translationLang?: string,
+  ): Promise<Vocabulary[]> {
+    const qb = this.vocabRepo
+      .createQueryBuilder('vocab')
+      .whereInIds(ids)
+      .leftJoinAndSelect('vocab.senses', 'senses')
+      .leftJoinAndSelect('senses.examples', 'examples');
+
+    if (translationLang) {
+      qb.leftJoinAndSelect(
+        'senses.translations',
+        'translations',
+        'translations.language = :translationLang',
+        { translationLang },
+      );
+    } else {
+      qb.leftJoinAndSelect('senses.translations', 'translations');
+    }
+
+    return qb.addOrderBy('senses.sense_order', 'ASC').getMany();
+  }
 
   private async assertOwnedByUser(
     userId: string,
@@ -405,7 +379,6 @@ export class VocabulariesService {
       cefrLevel: dto.cefrLevel ?? null,
       frequencyRank: dto.frequencyRank ?? null,
       audioUrl: dto.audioUrl ?? null,
-      imageUrl: dto.imageUrl ?? null,
       ...ownershipFields,
     };
 
@@ -434,16 +407,7 @@ export class VocabulariesService {
     }
     vocab = await vocabRepo.save(vocab);
 
-    const translationsAdded = await this.upsertTranslations(
-      manager,
-      vocab.id,
-      dto.translations,
-    );
-    const examplesAdded = await this.upsertExamples(
-      manager,
-      vocab.id,
-      dto.examples,
-    );
+    const senseSummary = await this.upsertSenses(manager, vocab.id, dto.senses);
     const topicLinksAdded = await this.upsertTopicLinks(
       manager,
       vocab.id,
@@ -453,16 +417,78 @@ export class VocabulariesService {
     return {
       vocab,
       created,
-      translationsAdded,
-      examplesAdded,
+      sensesAdded: senseSummary.sensesAdded,
+      translationsAdded: senseSummary.translationsAdded,
+      examplesAdded: senseSummary.examplesAdded,
       topicLinksAdded,
     };
   }
 
-  private async upsertTranslations(
+  // Upserts senses by position: existing senses with the same sense_order are
+  // patched in place; new positions are inserted. Existing translations for a
+  // sense are matched by (language, translation); examples are append-only and
+  // only inserted when the target sense had none beforehand (no natural key).
+  private async upsertSenses(
     manager: EntityManager,
     vocabId: string,
-    translations: CreateTranslationDto[] | undefined,
+    senses: CreateSenseDto[],
+  ): Promise<{
+    sensesAdded: number;
+    translationsAdded: number;
+    examplesAdded: number;
+  }> {
+    const senseRepo = manager.getRepository(VocabularySense);
+    const existingSenses = await senseRepo.find({
+      where: { vocabularyId: vocabId },
+      order: { senseOrder: 'ASC' },
+    });
+    const byOrder = new Map(existingSenses.map((s) => [s.senseOrder, s]));
+
+    let sensesAdded = 0;
+    let translationsAdded = 0;
+    let examplesAdded = 0;
+
+    for (let i = 0; i < senses.length; i++) {
+      const dto = senses[i];
+      const senseOrder = i + 1;
+      let sense = byOrder.get(senseOrder);
+      if (sense) {
+        sense.gloss = dto.gloss ?? sense.gloss;
+        sense.definition = dto.definition ?? sense.definition;
+        sense.imageUrl = dto.imageUrl ?? sense.imageUrl;
+        await senseRepo.save(sense);
+      } else {
+        sense = await senseRepo.save(
+          senseRepo.create({
+            vocabularyId: vocabId,
+            senseOrder,
+            gloss: dto.gloss ?? null,
+            definition: dto.definition ?? null,
+            imageUrl: dto.imageUrl ?? null,
+          }),
+        );
+        sensesAdded++;
+      }
+
+      translationsAdded += await this.upsertSenseTranslations(
+        manager,
+        sense.id,
+        dto.translations,
+      );
+      examplesAdded += await this.upsertSenseExamples(
+        manager,
+        sense.id,
+        dto.examples,
+      );
+    }
+
+    return { sensesAdded, translationsAdded, examplesAdded };
+  }
+
+  private async upsertSenseTranslations(
+    manager: EntityManager,
+    senseId: string,
+    translations: CreateSenseDto['translations'],
   ): Promise<number> {
     if (!translations || translations.length === 0) return 0;
     const repo = manager.getRepository(VocabularyTranslation);
@@ -470,7 +496,7 @@ export class VocabulariesService {
     for (const tr of translations) {
       const exists = await repo.findOne({
         where: {
-          vocabularyId: vocabId,
+          senseId,
           language: tr.language,
           translation: tr.translation,
         },
@@ -478,7 +504,7 @@ export class VocabulariesService {
       if (!exists) {
         await repo.save(
           repo.create({
-            vocabularyId: vocabId,
+            senseId,
             language: tr.language,
             translation: tr.translation,
             note: tr.note ?? null,
@@ -490,19 +516,19 @@ export class VocabulariesService {
     return added;
   }
 
-  // Examples are skip-if-vocab-has-any since they have no natural key.
-  private async upsertExamples(
+  // Examples are skip-if-sense-has-any since they have no natural key.
+  private async upsertSenseExamples(
     manager: EntityManager,
-    vocabId: string,
-    examples: CreateExampleDto[] | undefined,
+    senseId: string,
+    examples: CreateSenseDto['examples'],
   ): Promise<number> {
     if (!examples || examples.length === 0) return 0;
     const repo = manager.getRepository(VocabularyExample);
-    const existing = await repo.count({ where: { vocabularyId: vocabId } });
+    const existing = await repo.count({ where: { senseId } });
     if (existing > 0) return 0;
     const rows = examples.map((e) =>
       repo.create({
-        vocabularyId: vocabId,
+        senseId,
         sentence: e.sentence,
         translation: e.translation ?? null,
         source: e.source ?? 'manual',

@@ -12,10 +12,9 @@ import {
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { User } from '@/users/entities/user.entity';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
+import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
-import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
-import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 
 @Index('IDX_vocabularies_lang_cefr_freq', [
   'language',
@@ -60,9 +59,6 @@ export class Vocabulary {
   @Column({ name: 'audio_url', type: 'varchar', length: 512, nullable: true })
   audioUrl!: string | null;
 
-  @Column({ name: 'image_url', type: 'varchar', length: 512, nullable: true })
-  imageUrl!: string | null;
-
   @Column({
     type: 'enum',
     enum: VocabularySource,
@@ -95,9 +91,6 @@ export class Vocabulary {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
 
-  @OneToMany(() => VocabularyTranslation, (t) => t.vocabulary)
-  translations!: VocabularyTranslation[];
-
-  @OneToMany(() => VocabularyExample, (e) => e.vocabulary)
-  examples!: VocabularyExample[];
+  @OneToMany(() => VocabularySense, (s) => s.vocabulary)
+  senses!: VocabularySense[];
 }

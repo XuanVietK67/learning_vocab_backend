@@ -17,6 +17,22 @@ export class VocabularyExampleResponseDto {
   @Expose() source!: string | null;
 }
 
+export class VocabularySenseResponseDto {
+  @Expose() id!: string;
+  @Expose() senseOrder!: number;
+  @Expose() gloss!: string | null;
+  @Expose() definition!: string | null;
+  @Expose() imageUrl!: string | null;
+
+  @Expose()
+  @Type(() => VocabularyTranslationResponseDto)
+  translations?: VocabularyTranslationResponseDto[];
+
+  @Expose()
+  @Type(() => VocabularyExampleResponseDto)
+  examples?: VocabularyExampleResponseDto[];
+}
+
 export class VocabularyResponseDto {
   @Expose() id!: string;
   @Expose() language!: string;
@@ -26,16 +42,11 @@ export class VocabularyResponseDto {
   @Expose() cefrLevel!: ProficiencyLevel | null;
   @Expose() frequencyRank!: number | null;
   @Expose() audioUrl!: string | null;
-  @Expose() imageUrl!: string | null;
   @Expose() source!: VocabularySource;
 
   @Expose()
-  @Type(() => VocabularyTranslationResponseDto)
-  translations?: VocabularyTranslationResponseDto[];
-
-  @Expose()
-  @Type(() => VocabularyExampleResponseDto)
-  examples?: VocabularyExampleResponseDto[];
+  @Type(() => VocabularySenseResponseDto)
+  senses?: VocabularySenseResponseDto[];
 }
 
 export class PaginatedVocabulariesResponseDto {

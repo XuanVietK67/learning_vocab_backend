@@ -110,19 +110,23 @@ export class ProgressService {
     const vocabIds = dueRows.map((r) => r.vocabularyId);
     const vocabQb = this.vocabRepo
       .createQueryBuilder('vocab')
-      .whereInIds(vocabIds);
+      .whereInIds(vocabIds)
+      .leftJoinAndSelect('vocab.senses', 'senses')
+      .leftJoinAndSelect('senses.examples', 'examples');
 
     if (translationLang) {
       vocabQb.leftJoinAndSelect(
-        'vocab.translations',
+        'senses.translations',
         'translations',
         'translations.language = :translationLang',
         { translationLang },
       );
     } else {
-      vocabQb.leftJoinAndSelect('vocab.translations', 'translations');
+      vocabQb.leftJoinAndSelect('senses.translations', 'translations');
     }
-    const vocabs = await vocabQb.getMany();
+    const vocabs = await vocabQb
+      .addOrderBy('senses.sense_order', 'ASC')
+      .getMany();
     const vocabById = new Map(vocabs.map((v) => [v.id, v]));
 
     return dueRows.map((progress) => {
