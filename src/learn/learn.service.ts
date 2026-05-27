@@ -7,32 +7,36 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import learnConfig from '@/config/learn.config';
-import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
+import { ProgressStatus } from '@/progress/entities/progress-status.enum';
+import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
 import { AnswerGraderService } from '@/learn/answer-grader.service';
 import { AnswerResultDto } from '@/learn/dto/answer-result.dto';
 import { CreateSessionDto } from '@/learn/dto/create-session.dto';
 import {
   CreateSessionResponseDto,
+  SessionEmptyReason,
   SessionItemDto,
 } from '@/learn/dto/session-item.dto';
 import { SubmitAnswerDto } from '@/learn/dto/submit-answer.dto';
+import { LearnSessionMode } from '@/learn/enums/learn-session-mode.enum';
 import { HmacSignerService } from '@/learn/hmac-signer.service';
 import { QuestionBuilderService } from '@/learn/question-builder.service';
-import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
+import { PickResult, VocabPickerService } from '@/learn/vocab-picker.service';
 import { ProgressService } from '@/progress/progress.service';
+import { User } from '@/users/entities/user.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 
 @Injectable()
 export class LearnService {
   constructor(
-    @InjectRepository(UserWordProgress)
-    private readonly progressRepo: Repository<UserWordProgress>,
     @InjectRepository(Vocabulary)
     private readonly vocabRepo: Repository<Vocabulary>,
-    @InjectRepository(DeckVocabulary)
-    private readonly deckVocabRepo: Repository<DeckVocabulary>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(UserWordProgress)
+    private readonly progressRepo: Repository<UserWordProgress>,
+    private readonly picker: VocabPickerService,
     private readonly questionBuilder: QuestionBuilderService,
     private readonly grader: AnswerGraderService,
     private readonly signer: HmacSignerService,
@@ -52,59 +56,61 @@ export class LearnService {
     );
     const translationLang = dto.translationLang ?? null;
 
-    // Fetch due cards (optionally restricted to a deck)
-    const dueQb = this.progressRepo
-      .createQueryBuilder('p')
-      .where('p.user_id = :userId', { userId })
-      .andWhere('p.next_review_at <= :now', { now: new Date() })
-      .orderBy('p.next_review_at', 'ASC')
-      .limit(limit);
-
-    if (dto.deckId) {
-      dueQb.andWhere(
-        `EXISTS (
-          SELECT 1 FROM deck_vocabularies dv
-          WHERE dv.deck_id = :deckId AND dv.vocabulary_id = p.vocabulary_id
-        )`,
-        { deckId: dto.deckId },
-      );
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('user not found');
     }
 
-    const dueRows = await dueQb.getMany();
-    if (dueRows.length === 0) {
-      return { sessionId: randomUUID(), items: [] };
+    // 1) Pick vocab IDs for this mode
+    const picked = await this.dispatchPicker(user, dto, limit);
+
+    // 2) Auto-enroll fresh picks (review mode never has fresh)
+    let enrolledNewlyCount = 0;
+    if (picked.freshVocabIds.length > 0) {
+      const result = await this.progressService.enroll(userId, {
+        vocabularyIds: picked.freshVocabIds,
+      });
+      enrolledNewlyCount = result.enrolled;
     }
 
-    const vocabIds = dueRows.map((r) => r.vocabularyId);
-    const vocabQb = this.vocabRepo
-      .createQueryBuilder('vocab')
-      .whereInIds(vocabIds)
-      .leftJoinAndSelect('vocab.senses', 'senses')
-      .leftJoinAndSelect('senses.examples', 'examples');
-    if (translationLang) {
-      vocabQb.leftJoinAndSelect(
-        'senses.translations',
-        'translations',
-        'translations.language = :translationLang',
-        { translationLang },
-      );
-    } else {
-      vocabQb.leftJoinAndSelect('senses.translations', 'translations');
+    // 3) If nothing to learn, surface the picker's empty reason
+    const allVocabIds = [...picked.dueVocabIds, ...picked.freshVocabIds];
+    if (allVocabIds.length === 0) {
+      return {
+        sessionId: randomUUID(),
+        mode: dto.mode,
+        enrolledNewlyCount,
+        emptyReason: picked.emptyReason ?? 'no_due_cards',
+        items: [],
+      };
     }
-    const vocabs = await vocabQb
-      .addOrderBy('senses.sense_order', 'ASC')
-      .getMany();
+
+    // 4) Load vocab tree (senses + examples + translations) + progress rows
+    //    for status lookup in a single batch (avoids N+1).
+    const [vocabs, progressRows] = await Promise.all([
+      this.loadVocabTree(allVocabIds, translationLang),
+      this.progressRepo.find({
+        where: { userId, vocabularyId: In(allVocabIds) },
+        select: { vocabularyId: true, status: true },
+      }),
+    ]);
     const vocabById = new Map(vocabs.map((v) => [v.id, v]));
+    const statusByVocabId = new Map(
+      progressRows.map((p) => [p.vocabularyId, p.status]),
+    );
 
+    // 5) Build the per-card questions in pick order
     const daySeed = toUtcDateString(new Date());
     const items: SessionItemDto[] = [];
-    for (const progress of dueRows) {
-      const vocab = vocabById.get(progress.vocabularyId);
+    for (const vocabId of allVocabIds) {
+      const vocab = vocabById.get(vocabId);
       if (!vocab) continue;
+
+      const status = statusByVocabId.get(vocabId) ?? ProgressStatus.NEW;
 
       const built = await this.questionBuilder.build({
         vocab,
-        status: progress.status,
+        status,
         translationLang,
         daySeed,
       });
@@ -130,7 +136,16 @@ export class LearnService {
       });
     }
 
-    return { sessionId: randomUUID(), items };
+    const emptyReason: SessionEmptyReason | null =
+      items.length === 0 ? (picked.emptyReason ?? 'no_due_cards') : null;
+
+    return {
+      sessionId: randomUUID(),
+      mode: dto.mode,
+      enrolledNewlyCount,
+      emptyReason,
+      items,
+    };
   }
 
   async submitAnswer(
@@ -138,7 +153,6 @@ export class LearnService {
     dto: SubmitAnswerDto,
   ): Promise<AnswerResultDto> {
     const translationLang = dto.translationLang ?? null;
-    // 1) HMAC verify (throws UnauthorizedException on tamper/expiry)
     this.signer.verify(
       {
         userId,
@@ -152,7 +166,6 @@ export class LearnService {
       dto.signature,
     );
 
-    // 2) Load vocab with senses/examples/translations for grading
     const vocab = await this.vocabRepo
       .createQueryBuilder('vocab')
       .where('vocab.id = :id', { id: dto.vocabularyId })
@@ -166,11 +179,9 @@ export class LearnService {
     }
     const example = findExample(vocab, dto.exampleId);
     if (!example.example) {
-      // exampleId belongs to a different vocab — treat as tamper attempt
       throw new UnauthorizedException('invalid example for vocabulary');
     }
 
-    // 3) Grade
     const result = this.grader.grade({
       type: dto.type,
       vocab,
@@ -181,7 +192,6 @@ export class LearnService {
       latencyMs: dto.latencyMs,
     });
 
-    // 4) Feed SM-2 via existing ProgressService.submitReview
     const progress = await this.progressService.submitReview(userId, {
       vocabularyId: dto.vocabularyId,
       quality: result.quality,
@@ -193,6 +203,47 @@ export class LearnService {
       quality: result.quality,
       progress,
     };
+  }
+
+  // ------------------- internals -------------------
+
+  private dispatchPicker(
+    user: User,
+    dto: CreateSessionDto,
+    limit: number,
+  ): Promise<PickResult> {
+    switch (dto.mode) {
+      case LearnSessionMode.DAILY:
+        return this.picker.pickDaily(user, limit);
+      case LearnSessionMode.TOPIC:
+        return this.picker.pickByTopic(user, dto.topicSlug!, limit);
+      case LearnSessionMode.DECK:
+        return this.picker.pickByDeck(user, dto.deckId!, limit);
+      case LearnSessionMode.REVIEW:
+        return this.picker.pickReview(user, limit);
+    }
+  }
+
+  private async loadVocabTree(
+    vocabIds: string[],
+    translationLang: string | null,
+  ): Promise<Vocabulary[]> {
+    const qb = this.vocabRepo
+      .createQueryBuilder('vocab')
+      .whereInIds(vocabIds)
+      .leftJoinAndSelect('vocab.senses', 'senses')
+      .leftJoinAndSelect('senses.examples', 'examples');
+    if (translationLang) {
+      qb.leftJoinAndSelect(
+        'senses.translations',
+        'translations',
+        'translations.language = :translationLang',
+        { translationLang },
+      );
+    } else {
+      qb.leftJoinAndSelect('senses.translations', 'translations');
+    }
+    return qb.addOrderBy('senses.sense_order', 'ASC').getMany();
   }
 }
 

@@ -675,25 +675,49 @@ Context-anchored learning sessions. The server picks due cards, generates one qu
 **Type selection** is driven by SRS status: `new`/`learning` → recognition (`cloze_mcq`, `meaning_in_context`); `review` → production (`cloze_typing`, `sentence_build`); `mastered` → `sentence_build` or `sense_disambiguation`. `listening_cloze` is substituted in when audio is available. Types requiring extra data (multiple senses, translation language) are skipped silently if the card lacks it.
 
 ### `POST /v1/me/learn/session`
-Build a session of N questions from the caller's due cards. Stateless — no server-side session row is created; the `sessionId` is purely a client-side correlation id.
+Build a session of N questions for a chosen learning mode. The server's vocab picker selects suitable vocab per mode and, for `daily/topic/deck`, auto-enrolls fresh words into the caller's progress as a side effect (count returned in `enrolledNewlyCount`). `daily` and `topic` require onboarding to be complete; otherwise the server returns `400`.
+
+**Modes**
+
+| `mode` | What it picks | Fresh auto-enrolled? | Required body fields |
+|---|---|---|---|
+| `daily` | All due cards first, then top up with CEFR-matched fresh vocab in the user's `targetLanguage` (±1 band, sorted by `frequency_rank`) | Yes | `mode` |
+| `topic` | Due + fresh vocab tagged with `topicSlug` at the user's CEFR ±1, in `targetLanguage`. Includes the user's own (`source='user'`) vocab tagged with the topic. | Yes | `mode`, `topicSlug` |
+| `deck` | Due deck-member cards first, then fresh deck members (in deck position order) | Yes | `mode`, `deckId` |
+| `review` | Only already-enrolled, currently-due cards, excluding `status=new` — pure consolidation | **No** | `mode` |
 
 **Request body**
 
 ```json
 {
-  "deckId": "8c1f7d34-...",
+  "mode": "daily",
   "limit": 15,
   "translationLang": "vi"
 }
 ```
 
-All three fields are optional. `limit` is clamped to `[1, 50]` (default 15). `deckId` restricts the due queue to one deck; omit for the global due queue. `translationLang` enables the styles that need a target-language translation (`meaning_in_context`, `sentence_build`, `sense_disambiguation`) and provides `hintTranslation` for cloze styles.
+```json
+{ "mode": "topic", "topicSlug": "food", "limit": 10, "translationLang": "vi" }
+```
+
+```json
+{ "mode": "deck", "deckId": "8c1f7d34-...", "limit": 20, "translationLang": "vi" }
+```
+
+```json
+{ "mode": "review", "limit": 15, "translationLang": "vi" }
+```
+
+`mode` is required. `topicSlug` is required iff `mode=topic`; `deckId` is required iff `mode=deck`. `limit` is clamped to `[1, 50]` (default 15). `translationLang` enables styles that need a target-language translation (`meaning_in_context`, `sentence_build`, `sense_disambiguation`) and provides `hintTranslation` for cloze styles.
 
 **Response 200**
 
 ```json
 {
   "sessionId": "f3c8a212-7e0b-4b27-9a8e-7e1c1c1d8a2e",
+  "mode": "daily",
+  "enrolledNewlyCount": 7,
+  "emptyReason": null,
   "items": [
     {
       "sessionItemId": "0c2b9f1a-...",
@@ -716,7 +740,20 @@ All three fields are optional. `limit` is clamped to `[1, 50]` (default 15). `de
 }
 ```
 
-Returns `items: []` if nothing is due. Each item has an envelope (`sessionItemId`, `vocabularyId`, `lemma`, `exampleId`, `type`, `nonce`, `issuedAtMs`, `signature`) plus a typed `prompt`. **Echo `nonce`, `issuedAtMs`, `signature` verbatim** in the answer payload — they prove the item was issued to this user for this card.
+Each item has an envelope (`sessionItemId`, `vocabularyId`, `lemma`, `exampleId`, `type`, `nonce`, `issuedAtMs`, `signature`) plus a typed `prompt`. **Echo `nonce`, `issuedAtMs`, `signature` verbatim** in the answer payload — they prove the item was issued to this user for this card.
+
+#### Empty response (`items: []`)
+
+When the picker finds nothing to learn, `items: []` is returned **with a populated `emptyReason`**:
+
+| `emptyReason` | When | Recommended frontend action |
+|---|---|---|
+| `no_due_cards` | `mode=review` and the user has progress rows but no card is currently due | Show "All caught up — come back later" |
+| `no_enrollment` | `mode=review` and the user has zero progress rows (never enrolled anything) | Suggest switching to Daily / Topic / Deck mode |
+| `no_more_at_level` | `mode=daily` or `mode=topic` and there's no due card AND no fresh vocab matches the user's `targetLanguage + CEFR ±1` filter (and topic, for topic mode) | Suggest a different topic or wider CEFR; for daily, the user has likely consumed the catalog at their level |
+| `deck_exhausted` | `mode=deck` and every member of the deck is already-enrolled-and-not-yet-due (deck is fully on-schedule) | Show "Deck mastered for now — review later" |
+
+`emptyReason` is always `null` when `items[]` has at least one element.
 
 #### `prompt` shapes by type
 
