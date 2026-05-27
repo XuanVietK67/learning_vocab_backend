@@ -10,6 +10,7 @@ import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
+import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
@@ -35,6 +36,17 @@ interface ExampleSeed {
   source?: string | null;
 }
 
+interface SenseSeed {
+  gloss?: string | null;
+  definition?: string | null;
+  imageUrl?: string | null;
+  translations?: TranslationSeed[];
+  examples?: ExampleSeed[];
+}
+
+// JSON seeds may use either the new `senses[]` shape or the legacy flat shape
+// (translations/examples/imageUrl at the top level). Flat shape is normalized
+// into a single sense at load time.
 interface VocabularySeed {
   language: string;
   lemma: string;
@@ -43,8 +55,10 @@ interface VocabularySeed {
   cefrLevel?: ProficiencyLevel | null;
   frequencyRank?: number | null;
   audioUrl?: string | null;
-  imageUrl?: string | null;
   topics?: string[];
+  senses?: SenseSeed[];
+  // Legacy flat-shape fallbacks:
+  imageUrl?: string | null;
   translations?: TranslationSeed[];
   examples?: ExampleSeed[];
 }
@@ -66,6 +80,19 @@ interface DeckSeed {
 function loadJson<T>(file: string): T {
   const path = join(__dirname, 'data', file);
   return JSON.parse(readFileSync(path, 'utf8')) as T;
+}
+
+function normalizeSenses(seed: VocabularySeed): SenseSeed[] {
+  if (seed.senses && seed.senses.length > 0) return seed.senses;
+  return [
+    {
+      gloss: null,
+      definition: null,
+      imageUrl: seed.imageUrl ?? null,
+      translations: seed.translations ?? [],
+      examples: seed.examples ?? [],
+    },
+  ];
 }
 
 async function seedTopics(): Promise<Map<string, string>> {
@@ -99,12 +126,14 @@ async function seedVocabularies(
   topicSlugToId: Map<string, string>,
 ): Promise<Map<string, string>> {
   const vocabRepo = dataSource.getRepository(Vocabulary);
+  const senseRepo = dataSource.getRepository(VocabularySense);
   const translationRepo = dataSource.getRepository(VocabularyTranslation);
   const exampleRepo = dataSource.getRepository(VocabularyExample);
   const vtRepo = dataSource.getRepository(VocabularyTopic);
 
   const seeds = loadJson<VocabularySeed[]>('vocabularies.json');
   const keyToId = new Map<string, string>();
+  let sensesAdded = 0;
   let translationsAdded = 0;
   let examplesAdded = 0;
   let topicLinks = 0;
@@ -127,7 +156,6 @@ async function seedVocabularies(
       cefrLevel: seed.cefrLevel ?? null,
       frequencyRank: seed.frequencyRank ?? null,
       audioUrl: seed.audioUrl ?? null,
-      imageUrl: seed.imageUrl ?? null,
       source: VocabularySource.SYSTEM,
       createdByUserId: null,
       visibility: Visibility.SYSTEM,
@@ -145,41 +173,71 @@ async function seedVocabularies(
       vocab.id,
     );
 
-    for (const tr of seed.translations ?? []) {
-      const existing = await translationRepo.findOne({
-        where: {
-          vocabularyId: vocab.id,
-          language: tr.language,
-          translation: tr.translation,
-        },
-      });
-      if (!existing) {
-        await translationRepo.save(
-          translationRepo.create({
+    const senseSeeds = normalizeSenses(seed);
+    const existingSenses = await senseRepo.find({
+      where: { vocabularyId: vocab.id },
+      order: { senseOrder: 'ASC' },
+    });
+    const byOrder = new Map(existingSenses.map((s) => [s.senseOrder, s]));
+
+    for (let i = 0; i < senseSeeds.length; i++) {
+      const sd = senseSeeds[i];
+      const senseOrder = i + 1;
+      let sense = byOrder.get(senseOrder);
+      if (sense) {
+        sense.gloss = sd.gloss ?? sense.gloss;
+        sense.definition = sd.definition ?? sense.definition;
+        sense.imageUrl = sd.imageUrl ?? sense.imageUrl;
+        sense = await senseRepo.save(sense);
+      } else {
+        sense = await senseRepo.save(
+          senseRepo.create({
             vocabularyId: vocab.id,
-            language: tr.language,
-            translation: tr.translation,
-            note: tr.note ?? null,
+            senseOrder,
+            gloss: sd.gloss ?? null,
+            definition: sd.definition ?? null,
+            imageUrl: sd.imageUrl ?? null,
           }),
         );
-        translationsAdded++;
+        sensesAdded++;
       }
-    }
 
-    const existingExamples = await exampleRepo.count({
-      where: { vocabularyId: vocab.id },
-    });
-    if (existingExamples === 0 && (seed.examples?.length ?? 0) > 0) {
-      const created = (seed.examples ?? []).map((e) =>
-        exampleRepo.create({
-          vocabularyId: vocab.id,
-          sentence: e.sentence,
-          translation: e.translation ?? null,
-          source: e.source ?? 'manual',
-        }),
-      );
-      await exampleRepo.save(created);
-      examplesAdded += created.length;
+      for (const tr of sd.translations ?? []) {
+        const existing = await translationRepo.findOne({
+          where: {
+            senseId: sense.id,
+            language: tr.language,
+            translation: tr.translation,
+          },
+        });
+        if (!existing) {
+          await translationRepo.save(
+            translationRepo.create({
+              senseId: sense.id,
+              language: tr.language,
+              translation: tr.translation,
+              note: tr.note ?? null,
+            }),
+          );
+          translationsAdded++;
+        }
+      }
+
+      const existingExamples = await exampleRepo.count({
+        where: { senseId: sense.id },
+      });
+      if (existingExamples === 0 && (sd.examples?.length ?? 0) > 0) {
+        const created = (sd.examples ?? []).map((e) =>
+          exampleRepo.create({
+            senseId: sense.id,
+            sentence: e.sentence,
+            translation: e.translation ?? null,
+            source: e.source ?? 'manual',
+          }),
+        );
+        await exampleRepo.save(created);
+        examplesAdded += created.length;
+      }
     }
 
     for (const slug of seed.topics ?? []) {
@@ -200,7 +258,7 @@ async function seedVocabularies(
   }
 
   console.log(
-    `  vocabularies: upserted ${seeds.length}, +${translationsAdded} translations, +${examplesAdded} examples, +${topicLinks} topic links`,
+    `  vocabularies: upserted ${seeds.length}, +${sensesAdded} senses, +${translationsAdded} translations, +${examplesAdded} examples, +${topicLinks} topic links`,
   );
   return keyToId;
 }

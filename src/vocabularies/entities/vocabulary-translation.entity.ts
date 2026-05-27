@@ -8,11 +8,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 
 @Index(
-  'UQ_vocabulary_translations_vocab_lang_translation',
-  ['vocabularyId', 'language', 'translation'],
+  'UQ_vocabulary_translations_sense_lang_translation',
+  ['senseId', 'language', 'translation'],
   { unique: true },
 )
 @Entity('vocabulary_translations')
@@ -20,15 +20,15 @@ export class VocabularyTranslation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'vocabulary_id', type: 'uuid' })
-  vocabularyId!: string;
+  @Column({ name: 'sense_id', type: 'uuid' })
+  senseId!: string;
 
-  @ManyToOne(() => Vocabulary, (vocab) => vocab.translations, {
+  @ManyToOne(() => VocabularySense, (sense) => sense.translations, {
     onDelete: 'CASCADE',
     nullable: false,
   })
-  @JoinColumn({ name: 'vocabulary_id' })
-  vocabulary!: Vocabulary;
+  @JoinColumn({ name: 'sense_id' })
+  sense!: VocabularySense;
 
   @Column({ type: 'varchar', length: 8 })
   language!: string;

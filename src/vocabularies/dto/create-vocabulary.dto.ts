@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsEnum,
   IsInt,
@@ -51,6 +52,37 @@ export class CreateExampleDto {
   source?: string;
 }
 
+export class CreateSenseDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 128)
+  gloss?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  definition?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 512)
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(16)
+  @ValidateNested({ each: true })
+  @Type(() => CreateTranslationDto)
+  translations?: CreateTranslationDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(16)
+  @ValidateNested({ each: true })
+  @Type(() => CreateExampleDto)
+  examples?: CreateExampleDto[];
+}
+
 export class CreateVocabularyDto {
   @IsString()
   @Length(2, 8)
@@ -90,11 +122,6 @@ export class CreateVocabularyDto {
   audioUrl?: string;
 
   @IsOptional()
-  @IsString()
-  @Length(1, 512)
-  imageUrl?: string;
-
-  @IsOptional()
   @IsArray()
   @ArrayMaxSize(32)
   @IsString({ each: true })
@@ -104,17 +131,10 @@ export class CreateVocabularyDto {
   })
   topics?: string[];
 
-  @IsOptional()
   @IsArray()
+  @ArrayMinSize(1)
   @ArrayMaxSize(16)
   @ValidateNested({ each: true })
-  @Type(() => CreateTranslationDto)
-  translations?: CreateTranslationDto[];
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(16)
-  @ValidateNested({ each: true })
-  @Type(() => CreateExampleDto)
-  examples?: CreateExampleDto[];
+  @Type(() => CreateSenseDto)
+  senses!: CreateSenseDto[];
 }

@@ -8,23 +8,23 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 
 @Entity('vocabulary_examples')
 export class VocabularyExample {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Index('IDX_vocabulary_examples_vocabulary_id')
-  @Column({ name: 'vocabulary_id', type: 'uuid' })
-  vocabularyId!: string;
+  @Index('IDX_vocabulary_examples_sense_id')
+  @Column({ name: 'sense_id', type: 'uuid' })
+  senseId!: string;
 
-  @ManyToOne(() => Vocabulary, (vocab) => vocab.examples, {
+  @ManyToOne(() => VocabularySense, (sense) => sense.examples, {
     onDelete: 'CASCADE',
     nullable: false,
   })
-  @JoinColumn({ name: 'vocabulary_id' })
-  vocabulary!: Vocabulary;
+  @JoinColumn({ name: 'sense_id' })
+  sense!: VocabularySense;
 
   @Column({ type: 'text' })
   sentence!: string;

@@ -240,22 +240,25 @@ export class DecksService {
   ): Promise<DeckDetailResponseDto> {
     const dvQb = this.deckVocabRepo
       .createQueryBuilder('dv')
-      .leftJoinAndSelect('dv.vocabulary', 'vocab');
+      .leftJoinAndSelect('dv.vocabulary', 'vocab')
+      .leftJoinAndSelect('vocab.senses', 'senses')
+      .leftJoinAndSelect('senses.examples', 'examples');
 
     if (translationLang) {
       dvQb.leftJoinAndSelect(
-        'vocab.translations',
+        'senses.translations',
         'translations',
         'translations.language = :translationLang',
         { translationLang },
       );
     } else {
-      dvQb.leftJoinAndSelect('vocab.translations', 'translations');
+      dvQb.leftJoinAndSelect('senses.translations', 'translations');
     }
 
     const members = await dvQb
       .where('dv.deck_id = :deckId', { deckId: deck.id })
       .orderBy('dv.position', 'ASC')
+      .addOrderBy('senses.sense_order', 'ASC')
       .getMany();
 
     const vocabularies = members.map((m) => m.vocabulary);

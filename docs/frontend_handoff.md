@@ -235,16 +235,38 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
     {
       "id": "c2a1...",
       "language": "en",
-      "lemma": "apple",
-      "partOfSpeech": "noun",
-      "ipa": "/ˈæp.əl/",
-      "cefrLevel": "A1",
-      "frequencyRank": 1234,
-      "audioUrl": "https://.../apple.mp3",
-      "imageUrl": null,
+      "lemma": "study",
+      "partOfSpeech": "verb",
+      "ipa": "/ˈstʌd.i/",
+      "cefrLevel": "A2",
+      "frequencyRank": 412,
+      "audioUrl": "https://.../study-v.mp3",
       "source": "system",
-      "translations": [
-        { "id": "...", "language": "vi", "translation": "quả táo", "note": null }
+      "senses": [
+        {
+          "id": "s-001",
+          "senseOrder": 1,
+          "gloss": "to learn for school/exam",
+          "definition": "spend time learning a subject, especially for a test",
+          "imageUrl": "https://.../study-learn.jpg",
+          "translations": [
+            { "id": "t-001", "language": "vi", "translation": "học, học tập", "note": null }
+          ],
+          "examples": [
+            { "id": "e-001", "sentence": "She studies biology at university.", "translation": "Cô ấy học sinh học ở trường đại học.", "source": "oxford" }
+          ]
+        },
+        {
+          "id": "s-002",
+          "senseOrder": 2,
+          "gloss": "to examine carefully",
+          "definition": null,
+          "imageUrl": null,
+          "translations": [
+            { "id": "t-002", "language": "vi", "translation": "nghiên cứu, xem xét kỹ", "note": null }
+          ],
+          "examples": []
+        }
       ]
     }
   ],
@@ -254,31 +276,14 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
 }
 ```
 
+A `Vocabulary` always carries one or more **senses** (distinct meanings). `translations[]` and `examples[]` live **inside** a sense — the top-level vocabulary no longer exposes them. Different senses can carry different `imageUrl` values; `audioUrl` lives on the vocabulary (pronunciation is shared across senses). Senses are returned ordered by `senseOrder ASC`.
+
 ### `GET /v1/vocabularies/:id`
-Fetch one vocabulary with its `examples[]` and `translations[]`. No auth.
+Fetch one vocabulary with all of its senses, translations, and examples. No auth.
 
-**Query**: `translationLang` (optional).
+**Query**: `translationLang` (optional — when set, filters translations inside every sense to that language).
 
-**Response 200**: a single `Vocabulary` object (same fields as `data[]` above, plus `examples[]`).
-
-```json
-{
-  "id": "c2a1...",
-  "language": "en",
-  "lemma": "apple",
-  "partOfSpeech": "noun",
-  "ipa": "/ˈæp.əl/",
-  "cefrLevel": "A1",
-  "frequencyRank": 1234,
-  "audioUrl": null,
-  "imageUrl": null,
-  "source": "system",
-  "translations": [ /* … */ ],
-  "examples": [
-    { "id": "…", "sentence": "I ate an apple.", "translation": "Tôi đã ăn một quả táo.", "source": null }
-  ]
-}
-```
+**Response 200**: a single `Vocabulary` object (same shape as `data[]` above).
 
 ---
 
@@ -287,7 +292,7 @@ Fetch one vocabulary with its `examples[]` and `translations[]`. No auth.
 The caller's own (`source = 'user'`, `visibility = 'private'`) words. All endpoints require JWT; cross-user access → `403`.
 
 ### `POST /v1/me/vocabularies`
-Create a personal word with optional nested translations, examples, and topic links (topic slugs must already exist).
+Create a personal word with one or more senses (meanings). Each sense carries its own translations, examples, and optional image. `topics[]` and `audioUrl` live at the vocabulary level. Topic slugs must already exist.
 
 **Request body**
 
@@ -299,16 +304,24 @@ Create a personal word with optional nested translations, examples, and topic li
   "ipa": "/ˌser.ənˈdɪp.ə.ti/",
   "cefrLevel": "C1",
   "audioUrl": null,
-  "imageUrl": null,
   "topics": ["abstract-ideas"],
-  "translations": [
-    { "language": "vi", "translation": "sự tình cờ may mắn" }
-  ],
-  "examples": [
-    { "sentence": "Meeting her was pure serendipity." }
+  "senses": [
+    {
+      "gloss": "fortunate accident",
+      "definition": "the occurrence of events by chance in a happy or beneficial way",
+      "imageUrl": null,
+      "translations": [
+        { "language": "vi", "translation": "sự tình cờ may mắn" }
+      ],
+      "examples": [
+        { "sentence": "Meeting her was pure serendipity." }
+      ]
+    }
   ]
 }
 ```
+
+- `senses`: required, 1–16 items. Each sense is `{ gloss?, definition?, imageUrl?, translations?[], examples?[] }`. Order in the request becomes `senseOrder` (1-indexed).
 
 **Response 201**: `Vocabulary` object. **409** if you already own `(language, lemma, partOfSpeech)`.
 
@@ -320,10 +333,10 @@ List your own vocabularies, newest first.
 **Response 200**: paginated `Vocabulary` list.
 
 ### `GET /v1/me/vocabularies/:id`
-**Query**: `translationLang`. **Response 200**: `Vocabulary` with `examples[]` and `translations[]`. **403** if not the owner.
+**Query**: `translationLang`. **Response 200**: `Vocabulary` with its `senses[]` (each containing `translations[]` and `examples[]`). **403** if not the owner.
 
 ### `PATCH /v1/me/vocabularies/:id`
-Partial update of top-level fields only (`language`, `lemma`, `partOfSpeech`, `ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`, `imageUrl`). Translations/examples/topics are not patched here.
+Partial update of top-level fields only (`language`, `lemma`, `partOfSpeech`, `ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`). Senses, translations, examples, and topic links are not patched here — re-create the vocabulary or use dedicated mutation paths once they exist.
 
 **Response 200**: updated `Vocabulary`.
 
@@ -340,14 +353,25 @@ Requires JWT **and** `role = 'admin'` (`403` otherwise).
 Body identical to `POST /v1/me/vocabularies`, but `source` is `'system'` on the resulting row. **409** on duplicate natural key — use bulk-import for upsert semantics.
 
 ### `POST /v1/admin/vocabularies/bulk-import`
-Idempotent upsert of up to 500 items in one transaction.
+Idempotent upsert of up to 500 items in one transaction. Each item carries the full sense tree (same shape as `POST /v1/me/vocabularies`).
 
 **Request body**
 
 ```json
 {
   "items": [
-    { "language": "en", "lemma": "apple", "partOfSpeech": "noun", "translations": [ /* … */ ] }
+    {
+      "language": "en",
+      "lemma": "apple",
+      "partOfSpeech": "noun",
+      "senses": [
+        {
+          "gloss": "fruit",
+          "translations": [ { "language": "vi", "translation": "quả táo" } ],
+          "examples": [ { "sentence": "I ate an apple." } ]
+        }
+      ]
+    }
   ]
 }
 ```
@@ -359,11 +383,14 @@ Idempotent upsert of up to 500 items in one transaction.
   "upserted": 500,
   "inserted": 320,
   "updated": 180,
+  "sensesAdded": 540,
   "translationsAdded": 412,
   "examplesAdded": 87,
   "topicLinksAdded": 245
 }
 ```
+
+Upsert semantics for senses: existing senses are matched by `senseOrder` (1-indexed by position in the request). Existing positions are patched in place; new positions are inserted. Translations are matched by `(language, translation)` within a sense and inserted if missing. Examples are append-only and only inserted when the target sense had none beforehand.
 
 ### `PATCH /v1/admin/vocabularies/:id`
 Same partial-update semantics as the user endpoint. Returns the updated `Vocabulary`.
@@ -579,7 +606,7 @@ Fetch due cards (`nextReviewAt <= now`), oldest-due first.
     "lastReviewedAt": "2026-05-25T07:00:00.000Z",
     "correctCount": 1,
     "incorrectCount": 0,
-    "vocabulary": { /* full Vocabulary with translations */ }
+    "vocabulary": { /* full Vocabulary with senses[] → translations[] + examples[] */ }
   }
 ]
 ```

@@ -20,6 +20,7 @@ export class BulkImportSummaryDto {
   upserted!: number;
   inserted!: number;
   updated!: number;
+  sensesAdded!: number;
   translationsAdded!: number;
   examplesAdded!: number;
   topicLinksAdded!: number;
