@@ -63,8 +63,8 @@ Public read access to the curated system vocabulary catalog. User-created words 
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/vocabularies` | none | List system vocabulary, ordered by frequency rank then lemma. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `translationLang` (filters nested translations), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with the full sense tree (`senses[].translations[]`, `senses[].examples[]`) inlined. |
-| GET | `/v1/vocabularies/:id` | none | Fetch a single vocabulary by UUID with all of its senses, each containing its own translations and examples. Query: `translationLang` to restrict translations to one language. |
+| GET | `/v1/vocabularies` | none | List system vocabulary, ordered by frequency rank then lemma. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `translationLang` (filters nested translations), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with the full sense tree (`senses[].translations[]`, `senses[].examples[]`) and the vocab's `topics[]` (sorted by slug) inlined. |
+| GET | `/v1/vocabularies/:id` | none | Fetch a single vocabulary by UUID with all of its senses (each containing its own translations and examples) and its `topics[]` (sorted by slug). Query: `translationLang` to restrict translations to one language. |
 
 ## My Vocabularies — `/v1/me/vocabularies`
 
@@ -75,8 +75,8 @@ User-created (`source = 'user'`) words owned by the authenticated caller. Privat
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/v1/me/vocabularies` | JWT | Create a personal vocabulary. Body carries one or more `senses[]`, each with its own translations, examples, and `imageUrl`. Topic slugs (vocab-level) must already exist in the system catalog. Returns 409 if the caller already has a word for `(language, lemma, partOfSpeech)`. |
-| GET | `/v1/me/vocabularies` | JWT | List the caller's own vocabularies, newest first. Query: `language`, `q` (lemma prefix), `translationLang`, `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with senses inlined. |
-| GET | `/v1/me/vocabularies/:id` | JWT | Fetch one of the caller's vocabularies with all of its senses (each with translations and examples). Query: `translationLang`. 403 if the row exists but isn't owned by the caller. |
+| GET | `/v1/me/vocabularies` | JWT | List the caller's own vocabularies, newest first. Query: `language`, `q` (lemma prefix), `translationLang`, `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with senses and `topics[]` (sorted by slug) inlined. |
+| GET | `/v1/me/vocabularies/:id` | JWT | Fetch one of the caller's vocabularies with all of its senses (each with translations and examples) and its `topics[]`. Query: `translationLang`. 403 if the row exists but isn't owned by the caller. |
 | PATCH | `/v1/me/vocabularies/:id` | JWT | Partial update of top-level fields. Senses, translations, examples, and topic links are not patched here. |
 | DELETE | `/v1/me/vocabularies/:id` | JWT | Hard-delete the caller's vocabulary. Cascades to its translations, examples, topic links, deck memberships, and progress rows. Returns 204. |
 
@@ -88,7 +88,7 @@ Write surface for the curated system catalog. All endpoints require JWT auth **a
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/admin/vocabularies` | JWT (admin) | List the **entire** vocabulary table (system + user) with admin-only fields (`visibility`, `isApproved`, `createdByUserId`, `createdAt`, `updatedAt`) inlined. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `source` (`system`/`user`), `isApproved` (`true`/`false`; empty = no filter), `visibility` (`system`/`private`/`public`), `createdByUserId` (uuid), `translationLang`, `sortBy` (`createdAt` default \| `frequencyRank`), `sortDir` (`asc` default \| `desc`), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with the full sense tree inlined. |
+| GET | `/v1/admin/vocabularies` | JWT (admin) | List the **entire** vocabulary table (system + user) with admin-only fields (`visibility`, `isApproved`, `createdByUserId`, `createdAt`, `updatedAt`) inlined. Query: `language`, `cefrLevel` (A1–C2), `topic` (slug), `q` (lemma prefix), `source` (`system`/`user`), `isApproved` (`true`/`false`; empty = no filter), `visibility` (`system`/`private`/`public`), `createdByUserId` (uuid), `translationLang`, `sortBy` (`createdAt` default \| `frequencyRank`), `sortDir` (`asc` default \| `desc`), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with the full sense tree and `topics[]` (sorted by slug) inlined. |
 | POST | `/v1/admin/vocabularies` | JWT (admin) | Create one system vocabulary. Body carries one or more `senses[]` (each with translations, examples, and per-sense `imageUrl`) plus vocab-level topic links by slug. Returns 409 if `(language, lemma, partOfSpeech)` already exists — use bulk-import for upsert semantics. |
 | POST | `/v1/admin/vocabularies/bulk-import` | JWT (admin) | Idempotent upsert of up to 500 vocabularies in one transaction. Body: `{ items: CreateVocabularyDto[] }`. Returns summary `{ upserted, inserted, updated, sensesAdded, translationsAdded, examplesAdded, topicLinksAdded }`. Senses match by `senseOrder` (request position); translations match by `(language, translation)` within a sense; examples are append-only. Topic slugs must already exist. |
 | PATCH | `/v1/admin/vocabularies/:id` | JWT (admin) | Partial update of top-level fields only (`ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`, and the natural-key fields). Senses, translations, examples, and topic links are not patched here — use bulk-import or DELETE + POST. |

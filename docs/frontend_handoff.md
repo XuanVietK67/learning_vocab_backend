@@ -320,6 +320,9 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
           ],
           "examples": []
         }
+      ],
+      "topics": [
+        { "id": "tp-001", "slug": "education", "name": "Education", "description": null, "iconUrl": null }
       ]
     }
   ],
@@ -329,7 +332,7 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
 }
 ```
 
-A `Vocabulary` always carries one or more **senses** (distinct meanings). `translations[]` and `examples[]` live **inside** a sense — the top-level vocabulary no longer exposes them. Different senses can carry different `imageUrl` values; `audioUrl` lives on the vocabulary (pronunciation is shared across senses). Senses are returned ordered by `senseOrder ASC`.
+A `Vocabulary` always carries one or more **senses** (distinct meanings). `translations[]` and `examples[]` live **inside** a sense — the top-level vocabulary no longer exposes them. Different senses can carry different `imageUrl` values; `audioUrl` lives on the vocabulary (pronunciation is shared across senses). Senses are returned ordered by `senseOrder ASC`. The top-level `topics[]` (sorted by slug) lists every topic linked to the vocabulary via `vocabulary_topics`; it is `[]` when the word has no topics. Each entry matches the `Topic` shape from `/v1/topics`.
 
 ### `GET /v1/vocabularies/:id`
 Fetch one vocabulary with all of its senses, translations, and examples. No auth.
@@ -457,6 +460,9 @@ Lists the entire `vocabularies` table (system + user-created) with admin-only fi
             { "id": "…", "sentence": "I ate an apple.", "translation": null, "source": "manual" }
           ]
         }
+      ],
+      "topics": [
+        { "id": "tp-002", "slug": "food", "name": "Food", "description": null, "iconUrl": null }
       ]
     }
   ],

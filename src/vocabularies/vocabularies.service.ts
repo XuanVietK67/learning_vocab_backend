@@ -769,7 +769,9 @@ export class VocabulariesService {
       .createQueryBuilder('vocab')
       .whereInIds(ids)
       .leftJoinAndSelect('vocab.senses', 'senses')
-      .leftJoinAndSelect('senses.examples', 'examples');
+      .leftJoinAndSelect('senses.examples', 'examples')
+      .leftJoinAndSelect('vocab.vocabularyTopics', 'vocabularyTopics')
+      .leftJoinAndSelect('vocabularyTopics.topic', 'topic');
 
     if (translationLang) {
       qb.leftJoinAndSelect(
@@ -782,7 +784,17 @@ export class VocabulariesService {
       qb.leftJoinAndSelect('senses.translations', 'translations');
     }
 
-    return qb.addOrderBy('senses.sense_order', 'ASC').getMany();
+    const vocabs = await qb.addOrderBy('senses.sense_order', 'ASC').getMany();
+
+    for (const v of vocabs) {
+      const topics = (v.vocabularyTopics ?? [])
+        .map((vt) => vt.topic)
+        .filter((t): t is Topic => t !== null && t !== undefined)
+        .sort((a, b) => a.slug.localeCompare(b.slug));
+      (v as Vocabulary & { topics: Topic[] }).topics = topics;
+    }
+
+    return vocabs;
   }
 
   private async assertOwnedByUser(

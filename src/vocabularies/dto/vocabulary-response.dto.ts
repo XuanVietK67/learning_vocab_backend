@@ -1,4 +1,5 @@
 import { Expose, Type } from 'class-transformer';
+import { TopicResponseDto } from '@/topics/dto/topic-response.dto';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
@@ -47,6 +48,10 @@ export class VocabularyResponseDto {
   @Expose()
   @Type(() => VocabularySenseResponseDto)
   senses?: VocabularySenseResponseDto[];
+
+  @Expose()
+  @Type(() => TopicResponseDto)
+  topics?: TopicResponseDto[];
 }
 
 export class PaginatedVocabulariesResponseDto {
