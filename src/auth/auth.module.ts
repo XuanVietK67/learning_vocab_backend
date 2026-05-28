@@ -6,8 +6,10 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from '@/auth/auth.controller';
 import { AuthService } from '@/auth/auth.service';
+import { EmailVerificationCode } from '@/auth/entities/email-verification-code.entity';
 import { RefreshToken } from '@/auth/entities/refresh-token.entity';
 import { AppleService } from '@/auth/services/apple.service';
+import { EmailVerificationService } from '@/auth/services/email-verification.service';
 import { GithubService } from '@/auth/services/github.service';
 import { GoogleService } from '@/auth/services/google.service';
 import { TokenService } from '@/auth/services/token.service';
@@ -18,7 +20,7 @@ import { UsersModule } from '@/users/users.module';
   imports: [
     UsersModule,
     PassportModule,
-    TypeOrmModule.forFeature([RefreshToken]),
+    TypeOrmModule.forFeature([RefreshToken, EmailVerificationCode]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -51,6 +53,7 @@ import { UsersModule } from '@/users/users.module';
     GoogleService,
     AppleService,
     GithubService,
+    EmailVerificationService,
   ],
 })
 export class AuthModule {}

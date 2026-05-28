@@ -6,9 +6,11 @@ import { AppService } from './app.service';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import learnConfig from './config/learn.config';
+import mailConfig from './config/mail.config';
 import { AuthModule } from './auth/auth.module';
 import { DecksModule } from './decks/decks.module';
 import { LearnModule } from './learn/learn.module';
+import { MailerModule } from './mailer/mailer.module';
 import { ProgressModule } from './progress/progress.module';
 import { TopicsModule } from './topics/topics.module';
 import { UsersModule } from './users/users.module';
@@ -18,7 +20,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, authConfig, learnConfig],
+      load: [databaseConfig, authConfig, learnConfig, mailConfig],
       envFilePath: ['.env'],
     }),
     TypeOrmModule.forRootAsync({
@@ -34,6 +36,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         synchronize: false,
       }),
     }),
+    MailerModule,
     UsersModule,
     AuthModule,
     VocabulariesModule,

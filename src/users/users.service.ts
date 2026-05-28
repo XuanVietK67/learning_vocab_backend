@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,7 +12,7 @@ import { Repository } from 'typeorm';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { AuthProvider, UserIdentity } from './entities/user-identity.entity';
-import { User } from './entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -122,6 +123,21 @@ export class UsersService {
   async verifyPassword(user: User, password: string): Promise<boolean> {
     if (!user.passwordHash) return false;
     return bcrypt.compare(password, user.passwordHash);
+  }
+
+  async markEmailVerified(userId: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (user.isEmailVerified) return user;
+    user.isEmailVerified = true;
+    return this.usersRepo.save(user);
+  }
+
+  async deleteAsAdmin(userId: string): Promise<void> {
+    const user = await this.findById(userId);
+    if (user.role === UserRole.ADMIN) {
+      throw new ForbiddenException('cannot delete an admin account');
+    }
+    await this.usersRepo.delete({ id: userId });
   }
 
   async updateProfile(

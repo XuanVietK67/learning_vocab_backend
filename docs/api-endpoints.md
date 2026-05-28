@@ -31,6 +31,8 @@ Source: [src/auth/auth.controller.ts](../src/auth/auth.controller.ts)
 | POST | `/v1/auth/apple` | none | Sign in / sign up using an Apple ID token. |
 | POST | `/v1/auth/github` | none | Sign in / sign up using a GitHub OAuth authorization code. |
 | GET | `/v1/auth/me` | JWT | Return the currently authenticated user's profile. |
+| POST | `/v1/auth/email/send-verification` | JWT | Email a 6‑digit verification code to the authenticated user. 60s resend cooldown. Returns `{ expiresAt }`. |
+| POST | `/v1/auth/email/verify` | JWT | Verify the 6‑digit code and set `isEmailVerified=true`. Returns the updated user. |
 
 ## Users — `/v1/users`
 
@@ -42,6 +44,16 @@ All endpoints require JWT auth and only allow the caller to act on their own use
 | --- | --- | --- | --- |
 | GET | `/v1/users/:id` | JWT (self) | Fetch the user's full profile (onboarding fields, role, identities meta). |
 | PATCH | `/v1/users/:id` | JWT (self) | Update onboarding profile fields: `nativeLanguage`, `targetLanguage`, `proficiencyLevel`, `dailyGoalMinutes`. Setting all four marks the user as onboarded. |
+
+## Admin Users — `/v1/admin/users`
+
+Source: [src/users/admin-users.controller.ts](../src/users/admin-users.controller.ts)
+
+Admin-only write surface for user accounts. All endpoints require JWT auth **and** `role = 'admin'` (403 otherwise).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| DELETE | `/v1/admin/users/:id` | JWT (admin) | Hard-delete a non-admin user. Cascades to refresh tokens, identities, verification codes, progress rows, and personally-owned decks. User-created vocabularies (`source='user'`) stay but their `created_by_user_id` is set to NULL. Returns 403 if the target is an admin, 404 if not found, 204 on success. |
 
 ## Vocabularies — `/v1/vocabularies`
 
