@@ -82,6 +82,13 @@ export class User {
   })
   dailyGoalMinutes!: number | null;
 
+  @Column({
+    name: 'weekly_vocab_goal',
+    type: 'smallint',
+    nullable: true,
+  })
+  weeklyVocabGoal!: number | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

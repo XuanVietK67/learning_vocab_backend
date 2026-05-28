@@ -166,6 +166,7 @@ Return the currently authenticated user. **JWT required.**
   "targetLanguage": null,
   "proficiencyLevel": null,
   "dailyGoalMinutes": null,
+  "weeklyVocabGoal": null,
   "createdAt": "2026-05-26T08:30:00.000Z",
   "updatedAt": "2026-05-26T08:30:00.000Z"
 }
@@ -217,7 +218,7 @@ All endpoints require JWT and only allow the caller to act on their own user rec
 **Response 200**: `UserResponse` (same shape as `/v1/auth/me`).
 
 ### `PATCH /v1/users/:id`
-Update onboarding fields. Sending all four flips `isOnboarded` to `true`.
+Update onboarding fields. Sending all five flips `isOnboarded` to `true`.
 
 **Request body** (any subset; all optional)
 
@@ -226,11 +227,13 @@ Update onboarding fields. Sending all four flips `isOnboarded` to `true`.
   "nativeLanguage": "vi",
   "targetLanguage": "en",
   "proficiencyLevel": "B1",
-  "dailyGoalMinutes": 20
+  "dailyGoalMinutes": 20,
+  "weeklyVocabGoal": 50
 }
 ```
 
 - `dailyGoalMinutes`: integer 5–240.
+- `weeklyVocabGoal`: integer 5–250 (target new vocabularies to learn per week).
 
 **Response 200**: updated `UserResponse`.
 
