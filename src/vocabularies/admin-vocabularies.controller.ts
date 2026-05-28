@@ -2,18 +2,22 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Roles } from '@/auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { UserRole } from '@/users/entities/user.entity';
+import { AdminVocabularyQueryDto } from '@/vocabularies/dto/admin-vocabulary-query.dto';
+import { PaginatedAdminVocabulariesResponseDto } from '@/vocabularies/dto/admin-vocabulary-response.dto';
 import {
   BulkImportSummaryDto,
   BulkImportVocabulariesDto,
@@ -28,6 +32,13 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 @Roles(UserRole.ADMIN)
 export class AdminVocabulariesController {
   constructor(private readonly vocabulariesService: VocabulariesService) {}
+
+  @Get()
+  findAll(
+    @Query() query: AdminVocabularyQueryDto,
+  ): Promise<PaginatedAdminVocabulariesResponseDto> {
+    return this.vocabulariesService.findAllForAdmin(query);
+  }
 
   @Post()
   create(@Body() dto: CreateVocabularyDto): Promise<VocabularyResponseDto> {

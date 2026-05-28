@@ -11,6 +11,12 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import {
+  AdminVocabularyQueryDto,
+  AdminVocabularySortBy,
+  SortDirection,
+} from '@/vocabularies/dto/admin-vocabulary-query.dto';
+import { PaginatedAdminVocabulariesResponseDto } from '@/vocabularies/dto/admin-vocabulary-response.dto';
+import {
   BulkImportSummaryDto,
   BulkImportVocabulariesDto,
 } from '@/vocabularies/dto/bulk-import-vocabularies.dto';
@@ -103,6 +109,86 @@ export class VocabulariesService {
 
     return plainToInstance(
       PaginatedVocabulariesResponseDto,
+      { data, page, limit, total },
+      { excludeExtraneousValues: true },
+    );
+  }
+
+  async findAllForAdmin(
+    query: AdminVocabularyQueryDto,
+  ): Promise<PaginatedAdminVocabulariesResponseDto> {
+    const {
+      language,
+      cefrLevel,
+      topic,
+      q,
+      source,
+      isApproved,
+      visibility,
+      createdByUserId,
+      translationLang,
+      sortBy,
+      sortDir,
+      page,
+      limit,
+    } = query;
+
+    const idQb = this.vocabRepo
+      .createQueryBuilder('vocab')
+      .select('vocab.id', 'id');
+
+    if (language) idQb.andWhere('vocab.language = :language', { language });
+    if (cefrLevel)
+      idQb.andWhere('vocab.cefr_level = :cefrLevel', { cefrLevel });
+    if (q) idQb.andWhere('vocab.lemma ILIKE :q', { q: `${q}%` });
+    if (source) idQb.andWhere('vocab.source = :source', { source });
+    if (isApproved !== undefined)
+      idQb.andWhere('vocab.is_approved = :isApproved', { isApproved });
+    if (visibility)
+      idQb.andWhere('vocab.visibility = :visibility', { visibility });
+    if (createdByUserId)
+      idQb.andWhere('vocab.created_by_user_id = :createdByUserId', {
+        createdByUserId,
+      });
+    if (topic) {
+      idQb
+        .innerJoin('vocabulary_topics', 'vt', 'vt.vocabulary_id = vocab.id')
+        .innerJoin('topics', 't', 't.id = vt.topic_id')
+        .andWhere('t.slug = :topicSlug', { topicSlug: topic });
+    }
+
+    const total = await idQb.getCount();
+
+    const sortColumn =
+      sortBy === AdminVocabularySortBy.FREQUENCY_RANK
+        ? 'vocab.frequency_rank'
+        : 'vocab.created_at';
+    const sortOrder = sortDir === SortDirection.DESC ? 'DESC' : 'ASC';
+
+    const rows = await idQb
+      .orderBy(sortColumn, sortOrder, 'NULLS LAST')
+      .addOrderBy('vocab.lemma', 'ASC')
+      .offset((page - 1) * limit)
+      .limit(limit)
+      .getRawMany<{ id: string }>();
+
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) {
+      return plainToInstance(
+        PaginatedAdminVocabulariesResponseDto,
+        { data: [], page, limit, total },
+        { excludeExtraneousValues: true },
+      );
+    }
+
+    const hydrated = await this.hydrateVocabulariesByIds(ids, translationLang);
+    const byId = new Map(hydrated.map((v) => [v.id, v]));
+    const data = ids
+      .map((id) => byId.get(id))
+      .filter((v): v is Vocabulary => v !== undefined);
+
+    return plainToInstance(
+      PaginatedAdminVocabulariesResponseDto,
       { data, page, limit, total },
       { excludeExtraneousValues: true },
     );
