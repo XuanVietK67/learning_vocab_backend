@@ -7,9 +7,24 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { TopicResponseDto } from '@/topics/dto/topic-response.dto';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
+import {
+  CreateAdminExampleDto,
+  UpdateAdminExampleDto,
+} from '@/vocabularies/dto/admin-example.dto';
+import { AdminSenseReorderDto } from '@/vocabularies/dto/admin-sense-reorder.dto';
+import {
+  CreateAdminSenseDto,
+  UpdateAdminSenseDto,
+} from '@/vocabularies/dto/admin-sense.dto';
+import { AdminTopicsReplaceDto } from '@/vocabularies/dto/admin-topics-replace.dto';
+import {
+  CreateAdminTranslationDto,
+  UpdateAdminTranslationDto,
+} from '@/vocabularies/dto/admin-translation.dto';
 import {
   AdminVocabularyQueryDto,
   AdminVocabularySortBy,
@@ -30,6 +45,9 @@ import { VocabularyQueryDto } from '@/vocabularies/dto/vocabulary-query.dto';
 import {
   PaginatedVocabulariesResponseDto,
   VocabularyResponseDto,
+  VocabularyExampleResponseDto,
+  VocabularySenseResponseDto,
+  VocabularyTranslationResponseDto,
 } from '@/vocabularies/dto/vocabulary-response.dto';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
@@ -254,6 +272,355 @@ export class VocabulariesService {
     if (result.affected === 0) {
       throw new NotFoundException('vocabulary not found');
     }
+  }
+
+  // ---- Granular admin edits on nested entities ----
+
+  async addSense(
+    vocabId: string,
+    dto: CreateAdminSenseDto,
+  ): Promise<VocabularySenseResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertVocabExists(manager, vocabId);
+      const senseRepo = manager.getRepository(VocabularySense);
+
+      const maxRow = await senseRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(MAX(s.sense_order), 0)', 'max')
+        .where('s.vocabulary_id = :vocabId', { vocabId })
+        .getRawOne<{ max: string | number }>();
+      const nextOrder = Number(maxRow?.max ?? 0) + 1;
+
+      const sense = await senseRepo.save(
+        senseRepo.create({
+          vocabularyId: vocabId,
+          senseOrder: nextOrder,
+          gloss: dto.gloss ?? null,
+          definition: dto.definition ?? null,
+          imageUrl: dto.imageUrl ?? null,
+        }),
+      );
+
+      if (dto.translations?.length) {
+        await this.upsertSenseTranslations(manager, sense.id, dto.translations);
+      }
+      if (dto.examples?.length) {
+        const exRepo = manager.getRepository(VocabularyExample);
+        await exRepo.save(
+          dto.examples.map((e) =>
+            exRepo.create({
+              senseId: sense.id,
+              sentence: e.sentence,
+              translation: e.translation ?? null,
+              source: e.source ?? 'manual',
+            }),
+          ),
+        );
+      }
+
+      return this.toSenseResponseDto(
+        await this.findSenseWithChildren(manager, sense.id),
+      );
+    });
+  }
+
+  async updateSense(
+    vocabId: string,
+    senseId: string,
+    dto: UpdateAdminSenseDto,
+  ): Promise<VocabularySenseResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      const sense = await this.assertSenseBelongsToVocab(
+        manager,
+        vocabId,
+        senseId,
+      );
+      if (dto.gloss !== undefined) sense.gloss = dto.gloss;
+      if (dto.definition !== undefined) sense.definition = dto.definition;
+      if (dto.imageUrl !== undefined) sense.imageUrl = dto.imageUrl;
+      await manager.getRepository(VocabularySense).save(sense);
+
+      return this.toSenseResponseDto(
+        await this.findSenseWithChildren(manager, senseId),
+      );
+    });
+  }
+
+  async deleteSense(vocabId: string, senseId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const sense = await this.assertSenseBelongsToVocab(
+        manager,
+        vocabId,
+        senseId,
+      );
+      const senseRepo = manager.getRepository(VocabularySense);
+      await senseRepo.delete({ id: senseId });
+      // Compact remaining sense_orders so they stay contiguous 1..N.
+      // Postgres checks UNIQUE (vocabulary_id, sense_order) at statement
+      // boundary, not row-by-row, so a single bulk UPDATE is safe.
+      await senseRepo
+        .createQueryBuilder()
+        .update()
+        .set({ senseOrder: () => 'sense_order - 1' })
+        .where('vocabulary_id = :vocabId', { vocabId })
+        .andWhere('sense_order > :order', { order: sense.senseOrder })
+        .execute();
+    });
+  }
+
+  async reorderSenses(
+    vocabId: string,
+    dto: AdminSenseReorderDto,
+  ): Promise<VocabularySenseResponseDto[]> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertVocabExists(manager, vocabId);
+      const senseRepo = manager.getRepository(VocabularySense);
+
+      const existing = await senseRepo.find({
+        where: { vocabularyId: vocabId },
+        order: { senseOrder: 'ASC' },
+      });
+      const existingIds = new Set(existing.map((s) => s.id));
+      const incomingIds = new Set(dto.senseIds);
+
+      if (
+        existingIds.size !== incomingIds.size ||
+        existing.length !== dto.senseIds.length ||
+        [...existingIds].some((id) => !incomingIds.has(id))
+      ) {
+        throw new BadRequestException(
+          'senseIds must be a permutation of the current sense ids for this vocabulary',
+        );
+      }
+
+      // Two-pass write to avoid colliding with UNIQUE (vocabulary_id, sense_order)
+      // for any in-flight row state: drive all senses to negative orders, then
+      // assign the new positive orders.
+      await senseRepo
+        .createQueryBuilder()
+        .update()
+        .set({ senseOrder: () => '-sense_order' })
+        .where('vocabulary_id = :vocabId', { vocabId })
+        .execute();
+
+      for (let i = 0; i < dto.senseIds.length; i++) {
+        await senseRepo.update({ id: dto.senseIds[i] }, { senseOrder: i + 1 });
+      }
+
+      const refreshed = await senseRepo.find({
+        where: { vocabularyId: vocabId },
+        order: { senseOrder: 'ASC' },
+        relations: { translations: true, examples: true },
+      });
+      return refreshed.map((s) => this.toSenseResponseDto(s));
+    });
+  }
+
+  async addTranslation(
+    vocabId: string,
+    senseId: string,
+    dto: CreateAdminTranslationDto,
+  ): Promise<VocabularyTranslationResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyTranslation);
+
+      const dup = await repo.findOne({
+        where: {
+          senseId,
+          language: dto.language,
+          translation: dto.translation,
+        },
+      });
+      if (dup) {
+        throw new ConflictException(
+          `translation (${dto.language}, "${dto.translation}") already exists for this sense`,
+        );
+      }
+
+      const saved = await repo.save(
+        repo.create({
+          senseId,
+          language: dto.language,
+          translation: dto.translation,
+          note: dto.note ?? null,
+        }),
+      );
+      return plainToInstance(VocabularyTranslationResponseDto, saved, {
+        excludeExtraneousValues: true,
+      });
+    });
+  }
+
+  async updateTranslation(
+    vocabId: string,
+    senseId: string,
+    translationId: string,
+    dto: UpdateAdminTranslationDto,
+  ): Promise<VocabularyTranslationResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyTranslation);
+      const tr = await repo.findOne({ where: { id: translationId, senseId } });
+      if (!tr) {
+        throw new NotFoundException('translation not found');
+      }
+
+      const nextLang = dto.language ?? tr.language;
+      const nextText = dto.translation ?? tr.translation;
+      if (nextLang !== tr.language || nextText !== tr.translation) {
+        const dup = await repo.findOne({
+          where: { senseId, language: nextLang, translation: nextText },
+        });
+        if (dup && dup.id !== tr.id) {
+          throw new ConflictException(
+            `translation (${nextLang}, "${nextText}") already exists for this sense`,
+          );
+        }
+      }
+
+      if (dto.language !== undefined) tr.language = dto.language;
+      if (dto.translation !== undefined) tr.translation = dto.translation;
+      if (dto.note !== undefined) tr.note = dto.note ?? null;
+
+      const saved = await repo.save(tr);
+      return plainToInstance(VocabularyTranslationResponseDto, saved, {
+        excludeExtraneousValues: true,
+      });
+    });
+  }
+
+  async deleteTranslation(
+    vocabId: string,
+    senseId: string,
+    translationId: string,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyTranslation);
+      const result = await repo.delete({ id: translationId, senseId });
+      if (result.affected === 0) {
+        throw new NotFoundException('translation not found');
+      }
+    });
+  }
+
+  async addExample(
+    vocabId: string,
+    senseId: string,
+    dto: CreateAdminExampleDto,
+  ): Promise<VocabularyExampleResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyExample);
+      const saved = await repo.save(
+        repo.create({
+          senseId,
+          sentence: dto.sentence,
+          translation: dto.translation ?? null,
+          source: dto.source ?? 'manual',
+        }),
+      );
+      return plainToInstance(VocabularyExampleResponseDto, saved, {
+        excludeExtraneousValues: true,
+      });
+    });
+  }
+
+  async updateExample(
+    vocabId: string,
+    senseId: string,
+    exampleId: string,
+    dto: UpdateAdminExampleDto,
+  ): Promise<VocabularyExampleResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyExample);
+      const ex = await repo.findOne({ where: { id: exampleId, senseId } });
+      if (!ex) {
+        throw new NotFoundException('example not found');
+      }
+      if (dto.sentence !== undefined) ex.sentence = dto.sentence;
+      if (dto.translation !== undefined)
+        ex.translation = dto.translation ?? null;
+      if (dto.source !== undefined) ex.source = dto.source ?? null;
+
+      const saved = await repo.save(ex);
+      return plainToInstance(VocabularyExampleResponseDto, saved, {
+        excludeExtraneousValues: true,
+      });
+    });
+  }
+
+  async deleteExample(
+    vocabId: string,
+    senseId: string,
+    exampleId: string,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
+      const repo = manager.getRepository(VocabularyExample);
+      const result = await repo.delete({ id: exampleId, senseId });
+      if (result.affected === 0) {
+        throw new NotFoundException('example not found');
+      }
+    });
+  }
+
+  async replaceTopics(
+    vocabId: string,
+    dto: AdminTopicsReplaceDto,
+  ): Promise<TopicResponseDto[]> {
+    return this.dataSource.transaction(async (manager) => {
+      await this.assertVocabExists(manager, vocabId);
+      const topicRepo = manager.getRepository(Topic);
+      const linkRepo = manager.getRepository(VocabularyTopic);
+
+      let resolvedTopics: Topic[] = [];
+      if (dto.slugs.length > 0) {
+        resolvedTopics = await topicRepo.find({
+          where: { slug: In(dto.slugs) },
+        });
+        if (resolvedTopics.length !== new Set(dto.slugs).size) {
+          const found = new Set(resolvedTopics.map((t) => t.slug));
+          const missing = dto.slugs.filter((s) => !found.has(s));
+          throw new BadRequestException(
+            `unknown topic slug(s): ${missing.join(', ')}`,
+          );
+        }
+      }
+
+      const desiredIds = new Set(resolvedTopics.map((t) => t.id));
+      const existing = await linkRepo.find({
+        where: { vocabularyId: vocabId },
+      });
+      const existingIds = new Set(existing.map((l) => l.topicId));
+
+      const toAdd = [...desiredIds].filter((id) => !existingIds.has(id));
+      const toRemove = [...existingIds].filter((id) => !desiredIds.has(id));
+
+      if (toRemove.length > 0) {
+        await linkRepo.delete({
+          vocabularyId: vocabId,
+          topicId: In(toRemove),
+        });
+      }
+      if (toAdd.length > 0) {
+        await linkRepo.save(
+          toAdd.map((topicId) =>
+            linkRepo.create({ vocabularyId: vocabId, topicId }),
+          ),
+        );
+      }
+
+      return resolvedTopics
+        .sort((a, b) => a.slug.localeCompare(b.slug))
+        .map((t) =>
+          plainToInstance(TopicResponseDto, t, {
+            excludeExtraneousValues: true,
+          }),
+        );
+    });
   }
 
   async bulkImportSystemVocabularies(
@@ -622,6 +989,54 @@ export class VocabulariesService {
     );
     await repo.save(rows);
     return rows.length;
+  }
+
+  private async assertVocabExists(
+    manager: EntityManager,
+    vocabId: string,
+  ): Promise<void> {
+    const exists = await manager
+      .getRepository(Vocabulary)
+      .exists({ where: { id: vocabId } });
+    if (!exists) {
+      throw new NotFoundException('vocabulary not found');
+    }
+  }
+
+  private async assertSenseBelongsToVocab(
+    manager: EntityManager,
+    vocabId: string,
+    senseId: string,
+  ): Promise<VocabularySense> {
+    const sense = await manager
+      .getRepository(VocabularySense)
+      .findOne({ where: { id: senseId, vocabularyId: vocabId } });
+    if (!sense) {
+      throw new NotFoundException('sense not found');
+    }
+    return sense;
+  }
+
+  private async findSenseWithChildren(
+    manager: EntityManager,
+    senseId: string,
+  ): Promise<VocabularySense> {
+    const sense = await manager.getRepository(VocabularySense).findOne({
+      where: { id: senseId },
+      relations: { translations: true, examples: true },
+    });
+    if (!sense) {
+      throw new NotFoundException('sense not found');
+    }
+    return sense;
+  }
+
+  private toSenseResponseDto(
+    sense: VocabularySense,
+  ): VocabularySenseResponseDto {
+    return plainToInstance(VocabularySenseResponseDto, sense, {
+      excludeExtraneousValues: true,
+    });
   }
 
   private async upsertTopicLinks(

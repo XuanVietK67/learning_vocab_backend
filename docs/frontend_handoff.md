@@ -515,6 +515,108 @@ Same partial-update semantics as the user endpoint. Returns the updated `Vocabul
 ### `DELETE /v1/admin/vocabularies/:id`
 **Response 204**.
 
+### `POST /v1/admin/vocabularies/:id/senses`
+Append a new sense. `senseOrder` is auto-assigned to `max+1`. Translations and examples are optional at create time — both can be added later via the dedicated subresource routes.
+
+**Request body**
+
+```json
+{
+  "gloss": "company",
+  "definition": "An American technology company.",
+  "imageUrl": null,
+  "translations": [
+    { "language": "vi", "translation": "công ty Apple" }
+  ],
+  "examples": [
+    { "sentence": "Apple released a new product." }
+  ]
+}
+```
+
+**Response 201**: the created `Sense` with its `translations[]` and `examples[]` inlined.
+
+### `PATCH /v1/admin/vocabularies/:id/senses/:senseId`
+Patch any subset of `gloss`, `definition`, `imageUrl`. Cannot reorder via this endpoint — use `PUT /senses/reorder`.
+
+**Response 200**: the updated `Sense` (with translations + examples).
+
+### `DELETE /v1/admin/vocabularies/:id/senses/:senseId`
+**Response 204**. Cascades to the sense's translations and examples. Remaining sibling senses are compacted so `senseOrder` stays contiguous `1..N`.
+
+### `PUT /v1/admin/vocabularies/:id/senses/reorder`
+Reassign `senseOrder` by array position (`senseIds[0]` becomes order 1, `senseIds[1]` becomes 2, …).
+
+**Request body**
+
+```json
+{ "senseIds": ["…sense-uuid-A…", "…sense-uuid-B…", "…sense-uuid-C…"] }
+```
+
+`senseIds` must be a permutation of the vocab's current sense ids — same length, same members, no duplicates. Returns `400` otherwise.
+
+**Response 200**: the full sense list in the new order, each with translations + examples.
+
+### `POST /v1/admin/vocabularies/:id/senses/:senseId/translations`
+**Request body**
+
+```json
+{ "language": "vi", "translation": "quả táo", "note": null }
+```
+
+- `language`: ISO 639-1 (e.g. `en`, `vi`, `pt-BR`).
+- 409 if `(senseId, language, translation)` already exists.
+
+**Response 201**: `Translation`.
+
+### `PATCH /v1/admin/vocabularies/:id/senses/:senseId/translations/:translationId`
+Body: any subset of `language`, `translation`, `note`. Re-checks the unique `(senseId, language, translation)` constraint — 409 on conflict.
+
+**Response 200**: updated `Translation`.
+
+### `DELETE /v1/admin/vocabularies/:id/senses/:senseId/translations/:translationId`
+**Response 204**.
+
+### `POST /v1/admin/vocabularies/:id/senses/:senseId/examples`
+**Request body**
+
+```json
+{ "sentence": "I ate an apple.", "translation": "Tôi đã ăn một quả táo.", "source": "manual" }
+```
+
+- `source` defaults to `"manual"` if omitted.
+
+**Response 201**: `Example`.
+
+### `PATCH /v1/admin/vocabularies/:id/senses/:senseId/examples/:exampleId`
+Body: any subset of `sentence`, `translation`, `source`.
+
+**Response 200**: updated `Example`.
+
+### `DELETE /v1/admin/vocabularies/:id/senses/:senseId/examples/:exampleId`
+**Response 204**.
+
+### `PUT /v1/admin/vocabularies/:id/topics`
+Replace the entire topic-link set for the vocabulary. Set-replace semantics — slugs not present in the body are unlinked, slugs not currently linked are linked, the rest is left alone.
+
+**Request body**
+
+```json
+{ "slugs": ["food", "fruit"] }
+```
+
+- `slugs` size 0–32; empty `[]` clears all topic links.
+- All slugs must exist in the topic catalog — `400` with the list of unknown slugs otherwise.
+
+**Response 200**: the resulting topic set, sorted by slug.
+
+```json
+[
+  { "id": "…", "slug": "food", "name": "Food & Drink", "description": null, "iconUrl": null },
+  { "id": "…", "slug": "fruit", "name": "Fruit", "description": null, "iconUrl": null }
+]
+```
+
 ---
 
 ## Topics — `/v1/topics` (public)
