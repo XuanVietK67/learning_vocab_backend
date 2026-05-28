@@ -173,6 +173,40 @@ Return the currently authenticated user. **JWT required.**
 
 `role` is `"user"` or `"admin"`. Use it to gate admin UI surfaces.
 
+### `POST /v1/auth/email/send-verification`
+Email a 6‑digit verification code to the authenticated user. **JWT required.** No body.
+
+Throttling: max 3 requests per minute per caller, and a 60‑second cooldown between successive codes for the same user. Sending a new code invalidates any previous unconsumed code for the user.
+
+**Response 202**
+
+```json
+{ "expiresAt": "2026-05-26T08:40:00.000Z" }
+```
+
+**Errors**
+
+- `400` — `email already verified`
+- `429` — `please wait before requesting another code` (within the 60s cooldown). The response body includes `retryAfter` (seconds).
+- `503` — `failed to send verification email` (SMTP transport failed).
+
+### `POST /v1/auth/email/verify`
+Verify the 6‑digit code the user received by email. **JWT required.** On success the user's `isEmailVerified` flips to `true`.
+
+**Request body**
+
+```json
+{ "code": "482917" }
+```
+
+- `code`: exactly 6 digits (`^\d{6}$`).
+
+**Response 200** — full `UserResponse` (same shape as `GET /v1/auth/me`), with `isEmailVerified: true`.
+
+**Errors**
+
+- `400` — `email already verified` | `no active verification code, request a new one` | `invalid code` (response body includes `attemptsRemaining`) | `too many attempts, request a new code` (after 5 wrong attempts the code is invalidated; user must request a new one).
+
 ---
 
 ## Users — `/v1/users`
@@ -199,6 +233,22 @@ Update onboarding fields. Sending all four flips `isOnboarded` to `true`.
 - `dailyGoalMinutes`: integer 5–240.
 
 **Response 200**: updated `UserResponse`.
+
+---
+
+## Admin Users — `/v1/admin/users`
+
+Admin-only surface for user accounts. **JWT required** and the caller's `role` must be `"admin"` (else `403`).
+
+### `DELETE /v1/admin/users/:id`
+Hard-delete a non-admin user. Cascades remove the user's refresh tokens, OAuth identities, verification codes, progress rows, and personally-owned decks. User-created vocabularies (`source='user'`) are kept; their `created_by_user_id` is set to `NULL`.
+
+**Response 204** (empty body).
+
+**Errors**
+
+- `403` — caller is not an admin, or `cannot delete an admin account` (target is an admin).
+- `404` — user not found.
 
 ---
 

@@ -19,7 +19,9 @@ import { GoogleSignInDto } from '@/auth/dto/google-sign-in.dto';
 import { LoginDto } from '@/auth/dto/login.dto';
 import { RefreshDto } from '@/auth/dto/refresh.dto';
 import { RegisterDto } from '@/auth/dto/register.dto';
+import { VerifyEmailDto } from '@/auth/dto/verify-email.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { EmailVerificationService } from '@/auth/services/email-verification.service';
 import type { AuthenticatedUser } from '@/auth/strategies/jwt.strategy';
 import type { IssueTokenContext } from '@/auth/services/token.service';
 import type { UserResponseDto } from '@/users/dto/user-response.dto';
@@ -44,6 +46,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
+    private readonly emailVerificationService: EmailVerificationService,
   ) {}
 
   @Post('register')
@@ -114,6 +117,32 @@ export class AuthController {
   async me(
     @CurrentUser() current: AuthenticatedUser,
   ): Promise<UserResponseDto> {
+    const user = await this.usersService.findById(current.id);
+    return this.usersService.toResponse(user);
+  }
+
+  @Post('email/send-verification')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  async sendEmailVerification(
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<{ expiresAt: string }> {
+    const { expiresAt } = await this.emailVerificationService.requestCode(
+      current.id,
+    );
+    return { expiresAt: expiresAt.toISOString() };
+  }
+
+  @Post('email/verify')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async verifyEmail(
+    @CurrentUser() current: AuthenticatedUser,
+    @Body() dto: VerifyEmailDto,
+  ): Promise<UserResponseDto> {
+    await this.emailVerificationService.verifyCode(current.id, dto.code);
     const user = await this.usersService.findById(current.id);
     return this.usersService.toResponse(user);
   }
