@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { User } from '@/users/entities/user.entity';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
@@ -93,4 +94,7 @@ export class Vocabulary {
 
   @OneToMany(() => VocabularySense, (s) => s.vocabulary)
   senses!: VocabularySense[];
+
+  @OneToMany(() => VocabularyTopic, (vt) => vt.vocabulary)
+  vocabularyTopics!: VocabularyTopic[];
 }

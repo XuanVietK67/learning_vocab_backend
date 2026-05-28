@@ -18,7 +18,10 @@ export class VocabularyTopic {
   @PrimaryColumn({ name: 'topic_id', type: 'uuid' })
   topicId!: string;
 
-  @ManyToOne(() => Vocabulary, { onDelete: 'CASCADE', nullable: false })
+  @ManyToOne(() => Vocabulary, (v) => v.vocabularyTopics, {
+    onDelete: 'CASCADE',
+    nullable: false,
+  })
   @JoinColumn({ name: 'vocabulary_id' })
   vocabulary!: Vocabulary;
 
