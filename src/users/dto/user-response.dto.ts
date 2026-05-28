@@ -15,6 +15,7 @@ export class UserResponseDto {
   @Expose() targetLanguage!: string | null;
   @Expose() proficiencyLevel!: ProficiencyLevel | null;
   @Expose() dailyGoalMinutes!: number | null;
+  @Expose() weeklyVocabGoal!: number | null;
   @Expose() createdAt!: Date;
   @Expose() updatedAt!: Date;
 }

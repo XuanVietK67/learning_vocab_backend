@@ -151,6 +151,7 @@ export class UsersService {
       targetLanguage: dto.targetLanguage ?? user.targetLanguage,
       proficiencyLevel: dto.proficiencyLevel ?? user.proficiencyLevel,
       dailyGoalMinutes: dto.dailyGoalMinutes ?? user.dailyGoalMinutes,
+      weeklyVocabGoal: dto.weeklyVocabGoal ?? user.weeklyVocabGoal,
     };
 
     if (
@@ -167,11 +168,12 @@ export class UsersService {
       merged.nativeLanguage !== null &&
       merged.targetLanguage !== null &&
       merged.proficiencyLevel !== null &&
-      merged.dailyGoalMinutes !== null;
+      merged.dailyGoalMinutes !== null &&
+      merged.weeklyVocabGoal !== null;
 
     if (!user.isOnboarded && !allOnboardingFieldsPresent) {
       throw new BadRequestException(
-        'onboarding requires nativeLanguage, targetLanguage, proficiencyLevel, and dailyGoalMinutes',
+        'onboarding requires nativeLanguage, targetLanguage, proficiencyLevel, dailyGoalMinutes, and weeklyVocabGoal',
       );
     }
 

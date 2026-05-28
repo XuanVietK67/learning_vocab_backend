@@ -43,7 +43,7 @@ All endpoints require JWT auth and only allow the caller to act on their own use
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/users/:id` | JWT (self) | Fetch the user's full profile (onboarding fields, role, identities meta). |
-| PATCH | `/v1/users/:id` | JWT (self) | Update onboarding profile fields: `nativeLanguage`, `targetLanguage`, `proficiencyLevel`, `dailyGoalMinutes`. Setting all four marks the user as onboarded. |
+| PATCH | `/v1/users/:id` | JWT (self) | Update onboarding profile fields: `nativeLanguage`, `targetLanguage`, `proficiencyLevel`, `dailyGoalMinutes`, `weeklyVocabGoal`. Setting all five marks the user as onboarded. |
 
 ## Admin Users — `/v1/admin/users`
 

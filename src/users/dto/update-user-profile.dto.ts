@@ -42,4 +42,10 @@ export class UpdateUserProfileDto {
   @Min(5)
   @Max(240)
   dailyGoalMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(250)
+  weeklyVocabGoal?: number;
 }
