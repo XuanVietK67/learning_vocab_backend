@@ -402,6 +402,70 @@ Partial update of top-level fields only (`language`, `lemma`, `partOfSpeech`, `i
 
 Requires JWT **and** `role = 'admin'` (`403` otherwise).
 
+### `GET /v1/admin/vocabularies`
+Lists the entire `vocabularies` table (system + user-created) with admin-only fields inlined.
+
+**Query params** (all optional unless noted)
+
+| Name | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `language` | string (ISO 639) | — | e.g. `en`, `pt-BR` |
+| `cefrLevel` | `A1`–`C2` | — | |
+| `topic` | slug | — | inner-joins on `vocabulary_topics` |
+| `q` | string | — | `lemma ILIKE '<q>%'` (prefix) |
+| `source` | `system` \| `user` | — | |
+| `isApproved` | `true` \| `false` | — | empty / missing / other = no filter |
+| `visibility` | `system` \| `private` \| `public` | — | |
+| `createdByUserId` | uuid | — | scopes to one user's submissions |
+| `translationLang` | string (ISO 639) | — | restricts hydrated translations to one language |
+| `sortBy` | `createdAt` \| `frequencyRank` | `createdAt` | |
+| `sortDir` | `asc` \| `desc` | `asc` | tie-breaks on `lemma ASC` |
+| `page` | int ≥ 1 | `1` | |
+| `limit` | int 1–100 | `20` | |
+
+**Response 200**
+
+```json
+{
+  "data": [
+    {
+      "id": "8e1a0e9b-2c4b-4f6d-9a0e-1a3d5c7e9b11",
+      "language": "en",
+      "lemma": "apple",
+      "partOfSpeech": "noun",
+      "ipa": "ˈæp.əl",
+      "cefrLevel": "A1",
+      "frequencyRank": 1024,
+      "audioUrl": null,
+      "source": "system",
+      "visibility": "system",
+      "isApproved": true,
+      "createdByUserId": null,
+      "createdAt": "2026-05-01T08:12:33.000Z",
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "senses": [
+        {
+          "id": "…",
+          "senseOrder": 1,
+          "gloss": "fruit",
+          "definition": null,
+          "imageUrl": null,
+          "translations": [
+            { "id": "…", "language": "vi", "translation": "quả táo", "note": null }
+          ],
+          "examples": [
+            { "id": "…", "sentence": "I ate an apple.", "translation": null, "source": "manual" }
+          ]
+        }
+      ]
+    }
+  ],
+  "page": 1,
+  "limit": 20,
+  "total": 1
+}
+```
+
 ### `POST /v1/admin/vocabularies`
 Body identical to `POST /v1/me/vocabularies`, but `source` is `'system'` on the resulting row. **409** on duplicate natural key — use bulk-import for upsert semantics.
 
