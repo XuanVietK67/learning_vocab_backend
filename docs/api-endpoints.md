@@ -93,6 +93,17 @@ Write surface for the curated system catalog. All endpoints require JWT auth **a
 | POST | `/v1/admin/vocabularies/bulk-import` | JWT (admin) | Idempotent upsert of up to 500 vocabularies in one transaction. Body: `{ items: CreateVocabularyDto[] }`. Returns summary `{ upserted, inserted, updated, sensesAdded, translationsAdded, examplesAdded, topicLinksAdded }`. Senses match by `senseOrder` (request position); translations match by `(language, translation)` within a sense; examples are append-only. Topic slugs must already exist. |
 | PATCH | `/v1/admin/vocabularies/:id` | JWT (admin) | Partial update of top-level fields only (`ipa`, `cefrLevel`, `frequencyRank`, `audioUrl`, and the natural-key fields). Senses, translations, examples, and topic links are not patched here — use bulk-import or DELETE + POST. |
 | DELETE | `/v1/admin/vocabularies/:id` | JWT (admin) | Hard-delete a system vocabulary. Cascades to its translations, examples, topic links, and deck memberships. Returns 204. |
+| POST | `/v1/admin/vocabularies/:id/senses` | JWT (admin) | Append a new sense to a vocabulary (`senseOrder` auto-assigned to `max+1`). Body: `{ gloss?, definition?, imageUrl?, translations?, examples? }`. Returns 201 with the created sense and its children. |
+| PATCH | `/v1/admin/vocabularies/:id/senses/:senseId` | JWT (admin) | Patch `gloss`, `definition`, `imageUrl` on a sense. Returns the updated sense (with translations + examples). 404 if the sense doesn't belong to the vocabulary. |
+| DELETE | `/v1/admin/vocabularies/:id/senses/:senseId` | JWT (admin) | Hard-delete a sense. Cascades to its translations and examples; remaining sibling senses are compacted so `senseOrder` stays contiguous `1..N`. Returns 204. |
+| PUT | `/v1/admin/vocabularies/:id/senses/reorder` | JWT (admin) | Reassign `senseOrder` by array position. Body: `{ senseIds: string[] }` — must be a permutation of the vocab's current sense ids (400 otherwise). Returns the full sense list in the new order. |
+| POST | `/v1/admin/vocabularies/:id/senses/:senseId/translations` | JWT (admin) | Add a translation to a sense. Body: `{ language, translation, note? }`. 409 if `(senseId, language, translation)` already exists. |
+| PATCH | `/v1/admin/vocabularies/:id/senses/:senseId/translations/:translationId` | JWT (admin) | Patch `language`, `translation`, `note`. Re-checks the unique `(senseId, language, translation)` constraint (409 on conflict). |
+| DELETE | `/v1/admin/vocabularies/:id/senses/:senseId/translations/:translationId` | JWT (admin) | Hard-delete a translation. Returns 204. 404 if the translation doesn't belong to the parent sense. |
+| POST | `/v1/admin/vocabularies/:id/senses/:senseId/examples` | JWT (admin) | Add an example sentence to a sense. Body: `{ sentence, translation?, source? }`. |
+| PATCH | `/v1/admin/vocabularies/:id/senses/:senseId/examples/:exampleId` | JWT (admin) | Patch `sentence`, `translation`, `source`. |
+| DELETE | `/v1/admin/vocabularies/:id/senses/:senseId/examples/:exampleId` | JWT (admin) | Hard-delete an example. Returns 204. 404 if the example doesn't belong to the parent sense. |
+| PUT | `/v1/admin/vocabularies/:id/topics` | JWT (admin) | Replace the topic-link set for a vocabulary. Body: `{ slugs: string[] }` (size 0–32; empty clears all links). 400 if any slug is unknown. Returns the resulting topic list, sorted by slug. |
 
 ## Topics — `/v1/topics`
 
