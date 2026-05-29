@@ -76,11 +76,13 @@ export class LearnService {
     // 3) If nothing to learn, surface the picker's empty reason
     const allVocabIds = [...picked.dueVocabIds, ...picked.freshVocabIds];
     if (allVocabIds.length === 0) {
+      const reason: SessionEmptyReason = picked.emptyReason ?? 'no_due_cards';
       return {
         sessionId: randomUUID(),
         mode: dto.mode,
         enrolledNewlyCount,
-        emptyReason: picked.emptyReason ?? 'no_due_cards',
+        emptyReason: reason,
+        nextDueAt: await this.resolveNextDueAt(userId, reason),
         items: [],
       };
     }
@@ -144,8 +146,23 @@ export class LearnService {
       mode: dto.mode,
       enrolledNewlyCount,
       emptyReason,
+      nextDueAt: emptyReason
+        ? await this.resolveNextDueAt(userId, emptyReason)
+        : null,
       items,
     };
+  }
+
+  // Only `no_due_cards` is a time-based empty reason — for the others
+  // ("no_more_at_level", "no_enrollment", "deck_exhausted") the user isn't
+  // waiting on the clock, so don't claim there's a next time.
+  private async resolveNextDueAt(
+    userId: string,
+    reason: SessionEmptyReason,
+  ): Promise<string | null> {
+    if (reason !== 'no_due_cards') return null;
+    const next = await this.progressService.findNextDueAt(userId);
+    return next ? next.toISOString() : null;
   }
 
   async submitAnswer(

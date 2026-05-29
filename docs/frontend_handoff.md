@@ -877,11 +877,12 @@ Home-screen snapshot.
   "dueNow": 12,
   "reviewedToday": 8,
   "dailyGoalMinutes": 20,
-  "counts": { "new": 3, "learning": 17, "review": 42, "mastered": 6 }
+  "counts": { "new": 3, "learning": 17, "review": 42, "mastered": 6 },
+  "nextDueAt": "2026-05-30T03:15:00.000Z"
 }
 ```
 
-`streakDays` counts only if the most recent review date is today or yesterday (UTC days).
+`streakDays` counts only if the most recent review date is today or yesterday (UTC days). `nextDueAt` is the ISO timestamp of the soonest progress row scheduled in the future (`next_review_at > now`); use it on the home screen to render "Next review in 3h 20m". Null when the user has no future-scheduled cards — either nothing enrolled yet, or every card is already due (`dueNow > 0` covers that case).
 
 ---
 
@@ -943,6 +944,7 @@ Build a session of N questions for a chosen learning mode. The server's vocab pi
   "mode": "daily",
   "enrolledNewlyCount": 7,
   "emptyReason": null,
+  "nextDueAt": null,
   "items": [
     {
       "sessionItemId": "0c2b9f1a-...",
@@ -971,14 +973,14 @@ Each item has an envelope (`sessionItemId`, `vocabularyId`, `lemma`, `exampleId`
 
 When the picker finds nothing to learn, `items: []` is returned **with a populated `emptyReason`**:
 
-| `emptyReason` | When | Recommended frontend action |
-|---|---|---|
-| `no_due_cards` | `mode=review` and the user has progress rows but no card is currently due | Show "All caught up — come back later" |
-| `no_enrollment` | `mode=review` and the user has zero progress rows (never enrolled anything) | Suggest switching to Daily / Topic / Deck mode |
-| `no_more_at_level` | `mode=daily` or `mode=topic` and there's no due card AND no fresh vocab matches the user's `targetLanguage + CEFR ±1` filter (and topic, for topic mode) | Suggest a different topic or wider CEFR; for daily, the user has likely consumed the catalog at their level |
-| `deck_exhausted` | `mode=deck` and every member of the deck is already-enrolled-and-not-yet-due (deck is fully on-schedule) | Show "Deck mastered for now — review later" |
+| `emptyReason` | When | `nextDueAt` populated? | Recommended frontend action |
+|---|---|---|---|
+| `no_due_cards` | `mode=review` and the user has progress rows but no card is currently due | Yes (when the user has any future-scheduled card) | Show "All caught up — next review at {nextDueAt}" |
+| `no_enrollment` | `mode=review` and the user has zero progress rows (never enrolled anything) | No (always `null`) | Suggest switching to Daily / Topic / Deck mode |
+| `no_more_at_level` | `mode=daily` or `mode=topic` and there's no due card AND no fresh vocab matches the user's `targetLanguage + CEFR ±1` filter (and topic, for topic mode) | No (always `null`) | Suggest a different topic or wider CEFR; for daily, the user has likely consumed the catalog at their level |
+| `deck_exhausted` | `mode=deck` and every member of the deck is already-enrolled-and-not-yet-due (deck is fully on-schedule) | No (always `null`) | Show "Deck mastered for now — review later" |
 
-`emptyReason` is always `null` when `items[]` has at least one element.
+`emptyReason` is always `null` when `items[]` has at least one element. `nextDueAt` is only populated for the time-based empty reason (`no_due_cards`) — for the other reasons the user isn't waiting on the clock, so the server returns `null` and the frontend should not display a "come back at" message.
 
 #### `prompt` shapes by type
 

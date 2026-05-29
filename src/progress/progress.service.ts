@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
+import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
 import { DueQueryDto } from '@/progress/dto/due-query.dto';
 import { EnrollDto, EnrollResponseDto } from '@/progress/dto/enroll.dto';
@@ -200,6 +200,7 @@ export class ProgressService {
     });
     const reviewedToday = await this.countReviewedToday(userId);
     const streakDays = await this.computeStreak(userId);
+    const nextDueAt = await this.findNextDueAt(userId, now);
 
     return {
       streakDays,
@@ -207,7 +208,22 @@ export class ProgressService {
       reviewedToday,
       dailyGoalMinutes: user.dailyGoalMinutes,
       counts,
+      nextDueAt: nextDueAt ? nextDueAt.toISOString() : null,
     };
+  }
+
+  // Earliest `next_review_at` strictly in the future for this user.
+  // Returns null when nothing is enrolled or every card is already due.
+  async findNextDueAt(
+    userId: string,
+    now: Date = new Date(),
+  ): Promise<Date | null> {
+    const row = await this.progressRepo.findOne({
+      where: { userId, nextReviewAt: MoreThan(now) },
+      order: { nextReviewAt: 'ASC' },
+      select: { nextReviewAt: true },
+    });
+    return row?.nextReviewAt ?? null;
   }
 
   private async resolveVocabularyIds(dto: EnrollDto): Promise<string[]> {
