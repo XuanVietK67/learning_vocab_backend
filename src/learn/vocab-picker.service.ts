@@ -230,14 +230,19 @@ export class VocabPickerService {
     return rows.map((r) => r.vocabularyId);
   }
 
-  // Fresh = not in user_word_progress for this user. CEFR ±1, language match,
+  // Fresh = not in user_word_progress for this user. Language match,
   // system source (or user's own). Topic filter optional.
+  //
+  // Level matching is a *preference*, not a hard filter: we order by how far
+  // each word's CEFR is from the learner's level (closest first), then by
+  // frequency. This way a learner who has exhausted their CEFR ±1 band — or
+  // whose remaining words have no cefr_level at all — still gets the most
+  // suitable words available instead of an empty session.
   private async findFreshIds(
     user: User,
     limit: number,
     topicId: string | null,
   ): Promise<string[]> {
-    const cefrs = neighbouringCefr(user.proficiencyLevel);
     const qb = this.vocabRepo
       .createQueryBuilder('v')
       .select('v.id', 'id')
@@ -258,10 +263,6 @@ export class VocabPickerService {
         { userId: user.id },
       );
 
-    if (cefrs.length > 0) {
-      qb.andWhere('v.cefr_level IN (:...cefrs)', { cefrs });
-    }
-
     if (topicId) {
       qb.andWhere(
         `EXISTS (
@@ -272,7 +273,20 @@ export class VocabPickerService {
       );
     }
 
-    qb.orderBy('v.frequency_rank', 'ASC', 'NULLS LAST').limit(limit);
+    // Prefer words closest to the learner's CEFR level. Words with no
+    // cefr_level (distance is NULL) sort last but are still eligible.
+    const userIdx = user.proficiencyLevel
+      ? CEFR_ORDER.indexOf(user.proficiencyLevel)
+      : -1;
+    if (userIdx >= 0) {
+      qb.orderBy(
+        `ABS(${cefrOrdinalCase('v.cefr_level')} - ${userIdx})`,
+        'ASC',
+        'NULLS LAST',
+      );
+    }
+
+    qb.addOrderBy('v.frequency_rank', 'ASC', 'NULLS LAST').limit(limit);
     const rows = await qb.getRawMany<{ id: string }>();
     return rows.map((r) => r.id);
   }
@@ -300,11 +314,13 @@ export class VocabPickerService {
   }
 }
 
-function neighbouringCefr(level: ProficiencyLevel | null): ProficiencyLevel[] {
-  if (!level) return [];
-  const idx = CEFR_ORDER.indexOf(level);
-  if (idx < 0) return [level];
-  const start = Math.max(0, idx - 1);
-  const end = Math.min(CEFR_ORDER.length - 1, idx + 1);
-  return CEFR_ORDER.slice(start, end + 1);
+// Build a SQL CASE that maps a cefr_level enum column to its ordinal
+// (A1→0 … C2→5). Unknown/NULL levels yield NULL, so callers can sort them
+// last with NULLS LAST. The level strings come from the enum, so the
+// interpolation is safe.
+function cefrOrdinalCase(column: string): string {
+  const whens = CEFR_ORDER.map(
+    (level, idx) => `WHEN '${level}' THEN ${idx}`,
+  ).join(' ');
+  return `CASE ${column} ${whens} END`;
 }
