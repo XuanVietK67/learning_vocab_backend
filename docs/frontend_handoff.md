@@ -784,7 +784,13 @@ Append words to the deck. Positions are assigned after the current max.
 
 ## Learning Progress — `/v1/me/progress` and `/v1/me/stats`
 
-Per-user SRS state (SM-2). All endpoints require JWT. Status transitions: `new` → `learning` on first review → `review` after 3 correct repetitions in a row → `mastered` once `intervalDays ≥ 90`.
+Per-user SRS state — SM-2 plus Anki-style **learning steps** (default `1m, 10m`). All endpoints require JWT.
+
+- New cards and lapses cycle through the configured minute-scale steps before reaching the day-scale ladder. A card in step state has `learningStepIndex !== null`; once it graduates the field becomes `null`.
+- Day-scale transitions: graduated card → `review` after 3 consecutive correct reps → `mastered` once `intervalDays ≥ 90`.
+- A miss on a graduated card drops `learningStepIndex` back to `0` so the card resurfaces within minutes, not the next day.
+
+Env tunables (server-side): `LEARN_LEARNING_STEPS_MINUTES` (default `1,10`), `LEARN_REQUEUE_WINDOW_MINUTES` (default `15` — see `/v1/me/learn/answer`).
 
 ### `POST /v1/me/progress/enroll`
 Add words to the learning queue. Send **exactly one** of `vocabularyIds` or `deckId`. Idempotent — already-enrolled words are skipped.
@@ -827,6 +833,7 @@ Fetch due cards (`nextReviewAt <= now`), oldest-due first.
     "repetitions": 1,
     "easeFactor": 2.5,
     "intervalDays": 1,
+    "learningStepIndex": null,
     "nextReviewAt": "2026-05-26T07:00:00.000Z",
     "lastReviewedAt": "2026-05-25T07:00:00.000Z",
     "correctCount": 1,
@@ -857,12 +864,15 @@ Submit a review grade.
   "repetitions": 2,
   "easeFactor": 2.5,
   "intervalDays": 6,
+  "learningStepIndex": null,
   "nextReviewAt": "2026-06-01T07:00:00.000Z",
   "lastReviewedAt": "2026-05-26T07:00:00.000Z",
   "correctCount": 2,
   "incorrectCount": 0
 }
 ```
+
+`learningStepIndex` is `null` for graduated cards and `0..N-1` for cards currently in the intra-session step ladder; use it to render UI like "step 1 of 2" when present. `nextReviewAt` may be minutes away (step) or days away (graduated) — always trust the timestamp rather than the status.
 
 **404** if the caller is not enrolled in that vocabulary.
 
@@ -1074,16 +1084,41 @@ Submit one answer. Server verifies the HMAC + 30-min TTL, re-derives the correct
     "id": "p1...",
     "vocabularyId": "a4d2...",
     "status": "learning",
-    "repetitions": 1,
+    "repetitions": 0,
     "easeFactor": 2.6,
-    "intervalDays": 1,
-    "nextReviewAt": "2026-05-28T08:30:00.000Z",
+    "intervalDays": 0,
+    "learningStepIndex": 1,
+    "nextReviewAt": "2026-05-27T08:40:00.000Z",
     "lastReviewedAt": "2026-05-27T08:30:00.000Z",
     "correctCount": 4,
     "incorrectCount": 1
+  },
+  "requeue": {
+    "dueAtMs": 1748335200000,
+    "item": {
+      "sessionItemId": "9a1c8...",
+      "vocabularyId": "a4d2...",
+      "lemma": "study",
+      "exampleId": "b14e...",
+      "type": "cloze_mcq",
+      "nonce": "8d2e0a31-...",
+      "issuedAtMs": 1748334600000,
+      "signature": "ab12cd34...",
+      "prompt": { "type": "cloze_mcq", "/* ...same shape as session items... */": true }
+    }
   }
 }
 ```
+
+#### Intra-session requeue (`requeue`)
+
+When the SRS schedules the card within `LEARN_REQUEUE_WINDOW_MINUTES` of now (default 15 min — covers both step intervals and short relearning steps), the server bakes a fresh signed question for the same card and returns it as `requeue`. The client should:
+
+1. Insert `requeue.item` into a local queue keyed by `requeue.dueAtMs`.
+2. When the wall clock reaches `dueAtMs`, surface the item as if it were a normal session item — same `nonce`/`signature` flow back into `/v1/me/learn/answer`.
+3. The question-builder tries to pick a *different* example than the one just answered; if the vocab only has one usable example you may see the same prompt re-show.
+
+`requeue` is `null` when the next review is far enough out that the next `/session` call will handle it — the typical case for a graduated card answered correctly.
 
 **Quality mapping** (SM-2 scale 0–5):
 - MCQ-style (`cloze_mcq`, `meaning_in_context`, `sense_disambiguation`, `listening_cloze`): correct + fast (`latencyMs ≤ 8000`) → 5; correct + slow → 4; wrong → 2.

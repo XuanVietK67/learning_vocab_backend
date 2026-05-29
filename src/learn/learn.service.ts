@@ -12,7 +12,10 @@ import learnConfig from '@/config/learn.config';
 import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
 import { AnswerGraderService } from '@/learn/answer-grader.service';
-import { AnswerResultDto } from '@/learn/dto/answer-result.dto';
+import {
+  AnswerResultDto,
+  RequeuedItemDto,
+} from '@/learn/dto/answer-result.dto';
 import { CreateSessionDto } from '@/learn/dto/create-session.dto';
 import {
   CreateSessionResponseDto,
@@ -219,7 +222,71 @@ export class LearnService {
       correctAnswer: result.correctAnswer,
       quality: result.quality,
       progress,
+      requeue: await this.buildRequeue({
+        userId,
+        vocab,
+        nextReviewAt: progress.nextReviewAt,
+        status: progress.status,
+        translationLang,
+        previousExampleId: dto.exampleId,
+      }),
     };
+  }
+
+  // If the SRS just scheduled the card within the requeue window, bake a
+  // fresh signed question so the client can re-surface it in the same
+  // session without polling /session. We try to pick a *different*
+  // example than the one the user just answered; if that's impossible
+  // (e.g., the vocab only has the one example), we still requeue —
+  // re-seeing the same prompt is better than dropping the card.
+  private async buildRequeue(args: {
+    userId: string;
+    vocab: Vocabulary;
+    nextReviewAt: Date;
+    status: ProgressStatus;
+    translationLang: string | null;
+    previousExampleId: string;
+  }): Promise<RequeuedItemDto | null> {
+    const windowMs = this.cfg.requeueWindowMinutes * 60_000;
+    const dueAtMs = args.nextReviewAt.getTime();
+    if (dueAtMs - Date.now() > windowMs) return null;
+
+    const daySeed = toUtcDateString(new Date());
+    const built =
+      (await this.questionBuilder.build({
+        vocab: args.vocab,
+        status: args.status,
+        translationLang: args.translationLang,
+        daySeed,
+        excludeExampleIds: new Set([args.previousExampleId]),
+      })) ??
+      (await this.questionBuilder.build({
+        vocab: args.vocab,
+        status: args.status,
+        translationLang: args.translationLang,
+        daySeed,
+      }));
+    if (!built) return null;
+
+    const issued = this.signer.issue({
+      userId: args.userId,
+      vocabularyId: args.vocab.id,
+      type: built.type,
+      exampleId: built.exampleId,
+      translationLang: args.translationLang,
+    });
+    const item: SessionItemDto = {
+      sessionItemId: randomUUID(),
+      vocabularyId: args.vocab.id,
+      lemma: args.vocab.lemma,
+      exampleId: built.exampleId,
+      type: built.type,
+      nonce: issued.nonce,
+      issuedAtMs: issued.issuedAtMs,
+      signature: issued.signature,
+      prompt: built.prompt,
+    };
+    return { dueAtMs, item };
   }
 
   // ------------------- internals -------------------

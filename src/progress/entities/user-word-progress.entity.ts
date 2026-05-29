@@ -63,6 +63,12 @@ export class UserWordProgress {
   @Column({ name: 'interval_days', type: 'int', default: 0 })
   intervalDays!: number;
 
+  // null = card is in the day-scale SM-2 ladder (graduated). 0..N-1 = index
+  // into the configured learning steps. Cards in step state use
+  // `nextReviewAt` for minute-scale scheduling; `intervalDays` stays 0.
+  @Column({ name: 'learning_step_index', type: 'smallint', nullable: true })
+  learningStepIndex!: number | null;
+
   @Column({
     name: 'next_review_at',
     type: 'timestamptz',
