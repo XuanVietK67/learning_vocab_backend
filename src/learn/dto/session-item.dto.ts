@@ -91,5 +91,9 @@ export interface CreateSessionResponseDto {
   // Non-null only when items is empty — tells the frontend which empty-state
   // screen to show. Null when items.length > 0.
   emptyReason: SessionEmptyReason | null;
+  // ISO timestamp of the soonest progress row scheduled in the future.
+  // Populated only when items is empty and emptyReason='no_due_cards' so the
+  // empty-state screen can render "come back at X". Null in every other case.
+  nextDueAt: string | null;
   items: SessionItemDto[];
 }

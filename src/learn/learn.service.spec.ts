@@ -48,6 +48,7 @@ describe('LearnService — mode dispatch', () => {
       unknownVocabularyIds: [],
     }),
     submitReview: jest.fn(),
+    findNextDueAt: jest.fn().mockResolvedValue(null),
   };
 
   beforeEach(async () => {
@@ -60,6 +61,7 @@ describe('LearnService — mode dispatch', () => {
       alreadyEnrolled: 0,
       unknownVocabularyIds: [],
     });
+    progressService.findNextDueAt.mockResolvedValue(null);
 
     const mod: TestingModule = await Test.createTestingModule({
       providers: [
