@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
+import learnConfig from '@/config/learn.config';
 import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
 import { DueQueryDto } from '@/progress/dto/due-query.dto';
 import { EnrollDto, EnrollResponseDto } from '@/progress/dto/enroll.dto';
@@ -36,6 +39,8 @@ export class ProgressService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(learnConfig.KEY)
+    private readonly cfg: ConfigType<typeof learnConfig>,
   ) {}
 
   async enroll(userId: string, dto: EnrollDto): Promise<EnrollResponseDto> {
@@ -81,6 +86,9 @@ export class ProgressService {
           userId,
           vocabularyId,
           status: ProgressStatus.NEW,
+          // Seed step 0 so the very first answer hits the intra-session
+          // ladder instead of going straight to the day-scale interval.
+          learningStepIndex: 0,
         }),
       );
       await this.progressRepo.save(rows);
@@ -164,8 +172,10 @@ export class ProgressService {
         repetitions: progress.repetitions,
         easeFactor: Number(progress.easeFactor),
         intervalDays: progress.intervalDays,
+        learningStepIndex: progress.learningStepIndex,
       },
       dto.quality as ReviewQuality,
+      this.cfg.learningStepsMinutes,
       now,
     );
 
@@ -174,6 +184,7 @@ export class ProgressService {
     progress.easeFactor = next.easeFactor;
     progress.intervalDays = next.intervalDays;
     progress.nextReviewAt = next.nextReviewAt;
+    progress.learningStepIndex = next.learningStepIndex;
     progress.lastReviewedAt = now;
     if (dto.quality >= 3) progress.correctCount += 1;
     else progress.incorrectCount += 1;

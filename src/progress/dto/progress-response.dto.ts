@@ -9,6 +9,11 @@ export class ProgressResponseDto {
   @Expose() repetitions!: number;
   @Expose() easeFactor!: number;
   @Expose() intervalDays!: number;
+  // null = graduated to the day-scale SM-2 ladder.
+  // 0..N-1 = card is currently at that index in the configured learning
+  // steps (intra-session repetition). Surface for clients that want to
+  // show "step 1 of 2" UI; safe to ignore otherwise.
+  @Expose() learningStepIndex!: number | null;
   @Expose() nextReviewAt!: Date;
   @Expose() lastReviewedAt!: Date | null;
   @Expose() correctCount!: number;

@@ -26,6 +26,10 @@ export interface BuildContext {
   status: ProgressStatus;
   translationLang: string | null;
   daySeed: string;
+  // Skip examples whose IDs appear here. Used by the intra-session
+  // requeue path so a re-shown card doesn't repeat the same prompt the
+  // user just answered. Optional — empty/absent means no exclusions.
+  excludeExampleIds?: Set<string>;
 }
 
 export interface BuiltQuestion {
@@ -119,7 +123,7 @@ export class QuestionBuilderService {
   private async buildClozeMcq(
     ctx: BuildContext,
   ): Promise<BuiltQuestion | null> {
-    const picked = this.pickExampleForCloze(ctx.vocab);
+    const picked = this.pickExampleForCloze(ctx.vocab, ctx.excludeExampleIds);
     if (!picked) return null;
     const { example, sense, sentenceWithBlank, blankedForm } = picked;
 
@@ -148,7 +152,7 @@ export class QuestionBuilderService {
   }
 
   private buildClozeTyping(ctx: BuildContext): BuiltQuestion | null {
-    const picked = this.pickExampleForCloze(ctx.vocab);
+    const picked = this.pickExampleForCloze(ctx.vocab, ctx.excludeExampleIds);
     if (!picked) return null;
     const { example, sense, sentenceWithBlank } = picked;
     const hint = ctx.translationLang
@@ -177,7 +181,11 @@ export class QuestionBuilderService {
       );
       if (trans.length === 0) continue;
       const examples = sense.examples ?? [];
-      const exampleWithSpan = findExampleWithSpan(examples, ctx.vocab);
+      const exampleWithSpan = findExampleWithSpan(
+        examples,
+        ctx.vocab,
+        ctx.excludeExampleIds,
+      );
       if (!exampleWithSpan) continue;
 
       const correct = trans[0].translation;
@@ -225,6 +233,7 @@ export class QuestionBuilderService {
     if (!ctx.translationLang) return null;
     for (const sense of ctx.vocab.senses ?? []) {
       for (const ex of sense.examples ?? []) {
+        if (ctx.excludeExampleIds?.has(ex.id)) continue;
         const translation =
           ex.translation ?? firstTranslationOfSense(sense, ctx.translationLang);
         if (!translation) continue;
@@ -293,7 +302,7 @@ export class QuestionBuilderService {
     ctx: BuildContext,
   ): Promise<BuiltQuestion | null> {
     if (!ctx.vocab.audioUrl) return null;
-    const picked = this.pickExampleForCloze(ctx.vocab);
+    const picked = this.pickExampleForCloze(ctx.vocab, ctx.excludeExampleIds);
     if (!picked) return null;
     const { example, sense, sentenceWithBlank, blankedForm } = picked;
     const distractors = await this.distractor.pickLemmaDistractors(
@@ -326,7 +335,10 @@ export class QuestionBuilderService {
   // matchable lemma form. Senses appear in senseOrder ASC; we don't
   // pick the very first example to preserve a "shown during study"
   // slot — but if only 2 examples exist we use either.
-  private pickExampleForCloze(vocab: Vocabulary): {
+  private pickExampleForCloze(
+    vocab: Vocabulary,
+    excludeExampleIds?: Set<string>,
+  ): {
     example: VocabularyExample;
     sense: VocabularySense;
     sentenceWithBlank: string;
@@ -338,6 +350,7 @@ export class QuestionBuilderService {
         // Prefer non-primary (i.e., not the first) when at least 3 exist
         if (examples.length >= 3 && i === 0) continue;
         const ex = examples[i];
+        if (excludeExampleIds?.has(ex.id)) continue;
         const cloze = buildCloze(ex.sentence, vocab.lemma, vocab.partOfSpeech);
         if (cloze) {
           return { example: ex, sense, ...cloze };
@@ -346,6 +359,7 @@ export class QuestionBuilderService {
       // If 2 examples and we skipped above, try index 0 as fallback
       if (examples.length === 2) {
         const ex = examples[0];
+        if (excludeExampleIds?.has(ex.id)) continue;
         const cloze = buildCloze(ex.sentence, vocab.lemma, vocab.partOfSpeech);
         if (cloze) return { example: ex, sense, ...cloze };
       }
@@ -390,14 +404,16 @@ function findTrapTranslation(
 function findExampleWithSpan(
   examples: VocabularyExample[],
   vocab: Vocabulary,
+  excludeExampleIds?: Set<string>,
 ): { example: VocabularyExample; start: number; end: number } | null {
   for (let i = 0; i < examples.length; i++) {
     if (examples.length >= 3 && i === 0) continue;
     const ex = examples[i];
+    if (excludeExampleIds?.has(ex.id)) continue;
     const span = findLemmaSpan(ex.sentence, vocab.lemma, vocab.partOfSpeech);
     if (span) return { example: ex, start: span.start, end: span.end };
   }
-  if (examples.length === 2) {
+  if (examples.length === 2 && !excludeExampleIds?.has(examples[0].id)) {
     const span = findLemmaSpan(
       examples[0].sentence,
       vocab.lemma,
