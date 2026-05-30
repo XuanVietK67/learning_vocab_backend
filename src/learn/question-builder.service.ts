@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import learnConfig from '@/config/learn.config';
 import {
   ClozeMcqPrompt,
   ClozeTypingPrompt,
@@ -16,20 +18,31 @@ import {
 } from '@/learn/cloze.util';
 import { DistractorService } from '@/learn/distractor.service';
 import { QuestionType } from '@/learn/enums/question-type.enum';
-import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 
 export interface BuildContext {
   vocab: Vocabulary;
-  status: ProgressStatus;
+  // Successful-exposure count for this user+word. Drives the exercise
+  // tier (recognition → recall → production), decoupled from SRS status.
+  correctCount: number;
   translationLang: string | null;
   daySeed: string;
+  // Salt folded into the type-pick seed so a card re-shown within a
+  // session (intra-session requeue) rotates to a different question type
+  // instead of replaying the same one. Typically the running attempt
+  // count (correctCount + incorrectCount).
+  rotationKey: string;
   // Skip examples whose IDs appear here. Used by the intra-session
   // requeue path so a re-shown card doesn't repeat the same prompt the
   // user just answered. Optional — empty/absent means no exclusions.
   excludeExampleIds?: Set<string>;
+}
+
+interface WeightedType {
+  type: QuestionType;
+  weight: number;
 }
 
 export interface BuiltQuestion {
@@ -40,61 +53,91 @@ export interface BuiltQuestion {
 
 @Injectable()
 export class QuestionBuilderService {
-  constructor(private readonly distractor: DistractorService) {}
+  constructor(
+    private readonly distractor: DistractorService,
+    @Inject(learnConfig.KEY)
+    private readonly cfg: ConfigType<typeof learnConfig>,
+  ) {}
 
-  // Picks a question type appropriate for the card's SRS status and the
-  // available data, then builds the matching prompt. Returns null if no
-  // type can be built (e.g. no example contains a matchable lemma form).
+  // Picks a question type appropriate for the card's exercise tier (driven
+  // by successful exposures, not SRS status) and the available data, then
+  // builds the matching prompt. Returns null if no type can be built (e.g.
+  // no example contains a matchable lemma form).
   async build(ctx: BuildContext): Promise<BuiltQuestion | null> {
-    const allowed = this.allowedTypes(
-      ctx.vocab,
-      ctx.status,
-      ctx.translationLang,
+    const pool = this.candidatePool(ctx);
+    if (pool.length === 0) return null;
+
+    // A weighted deterministic ordering: the first entry is the weighted
+    // pick, the rest form the fallback order if its data can't build.
+    const ordered = weightedOrder(
+      pool,
+      `${ctx.daySeed}#${ctx.vocab.id}#${ctx.rotationKey}`,
     );
-    if (allowed.length === 0) return null;
-    const type = pickDeterministic(allowed, ctx.daySeed + ctx.vocab.id);
-
-    const built = await this.tryBuild(type, ctx);
-    if (built) return built;
-
-    // Fallback: try other allowed types in order
-    for (const alt of allowed) {
-      if (alt === type) continue;
-      const b = await this.tryBuild(alt, ctx);
-      if (b) return b;
+    for (const type of ordered) {
+      const built = await this.tryBuild(type, ctx);
+      if (built) return built;
     }
     return null;
   }
 
-  private allowedTypes(
-    vocab: Vocabulary,
-    status: ProgressStatus,
-    translationLang: string | null,
-  ): QuestionType[] {
+  // Maps successful-exposure count to an exercise tier, then assembles a
+  // weighted pool of types up to that tier. Higher tiers unlock harder
+  // formats while lower tiers stay in the pool (at reduced weight) so
+  // sessions keep variety instead of locking to one format. Data
+  // feasibility (translations, senses, audio) gates each type on top.
+  private candidatePool(ctx: BuildContext): WeightedType[] {
+    const tier = this.tierFor(ctx.correctCount);
+    const { vocab } = ctx;
     const hasMultipleSenses = (vocab.senses?.length ?? 0) >= 2;
     const hasAudio = !!vocab.audioUrl;
-    const hasTranslationLang = !!translationLang;
+    const hasTranslationLang = !!ctx.translationLang;
 
-    const types: QuestionType[] = [];
+    // introTier = first tier at which the type becomes eligible.
+    const candidates: {
+      type: QuestionType;
+      introTier: number;
+      feasible: boolean;
+    }[] = [
+      { type: QuestionType.CLOZE_MCQ, introTier: 0, feasible: true },
+      {
+        type: QuestionType.MEANING_IN_CONTEXT,
+        introTier: 0,
+        feasible: hasTranslationLang,
+      },
+      {
+        type: QuestionType.LISTENING_CLOZE,
+        introTier: 0,
+        feasible: hasAudio,
+      },
+      { type: QuestionType.CLOZE_TYPING, introTier: 1, feasible: true },
+      {
+        type: QuestionType.SENTENCE_BUILD,
+        introTier: 2,
+        feasible: hasTranslationLang,
+      },
+      {
+        type: QuestionType.SENSE_DISAMBIGUATION,
+        introTier: 2,
+        feasible: hasTranslationLang && hasMultipleSenses,
+      },
+    ];
 
-    if (status === ProgressStatus.NEW || status === ProgressStatus.LEARNING) {
-      types.push(QuestionType.CLOZE_MCQ);
-      if (hasTranslationLang) types.push(QuestionType.MEANING_IN_CONTEXT);
-    } else if (status === ProgressStatus.REVIEW) {
-      types.push(QuestionType.CLOZE_TYPING);
-      if (hasTranslationLang) types.push(QuestionType.SENTENCE_BUILD);
-    } else {
-      // mastered
-      if (hasTranslationLang) types.push(QuestionType.SENTENCE_BUILD);
-      if (hasMultipleSenses && hasTranslationLang) {
-        types.push(QuestionType.SENSE_DISAMBIGUATION);
-      }
-      if (types.length === 0) types.push(QuestionType.CLOZE_TYPING);
+    const pool: WeightedType[] = [];
+    for (const c of candidates) {
+      if (!c.feasible || c.introTier > tier) continue;
+      // Newest unlocked tier gets the spotlight (weight 3); each tier below
+      // drops a point, floored at 1 so it never fully disappears.
+      const weight = Math.max(1, 3 - (tier - c.introTier));
+      pool.push({ type: c.type, weight });
     }
+    return pool;
+  }
 
-    if (hasAudio) types.push(QuestionType.LISTENING_CLOZE);
-
-    return types;
+  private tierFor(correctCount: number): number {
+    const [t0, t1] = this.cfg.exerciseTierThresholds;
+    if (correctCount >= t1) return 2;
+    if (correctCount >= t0) return 1;
+    return 0;
   }
 
   private async tryBuild(
@@ -371,13 +414,30 @@ export class QuestionBuilderService {
 // ----------------------------------------------------------------------
 // Module-local helpers
 
-function pickDeterministic<T>(arr: T[], seed: string): T {
+// Deterministic weighted ordering via the Efraimidis–Spirakis key trick:
+// each entry gets key = u^(1/weight) for a seeded u in (0,1); sorting by
+// key descending yields a weighted sample-without-replacement order, so
+// the first element is the weighted pick and the rest are the fallback
+// order. Same seed → same order (reproducible / testable).
+function weightedOrder(pool: WeightedType[], seed: string): QuestionType[] {
+  return pool
+    .map((entry, i) => {
+      const u = hashUnit(`${seed}#${entry.type}#${i}`);
+      return { type: entry.type, key: Math.pow(u, 1 / entry.weight) };
+    })
+    .sort((a, b) => b.key - a.key)
+    .map((e) => e.type);
+}
+
+// Hashes a seed string to a deterministic value in the open interval
+// (0,1). Never returns 0 (which would collapse any pow() to 0).
+function hashUnit(seed: string): number {
   let h = 0;
   for (let i = 0; i < seed.length; i++) {
     h = (h << 5) - h + seed.charCodeAt(i);
     h |= 0;
   }
-  return arr[Math.abs(h) % arr.length];
+  return ((Math.abs(h) % 100000) + 1) / 100001;
 }
 
 function firstTranslationOfSense(
