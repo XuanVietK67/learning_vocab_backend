@@ -790,7 +790,7 @@ Per-user SRS state — SM-2 plus Anki-style **learning steps** (default `1m, 10m
 - Day-scale transitions: graduated card → `review` after 3 consecutive correct reps → `mastered` once `intervalDays ≥ 90`.
 - A miss on a graduated card drops `learningStepIndex` back to `0` so the card resurfaces within minutes, not the next day.
 
-Env tunables (server-side): `LEARN_LEARNING_STEPS_MINUTES` (default `1,10`), `LEARN_REQUEUE_WINDOW_MINUTES` (default `15` — see `/v1/me/learn/answer`).
+Env tunables (server-side): `LEARN_LEARNING_STEPS_MINUTES` (default `1,10`), `LEARN_REQUEUE_WINDOW_MINUTES` (default `15` — see `/v1/me/learn/answer`), `LEARN_EXERCISE_TIER_THRESHOLDS` (default `2,4` — exposure counts that unlock recall/production question types; see `/v1/me/learn/session`).
 
 ### `POST /v1/me/progress/enroll`
 Add words to the learning queue. Send **exactly one** of `vocabularyIds` or `deckId`. Idempotent — already-enrolled words are skipped.
@@ -908,7 +908,7 @@ Context-anchored learning sessions. The server picks due cards, generates one qu
 - `sense_disambiguation` — two example sentences side-by-side, match each to its sense's translation
 - `listening_cloze` — audio + sentence with a blank, 4 word options
 
-**Type selection** is driven by SRS status: `new`/`learning` → recognition (`cloze_mcq`, `meaning_in_context`); `review` → production (`cloze_typing`, `sentence_build`); `mastered` → `sentence_build` or `sense_disambiguation`. `listening_cloze` is substituted in when audio is available. Types requiring extra data (multiple senses, translation language) are skipped silently if the card lacks it.
+**Type selection** is driven by an *exercise tier* derived from how many times the user has answered the card correctly (`correctCount`), **independent of SRS status** — so harder formats unlock from demonstrated knowledge, not the review calendar. Tier 0 (recognition: `cloze_mcq`, `meaning_in_context`) until `correctCount` reaches the first threshold; tier 1 adds recall (`cloze_typing`); tier 2 adds production (`sentence_build`, `sense_disambiguation`). Lower tiers stay in the pool at reduced weight so sessions keep variety, and a card re-shown within a session (the `requeue` item) rotates to a different type instead of repeating. `listening_cloze` is available from tier 0 when audio exists. Types requiring extra data (multiple senses, translation language, audio) are skipped silently if the card lacks it. Default thresholds are `2, 4` (env `LEARN_EXERCISE_TIER_THRESHOLDS`): typing after 2 correct, production after 4.
 
 ### `POST /v1/me/learn/session`
 Build a session of N questions for a chosen learning mode. The server's vocab picker selects suitable vocab per mode and, for `daily/topic/deck`, auto-enrolls fresh words into the caller's progress as a side effect (count returned in `enrolledNewlyCount`). `daily` and `topic` require onboarding to be complete; otherwise the server returns `400`.

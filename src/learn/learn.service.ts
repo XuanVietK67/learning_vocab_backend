@@ -9,7 +9,6 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import learnConfig from '@/config/learn.config';
-import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
 import { AnswerGraderService } from '@/learn/answer-grader.service';
 import {
@@ -91,17 +90,24 @@ export class LearnService {
     }
 
     // 4) Load vocab tree (senses + examples + translations) + progress rows
-    //    for status lookup in a single batch (avoids N+1).
+    //    for exposure-count lookup in a single batch (avoids N+1).
     const [vocabs, progressRows] = await Promise.all([
       this.loadVocabTree(allVocabIds, translationLang),
       this.progressRepo.find({
         where: { userId, vocabularyId: In(allVocabIds) },
-        select: { vocabularyId: true, status: true },
+        select: {
+          vocabularyId: true,
+          correctCount: true,
+          incorrectCount: true,
+        },
       }),
     ]);
     const vocabById = new Map(vocabs.map((v) => [v.id, v]));
-    const statusByVocabId = new Map(
-      progressRows.map((p) => [p.vocabularyId, p.status]),
+    const statsByVocabId = new Map(
+      progressRows.map((p) => [
+        p.vocabularyId,
+        { correctCount: p.correctCount, incorrectCount: p.incorrectCount },
+      ]),
     );
 
     // 5) Build the per-card questions in pick order
@@ -111,13 +117,17 @@ export class LearnService {
       const vocab = vocabById.get(vocabId);
       if (!vocab) continue;
 
-      const status = statusByVocabId.get(vocabId) ?? ProgressStatus.NEW;
+      const stats = statsByVocabId.get(vocabId) ?? {
+        correctCount: 0,
+        incorrectCount: 0,
+      };
 
       const built = await this.questionBuilder.build({
         vocab,
-        status,
+        correctCount: stats.correctCount,
         translationLang,
         daySeed,
+        rotationKey: String(stats.correctCount + stats.incorrectCount),
       });
       if (!built) continue;
 
@@ -226,7 +236,8 @@ export class LearnService {
         userId,
         vocab,
         nextReviewAt: progress.nextReviewAt,
-        status: progress.status,
+        correctCount: progress.correctCount,
+        incorrectCount: progress.incorrectCount,
         translationLang,
         previousExampleId: dto.exampleId,
       }),
@@ -243,7 +254,8 @@ export class LearnService {
     userId: string;
     vocab: Vocabulary;
     nextReviewAt: Date;
-    status: ProgressStatus;
+    correctCount: number;
+    incorrectCount: number;
     translationLang: string | null;
     previousExampleId: string;
   }): Promise<RequeuedItemDto | null> {
@@ -252,19 +264,25 @@ export class LearnService {
     if (dueAtMs - Date.now() > windowMs) return null;
 
     const daySeed = toUtcDateString(new Date());
+    // Counts already reflect the answer just graded, so this rotationKey
+    // differs from the one used when the card was first issued today —
+    // the re-shown card rotates to a (likely) different question type.
+    const rotationKey = String(args.correctCount + args.incorrectCount);
     const built =
       (await this.questionBuilder.build({
         vocab: args.vocab,
-        status: args.status,
+        correctCount: args.correctCount,
         translationLang: args.translationLang,
         daySeed,
+        rotationKey,
         excludeExampleIds: new Set([args.previousExampleId]),
       })) ??
       (await this.questionBuilder.build({
         vocab: args.vocab,
-        status: args.status,
+        correctCount: args.correctCount,
         translationLang: args.translationLang,
         daySeed,
+        rotationKey,
       }));
     if (!built) return null;
 
