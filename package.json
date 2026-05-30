@@ -24,6 +24,7 @@
     "db:migration:run": "npm run typeorm -- migration:run",
     "db:migration:revert": "npm run typeorm -- migration:revert",
     "db:seed": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "db:backfill-audio": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/scripts/backfill-audio.ts",
     "db:up": "docker compose up -d postgres pgadmin",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"
@@ -42,7 +43,9 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cloudinary": "^2.10.0",
     "google-auth-library": "^10.6.2",
+    "msedge-tts": "^2.0.5",
     "nodemailer": "^8.0.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
