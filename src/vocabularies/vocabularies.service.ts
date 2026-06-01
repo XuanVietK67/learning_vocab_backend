@@ -11,6 +11,7 @@ import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { TopicResponseDto } from '@/topics/dto/topic-response.dto';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
+import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
   CreateAdminExampleDto,
   UpdateAdminExampleDto,
@@ -75,6 +76,7 @@ export class VocabulariesService {
     @InjectRepository(Vocabulary)
     private readonly vocabRepo: Repository<Vocabulary>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly audioProducer: AudioQueueProducer,
   ) {}
 
   async findAll(
@@ -245,6 +247,15 @@ export class VocabulariesService {
     const outcome = await this.dataSource.transaction((manager) =>
       this.upsertVocabulary(manager, dto, { source: VocabularySource.SYSTEM }),
     );
+    // Auto-generate audio in the background when the caller didn't supply one.
+    // Enqueued after commit so the worker sees the committed row.
+    if (!dto.audioUrl) {
+      await this.audioProducer.enqueue(
+        outcome.vocab.id,
+        dto.lemma,
+        dto.language,
+      );
+    }
     return this.findById(outcome.vocab.id);
   }
 
@@ -685,6 +696,15 @@ export class VocabulariesService {
         userId,
       }),
     );
+    // Auto-generate audio in the background when the caller didn't supply one.
+    // Enqueued after commit so the worker sees the committed row.
+    if (!dto.audioUrl) {
+      await this.audioProducer.enqueue(
+        outcome.vocab.id,
+        dto.lemma,
+        dto.language,
+      );
+    }
     return this.findById(outcome.vocab.id);
   }
 

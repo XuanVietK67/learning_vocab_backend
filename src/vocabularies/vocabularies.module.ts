@@ -1,7 +1,11 @@
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
+import { AUDIO_QUEUE } from '@/vocabularies/audio/audio-queue.constants';
+import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
@@ -25,6 +29,17 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       Topic,
       VocabularyTopic,
     ]),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          host: config.get<string>('redis.host'),
+          port: config.get<number>('redis.port'),
+          password: config.get<string>('redis.password'),
+        },
+      }),
+    }),
+    BullModule.registerQueue({ name: AUDIO_QUEUE }),
   ],
   controllers: [
     VocabulariesController,
@@ -35,7 +50,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
     AdminVocabularyExamplesController,
     AdminVocabularyTopicsController,
   ],
-  providers: [VocabulariesService],
+  providers: [VocabulariesService, AudioQueueProducer],
   exports: [VocabulariesService],
 })
 export class VocabulariesModule {}
