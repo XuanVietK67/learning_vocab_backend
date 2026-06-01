@@ -381,6 +381,8 @@ Create a personal word with one or more senses (meanings). Each sense carries it
 
 **Response 201**: `Vocabulary` object. **409** if you already own `(language, lemma, partOfSpeech)`.
 
+> **Audio is auto-generated.** If you omit `audioUrl` (or send `null`), the server queues background pronunciation-audio generation and the create response comes back with `audioUrl: null`. Re-fetch `GET /v1/me/vocabularies/:id` a few seconds later to pick up the populated URL. If you supply your own `audioUrl`, it is kept and no generation runs.
+
 ### `GET /v1/me/vocabularies`
 List your own vocabularies, newest first.
 
@@ -474,6 +476,8 @@ Lists the entire `vocabularies` table (system + user-created) with admin-only fi
 
 ### `POST /v1/admin/vocabularies`
 Body identical to `POST /v1/me/vocabularies`, but `source` is `'system'` on the resulting row. **409** on duplicate natural key — use bulk-import for upsert semantics.
+
+> **Audio is auto-generated** the same way as `POST /v1/me/vocabularies`: omit `audioUrl` for background generation (response returns `audioUrl: null`; re-fetch shortly after), or supply your own to skip it.
 
 ### `POST /v1/admin/vocabularies/bulk-import`
 Idempotent upsert of up to 500 items in one transaction. Each item carries the full sense tree (same shape as `POST /v1/me/vocabularies`).
