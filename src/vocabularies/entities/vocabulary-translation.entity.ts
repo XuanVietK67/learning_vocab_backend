@@ -39,6 +39,10 @@ export class VocabularyTranslation {
   @Column({ type: 'text', nullable: true })
   note!: string | null;
 
+  // Provenance of this translation: 'manual' | 'mt:<engine>' | 'cambridge' | ...
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  source!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

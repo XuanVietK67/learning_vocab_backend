@@ -6,6 +6,7 @@ export class AdminVocabularyResponseDto extends VocabularyResponseDto {
   @Expose() visibility!: Visibility;
   @Expose() isApproved!: boolean;
   @Expose() createdByUserId!: string | null;
+  @Expose() enrichedAt!: Date | null;
   @Expose() createdAt!: Date;
   @Expose() updatedAt!: Date;
 }

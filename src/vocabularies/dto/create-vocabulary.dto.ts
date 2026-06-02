@@ -34,6 +34,11 @@ export class CreateTranslationDto {
   @IsString()
   @Length(1, 2000)
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  source?: string;
 }
 
 export class CreateExampleDto {
@@ -67,6 +72,20 @@ export class CreateSenseDto {
   @IsString()
   @Length(1, 512)
   imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  synonyms?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  antonyms?: string[];
 
   @IsOptional()
   @IsArray()

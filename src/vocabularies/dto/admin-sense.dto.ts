@@ -31,6 +31,20 @@ export class CreateAdminSenseDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  synonyms?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  antonyms?: string[];
+
+  @IsOptional()
+  @IsArray()
   @ArrayMaxSize(16)
   @ValidateNested({ each: true })
   @Type(() => CreateAdminTranslationDto)
@@ -59,4 +73,18 @@ export class UpdateAdminSenseDto {
   @IsString()
   @Length(1, 512)
   imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  synonyms?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  antonyms?: string[];
 }

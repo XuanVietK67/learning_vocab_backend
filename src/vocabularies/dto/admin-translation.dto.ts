@@ -19,6 +19,11 @@ export class CreateAdminTranslationDto {
   @IsString()
   @Length(1, 2000)
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  source?: string;
 }
 
 export class UpdateAdminTranslationDto extends PartialType(
