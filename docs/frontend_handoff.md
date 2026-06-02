@@ -379,15 +379,30 @@ Create a personal word with one or more senses (meanings). Each sense carries it
         { "language": "vi", "translation": "sự tình cờ may mắn", "source": "manual" }
       ],
       "examples": [
-        { "sentence": "Meeting her was pure serendipity." }
+        { "sentence": "Meeting her was pure serendipity." },
+        { "sentence": "Finding that book was a moment of serendipity.", "translation": "Tìm thấy cuốn sách đó là một khoảnh khắc tình cờ may mắn." }
       ]
     }
   ]
 }
 ```
 
-- `senses`: required, 1–16 items. Each sense is `{ gloss?, definition?, imageUrl?, synonyms?[], antonyms?[], translations?[], examples?[] }`. Order in the request becomes `senseOrder` (1-indexed).
+**Top-level fields**
+
+- `language`: required, ISO 639 code matching `^[a-z]{2}(-[A-Z]{2})?$` (e.g. `en`, `vi`, `pt-BR`), 2–8 chars.
+- `lemma`: required, 1–128 chars.
+- `partOfSpeech`: required, one of `noun`, `verb`, `adjective`, `adverb`, `pronoun`, `preposition`, `conjunction`, `interjection`, `phrase`, `other`.
+- `ipa?`: optional, 1–128 chars. `cefrLevel?`: optional, one of `A1`–`C2`. `frequencyRank?`: optional integer ≥ 0.
+- `audioUrl?`: optional, 1–512 chars — omit (or send `null`) to trigger background generation (see audio note below).
+- `topics?`: optional, ≤32 slugs, each matching `[a-z0-9-]+`. Slugs must already exist.
+- `senses`: required, 1–16 items. Order in the request becomes `senseOrder` (1-indexed).
+
+**Per sense** — `{ gloss?, definition?, imageUrl?, synonyms?[], antonyms?[], translations?[], examples[] }`
+
+- `gloss?` ≤128, `definition?` ≤2000, `imageUrl?` ≤512 chars.
 - `synonyms?` / `antonyms?`: optional string arrays, ≤32 items, each 1–64 chars. Omitted → stored as `[]`.
+- `examples`: **required, 2–16 items** per sense (the learn feature holds extra examples back as test sentences, so a single example is rejected with `400`). Each example is `{ sentence (1–1000), translation? (1–1000), source? (≤32) }`.
+- `translations?`: optional, ≤16 items. Each is `{ language (ISO 639), translation (1–255), note? (1–2000), source? }`.
 - translation `source?`: optional provenance string, ≤32 chars (e.g. `"manual"`). Omitted → defaults to `"manual"`.
 
 **Response 201**: `Vocabulary` object. **409** if you already own `(language, lemma, partOfSpeech)`.
@@ -506,7 +521,10 @@ Idempotent upsert of up to 500 items in one transaction. Each item carries the f
         {
           "gloss": "fruit",
           "translations": [ { "language": "vi", "translation": "quả táo" } ],
-          "examples": [ { "sentence": "I ate an apple." } ]
+          "examples": [
+            { "sentence": "I ate an apple." },
+            { "sentence": "She bought a bag of apples." }
+          ]
         }
       ]
     }
