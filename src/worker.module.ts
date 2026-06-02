@@ -1,3 +1,4 @@
+import { join } from 'path';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -30,7 +31,12 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
         username: config.get<string>('database.username'),
         password: config.get<string>('database.password'),
         database: config.get<string>('database.name'),
-        autoLoadEntities: true,
+        // The worker imports no feature modules, so autoLoadEntities would only
+        // see Vocabulary and fail to resolve its relations (User, VocabularySense,
+        // VocabularyTopic, ...). Load the full entity graph by glob instead, the
+        // same way data-source.ts does. __dirname resolves to src/ under ts-node
+        // and dist/ when compiled, so the {ts,js} extensions cover both.
+        entities: [join(__dirname, '**', '*.entity.{ts,js}')],
         synchronize: false,
       }),
     }),
