@@ -1,6 +1,7 @@
 import { Expose, Type } from 'class-transformer';
 import { TopicResponseDto } from '@/topics/dto/topic-response.dto';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
+import { EnrichmentStatus } from '@/vocabularies/entities/enrichment-status.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 
@@ -9,6 +10,7 @@ export class VocabularyTranslationResponseDto {
   @Expose() language!: string;
   @Expose() translation!: string;
   @Expose() note!: string | null;
+  @Expose() source!: string | null;
 }
 
 export class VocabularyExampleResponseDto {
@@ -24,6 +26,8 @@ export class VocabularySenseResponseDto {
   @Expose() gloss!: string | null;
   @Expose() definition!: string | null;
   @Expose() imageUrl!: string | null;
+  @Expose() synonyms!: string[];
+  @Expose() antonyms!: string[];
 
   @Expose()
   @Type(() => VocabularyTranslationResponseDto)
@@ -44,6 +48,7 @@ export class VocabularyResponseDto {
   @Expose() frequencyRank!: number | null;
   @Expose() audioUrl!: string | null;
   @Expose() source!: VocabularySource;
+  @Expose() enrichmentStatus!: EnrichmentStatus | null;
 
   @Expose()
   @Type(() => VocabularySenseResponseDto)

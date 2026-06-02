@@ -12,6 +12,7 @@ import {
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { User } from '@/users/entities/user.entity';
+import { EnrichmentStatus } from '@/vocabularies/entities/enrichment-status.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
@@ -85,6 +86,20 @@ export class Vocabulary {
 
   @Column({ name: 'is_approved', type: 'boolean', default: false })
   isApproved!: boolean;
+
+  // Lifecycle of dictionary enrichment. NULL = created with full data (nothing
+  // to enrich); otherwise set by the enrichment worker.
+  @Column({
+    name: 'enrichment_status',
+    type: 'enum',
+    enum: EnrichmentStatus,
+    enumName: 'enrichment_status_enum',
+    nullable: true,
+  })
+  enrichmentStatus!: EnrichmentStatus | null;
+
+  @Column({ name: 'enriched_at', type: 'timestamptz', nullable: true })
+  enrichedAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

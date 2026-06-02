@@ -44,6 +44,14 @@ export class VocabularySense {
   @Column({ name: 'image_url', type: 'varchar', length: 512, nullable: true })
   imageUrl!: string | null;
 
+  // Display-only word lists, scoped to this sense. Default '{}' so the column is
+  // never null and consumers always receive an array.
+  @Column({ type: 'text', array: true, default: () => "'{}'" })
+  synonyms!: string[];
+
+  @Column({ type: 'text', array: true, default: () => "'{}'" })
+  antonyms!: string[];
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

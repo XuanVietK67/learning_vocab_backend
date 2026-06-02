@@ -309,6 +309,8 @@ export class VocabulariesService {
           gloss: dto.gloss ?? null,
           definition: dto.definition ?? null,
           imageUrl: dto.imageUrl ?? null,
+          synonyms: dto.synonyms ?? [],
+          antonyms: dto.antonyms ?? [],
         }),
       );
 
@@ -349,6 +351,8 @@ export class VocabulariesService {
       if (dto.gloss !== undefined) sense.gloss = dto.gloss;
       if (dto.definition !== undefined) sense.definition = dto.definition;
       if (dto.imageUrl !== undefined) sense.imageUrl = dto.imageUrl;
+      if (dto.synonyms !== undefined) sense.synonyms = dto.synonyms;
+      if (dto.antonyms !== undefined) sense.antonyms = dto.antonyms;
       await manager.getRepository(VocabularySense).save(sense);
 
       return this.toSenseResponseDto(
@@ -455,6 +459,7 @@ export class VocabulariesService {
           language: dto.language,
           translation: dto.translation,
           note: dto.note ?? null,
+          source: dto.source ?? 'manual',
         }),
       );
       return plainToInstance(VocabularyTranslationResponseDto, saved, {
@@ -493,6 +498,7 @@ export class VocabulariesService {
       if (dto.language !== undefined) tr.language = dto.language;
       if (dto.translation !== undefined) tr.translation = dto.translation;
       if (dto.note !== undefined) tr.note = dto.note ?? null;
+      if (dto.source !== undefined) tr.source = dto.source ?? null;
 
       const saved = await repo.save(tr);
       return plainToInstance(VocabularyTranslationResponseDto, saved, {
@@ -941,6 +947,8 @@ export class VocabulariesService {
         sense.gloss = dto.gloss ?? sense.gloss;
         sense.definition = dto.definition ?? sense.definition;
         sense.imageUrl = dto.imageUrl ?? sense.imageUrl;
+        sense.synonyms = dto.synonyms ?? sense.synonyms;
+        sense.antonyms = dto.antonyms ?? sense.antonyms;
         await senseRepo.save(sense);
       } else {
         sense = await senseRepo.save(
@@ -950,6 +958,8 @@ export class VocabulariesService {
             gloss: dto.gloss ?? null,
             definition: dto.definition ?? null,
             imageUrl: dto.imageUrl ?? null,
+            synonyms: dto.synonyms ?? [],
+            antonyms: dto.antonyms ?? [],
           }),
         );
         sensesAdded++;
@@ -993,6 +1003,7 @@ export class VocabulariesService {
             language: tr.language,
             translation: tr.translation,
             note: tr.note ?? null,
+            source: tr.source ?? 'manual',
           }),
         );
         added++;

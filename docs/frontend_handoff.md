@@ -295,6 +295,7 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
       "frequencyRank": 412,
       "audioUrl": "https://.../study-v.mp3",
       "source": "system",
+      "enrichmentStatus": null,
       "senses": [
         {
           "id": "s-001",
@@ -302,8 +303,10 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
           "gloss": "to learn for school/exam",
           "definition": "spend time learning a subject, especially for a test",
           "imageUrl": "https://.../study-learn.jpg",
+          "synonyms": ["learn", "revise"],
+          "antonyms": [],
           "translations": [
-            { "id": "t-001", "language": "vi", "translation": "học, học tập", "note": null }
+            { "id": "t-001", "language": "vi", "translation": "học, học tập", "note": null, "source": "manual" }
           ],
           "examples": [
             { "id": "e-001", "sentence": "She studies biology at university.", "translation": "Cô ấy học sinh học ở trường đại học.", "source": "oxford" }
@@ -315,8 +318,10 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
           "gloss": "to examine carefully",
           "definition": null,
           "imageUrl": null,
+          "synonyms": [],
+          "antonyms": [],
           "translations": [
-            { "id": "t-002", "language": "vi", "translation": "nghiên cứu, xem xét kỹ", "note": null }
+            { "id": "t-002", "language": "vi", "translation": "nghiên cứu, xem xét kỹ", "note": null, "source": "manual" }
           ],
           "examples": []
         }
@@ -333,6 +338,8 @@ GET /v1/vocabularies?language=en&cefrLevel=A2&translationLang=vi&page=1&limit=20
 ```
 
 A `Vocabulary` always carries one or more **senses** (distinct meanings). `translations[]` and `examples[]` live **inside** a sense — the top-level vocabulary no longer exposes them. Different senses can carry different `imageUrl` values; `audioUrl` lives on the vocabulary (pronunciation is shared across senses). Senses are returned ordered by `senseOrder ASC`. The top-level `topics[]` (sorted by slug) lists every topic linked to the vocabulary via `vocabulary_topics`; it is `[]` when the word has no topics. Each entry matches the `Topic` shape from `/v1/topics`.
+
+Each sense also carries `synonyms[]` and `antonyms[]` — plain string arrays (empty `[]` when none). Each translation carries a `source` string marking provenance (`"manual"`, `"mt:google"`, `"cambridge"`, …) or `null`. At the vocabulary level, `enrichmentStatus` is `null` for words created with full data; for words created via background dictionary enrichment it is `"pending"`, `"enriched"`, or `"failed"`. A `"pending"` or `"failed"` word may have senses without the ≥2 examples the study flow needs, so treat it as not-yet-study-ready.
 
 ### `GET /v1/vocabularies/:id`
 Fetch one vocabulary with all of its senses, translations, and examples. No auth.
@@ -366,8 +373,10 @@ Create a personal word with one or more senses (meanings). Each sense carries it
       "gloss": "fortunate accident",
       "definition": "the occurrence of events by chance in a happy or beneficial way",
       "imageUrl": null,
+      "synonyms": ["chance", "fluke"],
+      "antonyms": ["misfortune"],
       "translations": [
-        { "language": "vi", "translation": "sự tình cờ may mắn" }
+        { "language": "vi", "translation": "sự tình cờ may mắn", "source": "manual" }
       ],
       "examples": [
         { "sentence": "Meeting her was pure serendipity." }
@@ -377,7 +386,9 @@ Create a personal word with one or more senses (meanings). Each sense carries it
 }
 ```
 
-- `senses`: required, 1–16 items. Each sense is `{ gloss?, definition?, imageUrl?, translations?[], examples?[] }`. Order in the request becomes `senseOrder` (1-indexed).
+- `senses`: required, 1–16 items. Each sense is `{ gloss?, definition?, imageUrl?, synonyms?[], antonyms?[], translations?[], examples?[] }`. Order in the request becomes `senseOrder` (1-indexed).
+- `synonyms?` / `antonyms?`: optional string arrays, ≤32 items, each 1–64 chars. Omitted → stored as `[]`.
+- translation `source?`: optional provenance string, ≤32 chars (e.g. `"manual"`). Omitted → defaults to `"manual"`.
 
 **Response 201**: `Vocabulary` object. **409** if you already own `(language, lemma, partOfSpeech)`.
 
