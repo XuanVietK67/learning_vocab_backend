@@ -1,8 +1,8 @@
 # Frontend Handoff
 
-Practical reference for frontend engineers integrating with this backend. Lists every HTTP endpoint with what to send, what to expect back, and the minimum context needed to call it. For the canonical, terse contract see [api-endpoints.md](api-endpoints.md); this file mirrors that surface with concrete shapes and examples.
+Index for frontend engineers integrating with this backend. This file holds the **shared conventions** (base URL, versioning, auth, pagination, errors) and a **table of contents** linking to one doc per feature/endpoint. The concrete request/response shapes for each endpoint live in their own per-feature docs under [docs/](.) — see the index below. For the canonical, terse contract see [api-endpoints.md](api-endpoints.md).
 
-> Keep this file in sync with [api-endpoints.md](api-endpoints.md). Every endpoint that ships in a PR should be reflected here in the same change — see [../CLAUDE.md](../CLAUDE.md).
+> Per-feature docs are the source for request/response shapes. When you add or change an endpoint, create/update its per-feature doc and link it from the index below — see [../CLAUDE.md](../CLAUDE.md). The detailed endpoint sections still inline below are legacy and are being migrated into per-feature docs incrementally.
 
 ## Base URL and conventions
 
@@ -33,6 +33,17 @@ Standard Nest error shape:
 ```
 
 Common codes used across the API: `400` validation, `401` missing/invalid JWT, `403` ownership/role mismatch, `404` not found, `409` conflict (duplicate natural key), `429` rate-limited (login).
+
+---
+
+## Per-feature guides (index)
+
+One doc per feature/endpoint. Add a row here whenever you create a new per-feature doc.
+
+| Feature | Method + path | Auth | Doc |
+|---|---|---|---|
+| Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
+| User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 
 ---
 

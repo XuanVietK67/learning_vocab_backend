@@ -27,16 +27,20 @@ Do not document internal helpers, guards, or DTOs there — only the externally 
 
 ## Frontend handoff rule
 
-[docs/frontend_handoff.md](docs/frontend_handoff.md) is the frontend-facing companion to [docs/api-endpoints.md](docs/api-endpoints.md). It contains the concrete request/response shapes, examples, query params, and auth requirements that a frontend engineer needs to call each endpoint.
+Frontend-facing documentation is split into **one doc per feature/endpoint**, not one growing file:
 
-**Whenever you add, remove, rename, or change the request/response shape of an endpoint, update [docs/frontend_handoff.md](docs/frontend_handoff.md) in the same change** (same commit / same PR), alongside the [api-endpoints.md](docs/api-endpoints.md) update.
+- **Per-feature docs** — each endpoint (or tightly-related group of endpoints, e.g. one CRUD resource or one workflow) gets its **own** Markdown file in [docs/](docs/) that explains it for a frontend engineer: the call, what to send, what comes back, client-side validation rules, error handling, and any async/UX gotchas. See [docs/admin_create_vocabulary.md](docs/admin_create_vocabulary.md) as the reference shape and depth.
+- **[docs/frontend_handoff.md](docs/frontend_handoff.md)** — the **index**. It holds the shared conventions (base URL, versioning, auth header, pagination, error shape) and a table of contents linking to every per-feature doc. It does **not** hold per-endpoint request/response shapes anymore — those live in the per-feature docs.
 
-What "update" means in practice:
-- New endpoint → add a subsection under the relevant module with: method + full versioned path, auth requirement, query params (if any), an example request body, and an example response (with status code).
-- Removed endpoint → delete its subsection.
-- Renamed path or method → edit the heading in place.
-- Changed DTO (added/removed/renamed field, new validation constraint, new status code, new error condition) → revise the example request, example response, and any constraint notes.
+**Whenever you add, remove, rename, or change the request/response shape of an endpoint, in the same change (same commit / same PR):**
 
-If a new module's endpoints don't fit any existing section, add a new `## ModuleName — /v1/<path>` section matching the ordering used in [api-endpoints.md](docs/api-endpoints.md).
+1. Update [docs/api-endpoints.md](docs/api-endpoints.md) (the terse contract — see the rule above).
+2. **New endpoint/feature** → create a new per-feature doc in [docs/](docs/), then add one link row to the index in [docs/frontend_handoff.md](docs/frontend_handoff.md).
+3. **Changed endpoint** (DTO field added/removed/renamed, new validation constraint, new status code, new error condition, renamed path/method) → edit that endpoint's existing per-feature doc.
+4. **Removed endpoint** → delete its per-feature doc and remove its link row from the index.
 
-Keep examples realistic (valid UUIDs, plausible values), copy field names verbatim from the DTOs, and prefer linking to [api-endpoints.md](docs/api-endpoints.md) over duplicating the one-sentence purpose. Do not document internal helpers, guards, services, or DTO class names there — only the externally callable HTTP surface as it appears on the wire.
+Conventions for per-feature docs:
+- **Filename:** `docs/<area>_<action>.md` in `snake_case`, e.g. `admin_create_vocabulary.md`, `auth_login.md`, `decks_add_vocabularies.md`.
+- **First line:** an `#` H1 naming the feature, followed by the method + full versioned path and the auth requirement.
+- Cover: request headers/body, a **field-rules table** (required?, type, length/regex/enum), a realistic example request, the example response with status code, an error table, and any client-side validation or async behaviour the frontend must handle.
+- Keep examples realistic (valid UUIDs, plausible values) and copy field names verbatim from the DTOs. Do not document internal helpers, guards, services, or DTO class names — only the externally callable HTTP surface as it appears on the wire.
