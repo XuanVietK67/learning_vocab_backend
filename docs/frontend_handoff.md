@@ -42,6 +42,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 
 | Feature | Method + path | Auth | Doc |
 |---|---|---|---|
+| Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 
