@@ -4,6 +4,8 @@ import learnConfig from '@/config/learn.config';
 import {
   ClozeMcqPrompt,
   ClozeTypingPrompt,
+  FlashcardPrompt,
+  FlashcardSenseView,
   ListeningClozePrompt,
   MeaningInContextPrompt,
   SenseDisambiguationPrompt,
@@ -18,31 +20,22 @@ import {
 } from '@/learn/cloze.util';
 import { DistractorService } from '@/learn/distractor.service';
 import { QuestionType } from '@/learn/enums/question-type.enum';
+import { eligibleTypesForStatus, isClozeFamily } from '@/learn/question-bands';
+import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 
 export interface BuildContext {
   vocab: Vocabulary;
-  // Successful-exposure count for this user+word. Drives the exercise
-  // tier (recognition → recall → production), decoupled from SRS status.
-  correctCount: number;
+  // The word's mastery stage. Decides which difficulty bands are in play:
+  // NEW = the full ladder (incl. the flashcard), LEARNING/REVIEW = recall +
+  // production, MASTERED = production only. See `question-bands.ts`.
+  status: ProgressStatus;
   translationLang: string | null;
-  daySeed: string;
-  // Salt folded into the type-pick seed so a card re-shown within a
-  // session (intra-session requeue) rotates to a different question type
-  // instead of replaying the same one. Typically the running attempt
-  // count (correctCount + incorrectCount).
-  rotationKey: string;
-  // Skip examples whose IDs appear here. Used by the intra-session
-  // requeue path so a re-shown card doesn't repeat the same prompt the
-  // user just answered. Optional — empty/absent means no exclusions.
+  // Skip examples whose IDs appear here. Optional — empty/absent means no
+  // exclusions.
   excludeExampleIds?: Set<string>;
-}
-
-interface WeightedType {
-  type: QuestionType;
-  weight: number;
 }
 
 export interface BuiltQuestion {
@@ -59,85 +52,25 @@ export class QuestionBuilderService {
     private readonly cfg: ConfigType<typeof learnConfig>,
   ) {}
 
-  // Picks a question type appropriate for the card's exercise tier (driven
-  // by successful exposures, not SRS status) and the available data, then
-  // builds the matching prompt. Returns null if no type can be built (e.g.
-  // no example contains a matchable lemma form).
-  async build(ctx: BuildContext): Promise<BuiltQuestion | null> {
-    const pool = this.candidatePool(ctx);
-    if (pool.length === 0) return null;
-
-    // A weighted deterministic ordering: the first entry is the weighted
-    // pick, the rest form the fallback order if its data can't build.
-    const ordered = weightedOrder(
-      pool,
-      `${ctx.daySeed}#${ctx.vocab.id}#${ctx.rotationKey}`,
-    );
-    for (const type of ordered) {
+  // Builds the word's lesson: the ordered (easy→hard) list of questions for
+  // its mastery stage. Walks the stage-eligible types from `question-bands`,
+  // skipping any whose data can't build, and caps the cloze family so the
+  // same example sentence isn't blanked too many steps in a row. May return
+  // an empty array if no type is feasible (e.g. no example with a matchable
+  // lemma form, and no translation/audio data).
+  async buildLadder(ctx: BuildContext): Promise<BuiltQuestion[]> {
+    const types = eligibleTypesForStatus(ctx.status);
+    const cap = this.cfg.clozeFamilyCapPerLesson;
+    const out: BuiltQuestion[] = [];
+    let clozeCount = 0;
+    for (const type of types) {
+      if (isClozeFamily(type) && clozeCount >= cap) continue;
       const built = await this.tryBuild(type, ctx);
-      if (built) return built;
+      if (!built) continue;
+      out.push(built);
+      if (isClozeFamily(type)) clozeCount++;
     }
-    return null;
-  }
-
-  // Maps successful-exposure count to an exercise tier, then assembles a
-  // weighted pool of types up to that tier. Higher tiers unlock harder
-  // formats while lower tiers stay in the pool (at reduced weight) so
-  // sessions keep variety instead of locking to one format. Data
-  // feasibility (translations, senses, audio) gates each type on top.
-  private candidatePool(ctx: BuildContext): WeightedType[] {
-    const tier = this.tierFor(ctx.correctCount);
-    const { vocab } = ctx;
-    const hasMultipleSenses = (vocab.senses?.length ?? 0) >= 2;
-    const hasAudio = !!vocab.audioUrl;
-    const hasTranslationLang = !!ctx.translationLang;
-
-    // introTier = first tier at which the type becomes eligible.
-    const candidates: {
-      type: QuestionType;
-      introTier: number;
-      feasible: boolean;
-    }[] = [
-      { type: QuestionType.CLOZE_MCQ, introTier: 0, feasible: true },
-      {
-        type: QuestionType.MEANING_IN_CONTEXT,
-        introTier: 0,
-        feasible: hasTranslationLang,
-      },
-      {
-        type: QuestionType.LISTENING_CLOZE,
-        introTier: 0,
-        feasible: hasAudio,
-      },
-      { type: QuestionType.CLOZE_TYPING, introTier: 1, feasible: true },
-      {
-        type: QuestionType.SENTENCE_BUILD,
-        introTier: 2,
-        feasible: hasTranslationLang,
-      },
-      {
-        type: QuestionType.SENSE_DISAMBIGUATION,
-        introTier: 2,
-        feasible: hasTranslationLang && hasMultipleSenses,
-      },
-    ];
-
-    const pool: WeightedType[] = [];
-    for (const c of candidates) {
-      if (!c.feasible || c.introTier > tier) continue;
-      // Newest unlocked tier gets the spotlight (weight 3); each tier below
-      // drops a point, floored at 1 so it never fully disappears.
-      const weight = Math.max(1, 3 - (tier - c.introTier));
-      pool.push({ type: c.type, weight });
-    }
-    return pool;
-  }
-
-  private tierFor(correctCount: number): number {
-    const [t0, t1] = this.cfg.exerciseTierThresholds;
-    if (correctCount >= t1) return 2;
-    if (correctCount >= t0) return 1;
-    return 0;
+    return out;
   }
 
   private async tryBuild(
@@ -145,6 +78,8 @@ export class QuestionBuilderService {
     ctx: BuildContext,
   ): Promise<BuiltQuestion | null> {
     switch (type) {
+      case QuestionType.FLASHCARD:
+        return this.buildFlashcard(ctx);
       case QuestionType.CLOZE_MCQ:
         return this.buildClozeMcq(ctx);
       case QuestionType.CLOZE_TYPING:
@@ -162,6 +97,44 @@ export class QuestionBuilderService {
 
   // --------------------------------------------------------------------
   // Individual builders
+
+  // Study card. Renders every sense (meaning + first example) plus
+  // pronunciation and audio. Needs at least one example across the senses so
+  // the lesson has a real exampleId to sign (the flashcard doesn't grade
+  // against it); a word with no examples produces no questions at all today.
+  private buildFlashcard(ctx: BuildContext): BuiltQuestion | null {
+    const senses = ctx.vocab.senses ?? [];
+    let exampleId: string | null = null;
+    const views: FlashcardSenseView[] = [];
+    for (const sense of senses) {
+      const ex = (sense.examples ?? [])[0] ?? null;
+      if (ex && !exampleId) exampleId = ex.id;
+      const translation = ctx.translationLang
+        ? firstTranslationOfSense(sense, ctx.translationLang)
+        : ((sense.translations ?? [])[0]?.translation ?? null);
+      views.push({
+        gloss: sense.gloss,
+        definition: sense.definition,
+        translation,
+        example: ex
+          ? { sentence: ex.sentence, translation: ex.translation }
+          : null,
+        synonyms: sense.synonyms ?? [],
+        antonyms: sense.antonyms ?? [],
+      });
+    }
+    if (!exampleId) return null;
+
+    const prompt: FlashcardPrompt = {
+      type: QuestionType.FLASHCARD,
+      lemma: ctx.vocab.lemma,
+      ipa: ctx.vocab.ipa,
+      partOfSpeech: ctx.vocab.partOfSpeech,
+      audioUrl: ctx.vocab.audioUrl ?? null,
+      senses: views,
+    };
+    return { type: QuestionType.FLASHCARD, exampleId, prompt };
+  }
 
   private async buildClozeMcq(
     ctx: BuildContext,
@@ -413,32 +386,6 @@ export class QuestionBuilderService {
 
 // ----------------------------------------------------------------------
 // Module-local helpers
-
-// Deterministic weighted ordering via the Efraimidis–Spirakis key trick:
-// each entry gets key = u^(1/weight) for a seeded u in (0,1); sorting by
-// key descending yields a weighted sample-without-replacement order, so
-// the first element is the weighted pick and the rest are the fallback
-// order. Same seed → same order (reproducible / testable).
-function weightedOrder(pool: WeightedType[], seed: string): QuestionType[] {
-  return pool
-    .map((entry, i) => {
-      const u = hashUnit(`${seed}#${entry.type}#${i}`);
-      return { type: entry.type, key: Math.pow(u, 1 / entry.weight) };
-    })
-    .sort((a, b) => b.key - a.key)
-    .map((e) => e.type);
-}
-
-// Hashes a seed string to a deterministic value in the open interval
-// (0,1). Never returns 0 (which would collapse any pow() to 0).
-function hashUnit(seed: string): number {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) {
-    h = (h << 5) - h + seed.charCodeAt(i);
-    h |= 0;
-  }
-  return ((Math.abs(h) % 100000) + 1) / 100001;
-}
 
 function firstTranslationOfSense(
   sense: VocabularySense,

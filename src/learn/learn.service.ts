@@ -24,8 +24,12 @@ import {
 import { SubmitAnswerDto } from '@/learn/dto/submit-answer.dto';
 import { LearnSessionMode } from '@/learn/enums/learn-session-mode.enum';
 import { HmacSignerService } from '@/learn/hmac-signer.service';
-import { QuestionBuilderService } from '@/learn/question-builder.service';
+import {
+  BuiltQuestion,
+  QuestionBuilderService,
+} from '@/learn/question-builder.service';
 import { PickResult, VocabPickerService } from '@/learn/vocab-picker.service';
+import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { ProgressService } from '@/progress/progress.service';
 import { User } from '@/users/entities/user.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
@@ -90,65 +94,37 @@ export class LearnService {
     }
 
     // 4) Load vocab tree (senses + examples + translations) + progress rows
-    //    for exposure-count lookup in a single batch (avoids N+1).
+    //    for the per-word mastery stage in a single batch (avoids N+1).
     const [vocabs, progressRows] = await Promise.all([
       this.loadVocabTree(allVocabIds, translationLang),
       this.progressRepo.find({
         where: { userId, vocabularyId: In(allVocabIds) },
-        select: {
-          vocabularyId: true,
-          correctCount: true,
-          incorrectCount: true,
-        },
+        select: { vocabularyId: true, status: true },
       }),
     ]);
     const vocabById = new Map(vocabs.map((v) => [v.id, v]));
-    const statsByVocabId = new Map(
-      progressRows.map((p) => [
-        p.vocabularyId,
-        { correctCount: p.correctCount, incorrectCount: p.incorrectCount },
-      ]),
+    const statusByVocabId = new Map(
+      progressRows.map((p) => [p.vocabularyId, p.status]),
     );
 
-    // 5) Build the per-card questions in pick order
-    const daySeed = toUtcDateString(new Date());
+    // 5) Expand each word into its lesson ladder (easy→hard for its stage),
+    //    grouped and signed, in pick order.
     const items: SessionItemDto[] = [];
     for (const vocabId of allVocabIds) {
       const vocab = vocabById.get(vocabId);
       if (!vocab) continue;
 
-      const stats = statsByVocabId.get(vocabId) ?? {
-        correctCount: 0,
-        incorrectCount: 0,
-      };
-
-      const built = await this.questionBuilder.build({
+      const status = statusByVocabId.get(vocabId) ?? ProgressStatus.NEW;
+      const built = await this.questionBuilder.buildLadder({
         vocab,
-        correctCount: stats.correctCount,
+        status,
         translationLang,
-        daySeed,
-        rotationKey: String(stats.correctCount + stats.incorrectCount),
       });
-      if (!built) continue;
+      if (built.length === 0) continue;
 
-      const issued = this.signer.issue({
-        userId,
-        vocabularyId: vocab.id,
-        type: built.type,
-        exampleId: built.exampleId,
-        translationLang,
-      });
-      items.push({
-        sessionItemId: randomUUID(),
-        vocabularyId: vocab.id,
-        lemma: vocab.lemma,
-        exampleId: built.exampleId,
-        type: built.type,
-        nonce: issued.nonce,
-        issuedAtMs: issued.issuedAtMs,
-        signature: issued.signature,
-        prompt: built.prompt,
-      });
+      items.push(
+        ...this.assembleLessonItems({ userId, vocab, built, translationLang }),
+      );
     }
 
     const emptyReason: SessionEmptyReason | null =
@@ -190,6 +166,8 @@ export class LearnService {
         type: dto.type,
         exampleId: dto.exampleId,
         translationLang,
+        stepIndex: dto.stepIndex,
+        stepCount: dto.stepCount,
         nonce: dto.nonce,
         issuedAtMs: dto.issuedAtMs,
       },
@@ -222,6 +200,21 @@ export class LearnService {
       latencyMs: dto.latencyMs,
     });
 
+    // A word's lesson is one SRS event: only the final step (the hardest
+    // question) reschedules. Earlier steps grade for immediate feedback but
+    // leave the schedule untouched, so a multi-question lesson can't graduate
+    // the card in a single sitting.
+    const isFinalStep = dto.stepIndex === dto.stepCount - 1;
+    if (!isFinalStep) {
+      return {
+        correct: result.correct,
+        correctAnswer: result.correctAnswer,
+        quality: result.quality,
+        progress: null,
+        requeue: null,
+      };
+    }
+
     const progress = await this.progressService.submitReview(userId, {
       vocabularyId: dto.vocabularyId,
       quality: result.quality,
@@ -235,79 +228,84 @@ export class LearnService {
       requeue: await this.buildRequeue({
         userId,
         vocab,
+        status: progress.status,
         nextReviewAt: progress.nextReviewAt,
-        correctCount: progress.correctCount,
-        incorrectCount: progress.incorrectCount,
         translationLang,
-        previousExampleId: dto.exampleId,
       }),
     };
   }
 
-  // If the SRS just scheduled the card within the requeue window, bake a
-  // fresh signed question so the client can re-surface it in the same
-  // session without polling /session. We try to pick a *different*
-  // example than the one the user just answered; if that's impossible
-  // (e.g., the vocab only has the one example), we still requeue —
-  // re-seeing the same prompt is better than dropping the card.
+  // If the SRS just rescheduled the card within the requeue window, bake the
+  // word's next lesson ladder (for its now-advanced stage) so the client can
+  // re-surface it in the same session without polling /session.
   private async buildRequeue(args: {
     userId: string;
     vocab: Vocabulary;
+    status: ProgressStatus;
     nextReviewAt: Date;
-    correctCount: number;
-    incorrectCount: number;
     translationLang: string | null;
-    previousExampleId: string;
   }): Promise<RequeuedItemDto | null> {
     const windowMs = this.cfg.requeueWindowMinutes * 60_000;
     const dueAtMs = args.nextReviewAt.getTime();
     if (dueAtMs - Date.now() > windowMs) return null;
 
-    const daySeed = toUtcDateString(new Date());
-    // Counts already reflect the answer just graded, so this rotationKey
-    // differs from the one used when the card was first issued today —
-    // the re-shown card rotates to a (likely) different question type.
-    const rotationKey = String(args.correctCount + args.incorrectCount);
-    const built =
-      (await this.questionBuilder.build({
-        vocab: args.vocab,
-        correctCount: args.correctCount,
-        translationLang: args.translationLang,
-        daySeed,
-        rotationKey,
-        excludeExampleIds: new Set([args.previousExampleId]),
-      })) ??
-      (await this.questionBuilder.build({
-        vocab: args.vocab,
-        correctCount: args.correctCount,
-        translationLang: args.translationLang,
-        daySeed,
-        rotationKey,
-      }));
-    if (!built) return null;
-
-    const issued = this.signer.issue({
-      userId: args.userId,
-      vocabularyId: args.vocab.id,
-      type: built.type,
-      exampleId: built.exampleId,
+    const built = await this.questionBuilder.buildLadder({
+      vocab: args.vocab,
+      status: args.status,
       translationLang: args.translationLang,
     });
-    const item: SessionItemDto = {
-      sessionItemId: randomUUID(),
-      vocabularyId: args.vocab.id,
-      lemma: args.vocab.lemma,
-      exampleId: built.exampleId,
-      type: built.type,
-      nonce: issued.nonce,
-      issuedAtMs: issued.issuedAtMs,
-      signature: issued.signature,
-      prompt: built.prompt,
-    };
-    return { dueAtMs, item };
+    if (built.length === 0) return null;
+
+    const items = this.assembleLessonItems({
+      userId: args.userId,
+      vocab: args.vocab,
+      built,
+      translationLang: args.translationLang,
+    });
+    return { dueAtMs, items };
   }
 
   // ------------------- internals -------------------
+
+  // Turns a word's built ladder into signed, grouped session items. All
+  // steps of one word share a `groupId`; each carries its `stepIndex` /
+  // `stepCount` (both signed) so the client can render lesson progress and
+  // the server can tell which step is SRS-bearing on submit.
+  private assembleLessonItems(args: {
+    userId: string;
+    vocab: Vocabulary;
+    built: BuiltQuestion[];
+    translationLang: string | null;
+  }): SessionItemDto[] {
+    const { userId, vocab, built, translationLang } = args;
+    const groupId = randomUUID();
+    const stepCount = built.length;
+    return built.map((b, stepIndex) => {
+      const issued = this.signer.issue({
+        userId,
+        vocabularyId: vocab.id,
+        type: b.type,
+        exampleId: b.exampleId,
+        translationLang,
+        stepIndex,
+        stepCount,
+      });
+      return {
+        sessionItemId: randomUUID(),
+        groupId,
+        stepIndex,
+        stepCount,
+        vocabularyId: vocab.id,
+        lemma: vocab.lemma,
+        exampleId: b.exampleId,
+        type: b.type,
+        nonce: issued.nonce,
+        issuedAtMs: issued.issuedAtMs,
+        signature: issued.signature,
+        prompt: b.prompt,
+      };
+    });
+  }
 
   private dispatchPicker(
     user: User,
@@ -351,10 +349,6 @@ export class LearnService {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
-}
-
-function toUtcDateString(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 function findExample(

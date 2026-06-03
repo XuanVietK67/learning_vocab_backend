@@ -68,7 +68,10 @@ describe('LearnService — mode dispatch', () => {
         LearnService,
         { provide: VocabPickerService, useValue: picker },
         { provide: ProgressService, useValue: progressService },
-        { provide: QuestionBuilderService, useValue: { build: jest.fn() } },
+        {
+          provide: QuestionBuilderService,
+          useValue: { buildLadder: jest.fn() },
+        },
         { provide: AnswerGraderService, useValue: {} },
         {
           provide: HmacSignerService,
@@ -196,7 +199,10 @@ describe('LearnService — mode dispatch', () => {
         LearnService,
         { provide: VocabPickerService, useValue: picker },
         { provide: ProgressService, useValue: progressService },
-        { provide: QuestionBuilderService, useValue: { build: jest.fn() } },
+        {
+          provide: QuestionBuilderService,
+          useValue: { buildLadder: jest.fn() },
+        },
         { provide: AnswerGraderService, useValue: {} },
         { provide: HmacSignerService, useValue: {} },
         {

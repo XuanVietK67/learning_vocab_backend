@@ -10,6 +10,11 @@ export interface SignaturePayload {
   type: QuestionType;
   exampleId: string;
   translationLang: string | null;
+  // Position of this question within the word's lesson ladder. Signed so the
+  // client can't tamper with which step is the SRS-bearing one (the final
+  // step, stepIndex === stepCount - 1, is the only one that reschedules).
+  stepIndex: number;
+  stepCount: number;
   nonce: string;
   issuedAtMs: number;
 }
@@ -64,6 +69,8 @@ export class HmacSignerService {
       payload.type,
       payload.exampleId,
       payload.translationLang ?? '',
+      String(payload.stepIndex),
+      String(payload.stepCount),
       payload.nonce,
       String(payload.issuedAtMs),
     ].join('|');

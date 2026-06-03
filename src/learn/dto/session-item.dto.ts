@@ -14,6 +14,13 @@ export type SessionEmptyReason =
 
 export interface SessionItemEnvelope {
   sessionItemId: string;
+  // A word's lesson is a ladder of questions (easy→hard). Every step of the
+  // same word shares `groupId`; `stepIndex`/`stepCount` place it within the
+  // ladder. Only the final step (stepIndex === stepCount - 1) updates the
+  // SRS schedule — earlier steps grade for feedback only.
+  groupId: string;
+  stepIndex: number;
+  stepCount: number;
   vocabularyId: string;
   lemma: string;
   exampleId: string;
@@ -21,6 +28,29 @@ export interface SessionItemEnvelope {
   nonce: string;
   issuedAtMs: number;
   signature: string;
+}
+
+// One sense as rendered on a flashcard reveal.
+export interface FlashcardSenseView {
+  gloss: string | null;
+  definition: string | null;
+  // Translation in the session's translationLang, when available.
+  translation: string | null;
+  example: { sentence: string; translation: string | null } | null;
+  synonyms: string[];
+  antonyms: string[];
+}
+
+// Self-rated study card. Front shows the lemma; the reveal shows the senses
+// (meaning + example), pronunciation, and audio. The user submits a
+// self-rating as `userAnswer` (see the grader for accepted values).
+export interface FlashcardPrompt {
+  type: QuestionType.FLASHCARD;
+  lemma: string;
+  ipa: string | null;
+  partOfSpeech: string;
+  audioUrl: string | null;
+  senses: FlashcardSenseView[];
 }
 
 export interface ClozeMcqPrompt {
@@ -71,6 +101,7 @@ export interface ListeningClozePrompt {
 }
 
 export type SessionItemPrompt =
+  | FlashcardPrompt
   | ClozeMcqPrompt
   | ClozeTypingPrompt
   | MeaningInContextPrompt

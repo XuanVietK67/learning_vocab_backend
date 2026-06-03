@@ -8,6 +8,9 @@ function makeSigner(ttlMs = 1800_000): HmacSignerService {
     signatureTtlMs: ttlMs,
     defaultSessionLimit: 15,
     maxSessionLimit: 50,
+    learningStepsMinutes: [1, 10],
+    requeueWindowMinutes: 15,
+    clozeFamilyCapPerLesson: 2,
   });
 }
 
@@ -17,6 +20,8 @@ const basePayload = {
   type: QuestionType.CLOZE_MCQ,
   exampleId: '33333333-3333-3333-3333-333333333333',
   translationLang: 'vi' as string | null,
+  stepIndex: 1,
+  stepCount: 4,
 };
 
 describe('HmacSignerService', () => {
@@ -59,6 +64,22 @@ describe('HmacSignerService', () => {
         {
           ...basePayload,
           translationLang: 'en',
+          nonce: issued.nonce,
+          issuedAtMs: issued.issuedAtMs,
+        },
+        issued.signature,
+      ),
+    ).toThrow(UnauthorizedException);
+  });
+
+  it('rejects a tampered stepIndex (forging the SRS-bearing step)', () => {
+    const signer = makeSigner();
+    const issued = signer.issue(basePayload);
+    expect(() =>
+      signer.verify(
+        {
+          ...basePayload,
+          stepIndex: basePayload.stepCount - 1, // claim it's the final step
           nonce: issued.nonce,
           issuedAtMs: issued.issuedAtMs,
         },

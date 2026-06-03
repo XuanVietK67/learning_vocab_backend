@@ -33,6 +33,8 @@ export interface GradeOutput {
 export class AnswerGraderService {
   grade(input: GradeInput): GradeOutput {
     switch (input.type) {
+      case QuestionType.FLASHCARD:
+        return this.gradeFlashcard(input);
       case QuestionType.CLOZE_MCQ:
       case QuestionType.LISTENING_CLOZE:
         return this.gradeClozeMcq(input);
@@ -45,6 +47,20 @@ export class AnswerGraderService {
       case QuestionType.SENSE_DISAMBIGUATION:
         return this.gradeSenseDisambiguation(input);
     }
+  }
+
+  // A flashcard has no objective answer — the user self-rates their recall
+  // and that rating maps to an SM-2 quality. `correctAnswer` is the sense's
+  // translation (or the lemma) so the reveal has something canonical to show.
+  private gradeFlashcard(input: GradeInput): GradeOutput {
+    const quality = flashcardQuality(input.userAnswer);
+    const correctAnswer =
+      (input.translationLang
+        ? input.sense.translations?.find(
+            (t) => t.language === input.translationLang,
+          )?.translation
+        : null) ?? input.vocab.lemma;
+    return { correct: quality >= 3, correctAnswer, quality };
   }
 
   // For MCQ-style cloze, the userAnswer is the chosen option string.
@@ -159,6 +175,26 @@ export class AnswerGraderService {
 function mcqQuality(correct: boolean, latencyMs: number): ReviewQuality {
   if (correct) return latencyMs <= FAST_THRESHOLD_MS ? 5 : 4;
   return 2;
+}
+
+// Maps a flashcard self-rating to an SM-2 quality. Anki-style four-button
+// scale; an unrecognised value is treated as "good" so a malformed rating
+// never hard-fails the answer.
+function flashcardQuality(rating: string): ReviewQuality {
+  switch (normalizeAnswer(rating)) {
+    case 'forgot':
+    case 'again':
+      return 1;
+    case 'hard':
+      return 3;
+    case 'easy':
+      return 5;
+    case 'good':
+    case 'knew':
+    case 'known':
+    default:
+      return 4;
+  }
 }
 
 function sameMultiset(a: string[], b: string[]): boolean {
