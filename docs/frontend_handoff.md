@@ -1162,3 +1162,67 @@ When the SRS schedules the card within `LEARN_REQUEUE_WINDOW_MINUTES` of now (de
 - `400` validation (missing/invalid body fields)
 - `401` invalid or expired signature (TTL is 30 minutes — refresh by calling `/session` again)
 - `404` vocabulary not found, or the user is not enrolled in it (call `/v1/me/progress/enroll` first)
+
+## Pronunciation — `/v1/me/pronunciation`
+
+Record the learner saying a word/phrase and score their pronunciation. Audio is transcoded and scored server-side, then discarded (nothing is stored except the resulting scores). All endpoints require `Authorization: Bearer <accessToken>` and are rate-limited per user window.
+
+### `POST /v1/me/pronunciation/attempts`
+Submit a recorded clip and get a synchronous pronunciation score. Content type is **`multipart/form-data`** (not JSON).
+
+**Form fields**
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `audio` | file | yes | The recording. Any common container ffmpeg can decode (m4a/aac, webm/opus, wav, mp3). Max 5 MB, max ~15 s. |
+| `referenceText` | text | yes | The word/phrase the learner was asked to say (1–256 chars). |
+| `locale` | text | no | One of `en`, `en-US`, `en-GB`. `en` resolves to `en-US`. Defaults to `en-US`. |
+
+**Example request**
+
+```bash
+curl -X POST https://api.example.com/v1/me/pronunciation/attempts \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "audio=@think.m4a;type=audio/mp4" \
+  -F "referenceText=think" \
+  -F "locale=en-US"
+```
+
+**Response 201**
+
+```json
+{
+  "id": "b91c4d2e-7f3a-4c1b-9e2a-0d5f6a7b8c90",
+  "referenceText": "think",
+  "recognizedText": "think",
+  "locale": "en-US",
+  "overallScore": 82.0,
+  "accuracyScore": 85.0,
+  "fluencyScore": 90.0,
+  "completenessScore": 100.0,
+  "prosodyScore": 78.0,
+  "passed": true,
+  "words": [
+    {
+      "word": "think",
+      "accuracyScore": 85.0,
+      "phonemes": [
+        { "phoneme": "th", "accuracyScore": 40.0 },
+        { "phoneme": "ih", "accuracyScore": 95.0 },
+        { "phoneme": "ng", "accuracyScore": 88.0 }
+      ]
+    }
+  ],
+  "createdAt": "2026-06-02T08:30:00.000Z"
+}
+```
+
+Scores are on a 0–100 scale. `passed` is `overallScore >= 70` (server-configured threshold). Sub-scores and `phonemes[].accuracyScore` may be `null` when Azure does not return that component for the clip; `words` is `[]` if no per-word detail was produced. Use the low-scoring phonemes to drive coaching feedback in the UI.
+
+**Errors**
+- `400` missing/empty `audio`, undecodable audio, clip longer than the limit, or unsupported `locale`
+- `401` missing/invalid access token
+- `413` upload exceeds the size limit
+- `422` no speech detected in the recording (ask the learner to re-record)
+- `429` rate limit exceeded
+- `502` pronunciation scoring provider unavailable

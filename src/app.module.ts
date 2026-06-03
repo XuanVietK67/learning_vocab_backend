@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -8,12 +9,14 @@ import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import learnConfig from './config/learn.config';
 import mailConfig from './config/mail.config';
+import pronunciationConfig from './config/pronunciation.config';
 import redisConfig from './config/redis.config';
 import { AuthModule } from './auth/auth.module';
 import { DecksModule } from './decks/decks.module';
 import { LearnModule } from './learn/learn.module';
 import { MailerModule } from './mailer/mailer.module';
 import { ProgressModule } from './progress/progress.module';
+import { PronunciationModule } from './pronunciation/pronunciation.module';
 import { TopicsModule } from './topics/topics.module';
 import { UsersModule } from './users/users.module';
 import { VocabulariesModule } from './vocabularies/vocabularies.module';
@@ -29,8 +32,18 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         mailConfig,
         redisConfig,
         audioConfig,
+        pronunciationConfig,
       ],
       envFilePath: ['.env'],
+    }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: config.get<number>('pronunciation.rateTtlSeconds', 60) * 1000,
+          limit: config.get<number>('pronunciation.rateLimit', 20),
+        },
+      ],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -53,6 +66,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     DecksModule,
     ProgressModule,
     LearnModule,
+    PronunciationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

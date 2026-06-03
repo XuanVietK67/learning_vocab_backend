@@ -183,3 +183,13 @@ Per-user spaced-repetition state and study stats. All endpoints require JWT auth
 | GET | `/v1/me/progress/due` | JWT | Fetch due cards (`next_review_at <= now`), oldest-due first. Query: `limit` (default 20, max 100), `translationLang` (filters nested translations). Each item includes the progress row and its full vocabulary (with senses → translations + examples). |
 | POST | `/v1/me/progress/review` | JWT | Submit a review grade. Body: `{ vocabularyId, quality }` where quality is 0–5 (≥3 counts as correct). Runs SM-2; updates `repetitions`, `easeFactor`, `intervalDays`, `nextReviewAt`, status, and correct/incorrect counters. Returns the updated progress row. Returns 404 if the user is not enrolled in that word. |
 | GET | `/v1/me/stats` | JWT | Snapshot for the home screen: `{ streakDays, dueNow, reviewedToday, dailyGoalMinutes, counts: { new, learning, review, mastered }, nextDueAt }`. Streak is consecutive UTC days with at least one review ending at the most recent review date (counts only if that date is today or yesterday). `nextDueAt` is the ISO timestamp of the soonest progress row scheduled in the future, or null when the user has no future-scheduled cards. |
+
+## Pronunciation — `/v1/me/pronunciation`
+
+Source: [src/pronunciation/me-pronunciation.controller.ts](../src/pronunciation/me-pronunciation.controller.ts)
+
+Records a learner saying a word/phrase and scores their pronunciation with Azure Pronunciation Assessment. The upload is transcoded server-side (ffmpeg → 16 kHz mono PCM) and discarded after scoring — no audio is retained. All endpoints require JWT auth and are rate-limited (`PRONUNCIATION_RATE_*` env vars).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/me/pronunciation/attempts` | JWT | Submit a recorded clip (`multipart/form-data`: `audio` file + `referenceText`, optional `locale`) and synchronously return overall + per-component scores (accuracy, fluency, completeness, prosody), a `passed` flag, and a per-word/per-phoneme accuracy breakdown. The attempt is persisted. 400 on missing/undecodable/over-length audio or unsupported locale; 422 when no speech is detected; 502 when the scoring provider is unavailable. |
