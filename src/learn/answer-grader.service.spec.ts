@@ -191,6 +191,47 @@ describe('AnswerGraderService — SENTENCE_BUILD', () => {
   });
 });
 
+describe('AnswerGraderService — FLASHCARD (self-rated)', () => {
+  function gradeRating(rating: string) {
+    return grader.grade({
+      type: QuestionType.FLASHCARD,
+      vocab: makeVocab(),
+      sense: makeSense(),
+      example: makeExample('She studies biology.'),
+      translationLang: 'vi',
+      userAnswer: rating,
+      latencyMs: 3_000,
+    });
+  }
+
+  it('"forgot" → not correct, quality 1', () => {
+    const out = gradeRating('forgot');
+    expect(out.correct).toBe(false);
+    expect(out.quality).toBe(1);
+  });
+
+  it('"hard" → correct, quality 3', () => {
+    const out = gradeRating('hard');
+    expect(out.correct).toBe(true);
+    expect(out.quality).toBe(3);
+  });
+
+  it('"good" → correct, quality 4, reveals the sense translation', () => {
+    const out = gradeRating('good');
+    expect(out.correct).toBe(true);
+    expect(out.quality).toBe(4);
+    expect(out.correctAnswer).toBe('học');
+  });
+
+  it('"easy" → correct, quality 5', () => {
+    expect(gradeRating('easy').quality).toBe(5);
+  });
+
+  it('unrecognised rating defaults to "good" (never hard-fails)', () => {
+    expect(gradeRating('whatever').quality).toBe(4);
+  });
+});
+
 describe('AnswerGraderService — SENSE_DISAMBIGUATION', () => {
   it('picks translation of the example sentence sense', () => {
     const out = grader.grade({

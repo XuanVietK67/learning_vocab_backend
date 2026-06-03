@@ -21,8 +21,22 @@ export class SubmitAnswerDto {
   @IsUUID('4')
   exampleId!: string;
 
-  // Free-form string for typing/build/MCQ-index-as-string. The grader interprets
-  // this per-type. We accept a generous length cap to allow sentence build.
+  // Position of the question within the word's lesson ladder (echoed from the
+  // item; both are signed). The server reschedules only on the final step
+  // (stepIndex === stepCount - 1); earlier steps grade for feedback only.
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  stepIndex!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  stepCount!: number;
+
+  // Free-form string for typing/build/MCQ-index-as-string. For FLASHCARD it is
+  // the self-rating ("forgot" | "hard" | "good" | "easy"). The grader
+  // interprets this per-type. We accept a generous length cap for build.
   @IsString()
   @Length(0, 1000)
   userAnswer!: string;

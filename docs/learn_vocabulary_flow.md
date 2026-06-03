@@ -9,7 +9,7 @@ How an end user studies vocabulary: the **guided learn-session loop** (the main 
 | `POST /v1/me/learn/session` | Start a study session — server picks cards and returns ready-to-render, signed questions. |
 | `POST /v1/me/learn/answer` | Submit one answer — server grades it, updates the schedule, and may re-queue the card. |
 | `POST /v1/me/progress/enroll` | Add words to the user's study set (usually automatic; see below). |
-| `GET /v1/me/progress/due` | Raw list of cards due for review (flashcard-style, client-graded). |
+| `GET /v1/me/progress/due` | Raw list of due cards for a custom client-graded review UI (this is a different feature from the in-session `flashcard` question type below). |
 | `POST /v1/me/progress/review` | Submit a self-graded review for one card. |
 | `GET /v1/me/stats` | Dashboard numbers: streak, due count, status breakdown. |
 
@@ -21,30 +21,38 @@ Canonical contract: [api-endpoints.md](api-endpoints.md) · conventions: [fronte
 
 This is the flow the study screen should use. The server does the picking, question-building, grading, and spaced-repetition scheduling — the client just renders and reports answers.
 
+Each picked word is expanded into a **lesson ladder** — an ordered (easy→hard) run of questions for that word's mastery stage. `items[]` is the flat, ordered concatenation of every word's ladder; steps of one word share a `groupId` and carry `stepIndex`/`stepCount`.
+
 ```
 1. POST /v1/me/learn/session   { mode: "daily" }
         │  server picks due + fresh cards, auto-enrolls the fresh ones,
-        │  builds one signed question per card
+        │  expands each word into its lesson ladder of signed questions
         ▼
    response: { sessionId, items: [ signed question, ... ], emptyReason, nextDueAt }
+        │            (items are grouped by groupId, in stepIndex order)
         │
         ├─ items empty? → show empty-state from `emptyReason`
         │                 (if "no_due_cards", `nextDueAt` says when to return)
         │
         └─ for each item:
               2. render `item.prompt` (switch on prompt.type)
-              3. user answers
+              3. user answers (for `flashcard`, the user self-rates)
               4. POST /v1/me/learn/answer  (echo the item's signed fields + userAnswer + latencyMs)
                     ▼
                  response: { correct, correctAnswer, quality, progress, requeue }
-                    │
-                    └─ requeue != null? → re-show requeue.item at requeue.dueAtMs
-                                          (card came due again inside this session)
+                    │   progress is null until the LAST step of the word (the
+                    │   only step that reschedules); show correct/correctAnswer
+                    │   for feedback on every step.
+                    └─ requeue != null? → enqueue requeue.items and re-show them
+                                          at requeue.dueAtMs (the word's next-stage
+                                          ladder, due again inside this session)
         │
         └─ items exhausted → session done → optionally GET /v1/me/stats
 ```
 
-Key idea: **you never manually enroll in this path** — `POST /session` auto-enrolls any brand-new words it picks (`enrolledNewlyCount` tells you how many). Enrollment, grading, and scheduling are side effects of the two learn endpoints.
+Key ideas:
+- **You never manually enroll in this path** — `POST /session` auto-enrolls any brand-new words it picks (`enrolledNewlyCount` tells you how many).
+- **A word's lesson is one SRS event.** A new word can be 5–7 questions, but only the final (hardest) step changes the schedule; earlier steps grade for feedback. Render the ladder in `stepIndex` order and treat completing the last step as "the card was reviewed."
 
 ---
 
@@ -103,25 +111,29 @@ Every item shares an **envelope** plus a `prompt` whose shape depends on `prompt
 ```jsonc
 {
   "sessionItemId": "…",       // client correlation id (not signed)
+  "groupId": "…",             // all steps of one word's lesson share this
+  "stepIndex": 0,             // 0-based position in the word's ladder
+  "stepCount": 5,             // total steps in the word's ladder
   "vocabularyId": "…uuid…",
   "lemma": "ephemeral",
   "exampleId": "…uuid…",
-  "type": "cloze_mcq",        // QuestionType — also the discriminator of `prompt`
+  "type": "flashcard",        // QuestionType — also the discriminator of `prompt`
   "nonce": "…",               // signed fields ↓ — echo ALL of these back to /answer
   "issuedAtMs": 1717400000000,
   "signature": "…hex…",
-  "prompt": { "type": "cloze_mcq", /* type-specific fields */ }
+  "prompt": { "type": "flashcard", /* type-specific fields */ }
 }
 ```
 
-> ⚠️ **The envelope fields are signed (HMAC) and expire ~30 min after issue.** When you submit an answer you must echo `vocabularyId`, `type`, `exampleId`, `nonce`, `issuedAtMs`, `signature`, and the same `translationLang` you used to create the session. Tampered or stale fields → `401`.
+> ⚠️ **The envelope fields are signed (HMAC) and expire ~30 min after issue.** When you submit an answer you must echo `vocabularyId`, `type`, `exampleId`, `stepIndex`, `stepCount`, `nonce`, `issuedAtMs`, `signature`, and the same `translationLang` you used to create the session. Tampered or stale fields → `401`. (`stepIndex`/`stepCount` are signed so the server, not the client, decides which step reschedules the card.)
 
 ### Question types — render `prompt` by `prompt.type`
 
-There are six types (a discriminated union). Switch on `prompt.type`:
+There are seven types (a discriminated union). Switch on `prompt.type`:
 
 | `type` | Prompt fields | Render | What the user submits as `userAnswer` |
 |---|---|---|---|
+| `flashcard` | `lemma`, `ipa`, `partOfSpeech`, `audioUrl`, `senses[] [{gloss, definition, translation, example {sentence, translation}, synonyms[], antonyms[]}]` | Study card: show the word, reveal the senses/meaning/example/audio, ask "did you know it?" | the self-rating: `forgot` \| `hard` \| `good` \| `easy` |
 | `cloze_mcq` | `sentenceWithBlank`, `hintTranslation`, `audioUrl`, `options[]` | Sentence with a blank + multiple-choice options | the chosen option **text** |
 | `cloze_typing` | `sentenceWithBlank`, `hintTranslation`, `audioUrl` | Sentence with a blank, free-text input | the typed word |
 | `meaning_in_context` | `sentence`, `highlightedSpan {start,end}`, `options[]` | Sentence with a highlighted span + translation options | the chosen option text |
@@ -129,7 +141,15 @@ There are six types (a discriminated union). Switch on `prompt.type`:
 | `sense_disambiguation` | `sentences[] [{exampleId, sentence}]`, `options[]` | Two example sentences + two meanings to match | the chosen meaning text |
 | `listening_cloze` | `audioUrl`, `sentenceWithBlank`, `hintTranslation`, `options[]` | Play audio, fill the blank (4-option MCQ in v1) | the chosen option text |
 
-The mix of types a card can get widens as the user answers it correctly (recognition → recall → production), gated by data availability — but the frontend doesn't choose; it just renders whatever `type` arrives.
+Which types a word gets depends on its mastery stage, and the easiest band drops away as the word matures — but the frontend doesn't choose; it just renders whatever `type` arrives, in `stepIndex` order:
+
+| Word stage | Question bands in the ladder |
+|---|---|
+| **new** (first encounter) | the full ladder: flashcard + recognition (`cloze_mcq`, `meaning_in_context`, `listening_cloze`) + recall + production |
+| **learning / review** | recall (`cloze_typing`) + production (`sentence_build`, `sense_disambiguation`) — recognition dropped |
+| **mastered** | production only |
+
+Data availability (audio, multiple senses, translation language) still skips individual types, and the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running.
 
 ---
 
@@ -144,7 +164,10 @@ Returns `200 OK`. Send the answer plus the signed envelope from the item.
   "vocabularyId": "…uuid…",     // from the item
   "type": "cloze_mcq",          // from the item
   "exampleId": "…uuid…",        // from the item
+  "stepIndex": 1,               // from the item (signed)
+  "stepCount": 5,               // from the item (signed)
   "userAnswer": "fleeting",     // 0..1000 chars — see "submit" column above
+                                // (for flashcard: "forgot" | "hard" | "good" | "easy")
   "latencyMs": 4200,            // time the user took, integer >= 0
   "nonce": "…",                 // from the item (signed)
   "issuedAtMs": 1717400000000,  // from the item (signed)
@@ -161,7 +184,7 @@ Returns `200 OK`. Send the answer plus the signed envelope from the item.
   "correct": true,
   "correctAnswer": "fleeting",   // canonical answer — show on reveal, esp. when wrong
   "quality": 5,                  // 0–5 grade the server derived (SM-2 scale)
-  "progress": {                  // updated schedule for this card
+  "progress": {                  // updated schedule — NULL on non-final steps (see below)
     "id": "…",
     "vocabularyId": "…uuid…",
     "status": "learning",        // new | learning | review | mastered
@@ -175,13 +198,15 @@ Returns `200 OK`. Send the answer plus the signed envelope from the item.
     "incorrectCount": 0
   },
   "requeue": {                   // null most of the time
-    "dueAtMs": 1717400600000,    // re-show the card at this wall-clock time
-    "item": { /* a fresh signed SessionItem for the same word */ }
+    "dueAtMs": 1717400600000,    // re-show the word at this wall-clock time
+    "items": [ /* the word's next-stage lesson ladder, signed */ ]
   }
 }
 ```
 
-**Handling `requeue`:** when the card's next review lands within ~15 minutes (i.e. it's still being learned this session), the server returns a fresh signed question for the same word. Keep it in your in-session queue and surface it again at `dueAtMs` — typically with a different question `type`. When `requeue` is `null`, the card is scheduled far enough out that a later `POST /session` will bring it back; drop it from the current session.
+**`progress` is null on non-final steps.** Only the last step of a word's ladder (`stepIndex === stepCount - 1`) reschedules the card and returns a populated `progress`. On earlier steps `progress` is `null` and `requeue` is `null` — still show `correct` / `correctAnswer` for feedback, then advance to the next step in the ladder.
+
+**Handling `requeue`:** on the final step, if the card's next review lands within ~15 minutes (still being learned this session), the server returns the word's **next-stage ladder** as `requeue.items`. Enqueue them and surface them at `dueAtMs` — because the word has advanced a stage, these are typically harder types than the ones you just saw. When `requeue` is `null`, the card is scheduled far enough out that a later `POST /session` will bring it back; drop it from the current session.
 
 ---
 
@@ -266,9 +291,11 @@ Standard Nest error shape: `{ "statusCode": 400, "message": "...", "error": "Bad
 
 Not required to call the API, but explains the numbers:
 
-- **Grading (learn `/answer`):** the server compares `userAnswer` to the expected answer for that question `type` and derives an SM-2 `quality` (0–5). You receive `correct`, the canonical `correctAnswer`, and the `quality` it used. The manual `/review` endpoint instead takes the `quality` you send.
+- **Grading (learn `/answer`):** the server compares `userAnswer` to the expected answer for that question `type` and derives an SM-2 `quality` (0–5). For `flashcard` there's no objective answer — the user's self-rating maps to a quality (`forgot`→1, `hard`→3, `good`→4, `easy`→5). You receive `correct`, the canonical `correctAnswer`, and the `quality` it used. The manual `/review` endpoint instead takes the `quality` you send.
+- **A lesson is one SRS event:** a word's ladder can be several questions, but only the final step calls the scheduler. Earlier steps are graded for feedback only (their `progress` is `null`), so a multi-question lesson can't graduate a card in a single sitting.
+- **Stage → bands:** which question types a word draws from is decided by its `status`: `new` gets the full ladder (incl. the self-rated flashcard); `learning`/`review` drop the recognition band (recall + production only); `mastered` is production only.
 - **Scheduling:** SM-2 (SuperMemo-2) extended with Anki-style **learning steps**. New/lapsed cards step through minute-scale intervals (default `1, 10` min): a wrong answer (`quality < 3`) resets to step 0; a correct answer advances a step, then **graduates** to the day-scale ladder (1 day → 6 days → `interval × easeFactor`). A card reaching a 90-day interval becomes `mastered`. `easeFactor` adjusts on every review.
 - **Status** (`new` → `learning` → `review` → `mastered`) is what `counts` and the per-card `status` reflect.
-- **Intra-session requeue:** because early intervals are minutes, a just-answered card often comes due again inside the same session — that's the `requeue` field, so the client can re-show it without another `/session` call.
+- **Intra-session requeue:** because early intervals are minutes, a just-finished word often comes due again inside the same session — that's the `requeue` field (the word's next-stage ladder), so the client can re-show it without another `/session` call.
 
 For the implementation see [learn.service.ts](../src/learn/learn.service.ts), [progress.service.ts](../src/progress/progress.service.ts), and the SRS algorithm in [srs.ts](../src/progress/srs.ts).
