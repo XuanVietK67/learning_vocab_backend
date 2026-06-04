@@ -100,6 +100,51 @@ export interface ListeningClozePrompt {
   options: string[]; // 4-option MCQ form for v1
 }
 
+// Show a translation, pick the matching lemma. `userAnswer` = the chosen lemma.
+export interface WordFromTranslationPrompt {
+  type: QuestionType.WORD_FROM_TRANSLATION;
+  translation: string; // shown in the session's translationLang
+  options: string[]; // lemma candidates
+}
+
+// Show the bare lemma, pick its translation. `userAnswer` = the chosen translation.
+export interface TranslationFromWordPrompt {
+  type: QuestionType.TRANSLATION_FROM_WORD;
+  lemma: string;
+  options: string[]; // translation candidates in the session's translationLang
+}
+
+// Play the word's audio, pick the matching lemma. `userAnswer` = the chosen lemma.
+export interface ListeningChoicePrompt {
+  type: QuestionType.LISTENING_CHOICE;
+  audioUrl: string;
+  options: string[]; // lemma candidates
+}
+
+// Play the word's audio, type the lemma. `userAnswer` = the typed word.
+export interface DictationPrompt {
+  type: QuestionType.DICTATION;
+  audioUrl: string;
+  hintTranslation: string | null; // optional scaffold, in translationLang
+}
+
+// Show a sense image, pick the matching lemma. `userAnswer` = the chosen lemma.
+export interface ImageChoicePrompt {
+  type: QuestionType.IMAGE_CHOICE;
+  imageUrl: string;
+  options: string[]; // lemma candidates
+}
+
+// Speak the word; the client runs speech-to-text and submits the transcript as
+// `userAnswer`, compared (lenient) against the lemma. `audioUrl` is a reference
+// pronunciation for the learner, when available.
+export interface PronunciationPrompt {
+  type: QuestionType.PRONUNCIATION;
+  lemma: string;
+  ipa: string | null;
+  audioUrl: string | null;
+}
+
 export type SessionItemPrompt =
   | FlashcardPrompt
   | ClozeMcqPrompt
@@ -107,7 +152,13 @@ export type SessionItemPrompt =
   | MeaningInContextPrompt
   | SentenceBuildPrompt
   | SenseDisambiguationPrompt
-  | ListeningClozePrompt;
+  | ListeningClozePrompt
+  | WordFromTranslationPrompt
+  | TranslationFromWordPrompt
+  | ListeningChoicePrompt
+  | DictationPrompt
+  | ImageChoicePrompt
+  | PronunciationPrompt;
 
 export interface SessionItemDto extends SessionItemEnvelope {
   prompt: SessionItemPrompt;

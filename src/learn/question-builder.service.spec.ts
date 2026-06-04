@@ -2,7 +2,11 @@ import {
   BuildContext,
   QuestionBuilderService,
 } from '@/learn/question-builder.service';
-import { eligibleTypesForStatus } from '@/learn/question-bands';
+import {
+  bandOf,
+  DifficultyBand,
+  eligibleTypesForStatus,
+} from '@/learn/question-bands';
 import { QuestionType } from '@/learn/enums/question-type.enum';
 import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
@@ -18,11 +22,13 @@ function makeSense(
   id: string,
   examples: ReturnType<typeof makeExample>[],
   translations: { language: string; translation: string }[] = [],
+  imageUrl: string | null = null,
 ) {
   return {
     id,
     examples,
     translations,
+    imageUrl,
     gloss: null,
     definition: null,
     synonyms: [],
@@ -128,7 +134,10 @@ describe('QuestionBuilderService — buildLadder', () => {
     distractor.pickTranslationDistractors.mockResolvedValue(['a', 'b', 'c']);
     service = new QuestionBuilderService(
       distractor as never,
-      { clozeFamilyCapPerLesson: 2 } as never,
+      // High per-band cap so these tests assert pure feasibility/ordering
+      // without the sampling cap dropping types. Cap behaviour is covered in
+      // its own block below.
+      { clozeFamilyCapPerLesson: 2, maxTypesPerBand: 99 } as never,
     );
   });
 
@@ -226,5 +235,135 @@ describe('QuestionBuilderService — buildLadder', () => {
       }),
     );
     expect(ladder).toEqual([]);
+  });
+});
+
+describe('QuestionBuilderService — new question types', () => {
+  let service: QuestionBuilderService;
+  const distractor = {
+    pickLemmaDistractors: jest.fn(),
+    pickTranslationDistractors: jest.fn(),
+  };
+
+  beforeEach(() => {
+    distractor.pickLemmaDistractors.mockReset();
+    distractor.pickTranslationDistractors.mockReset();
+    distractor.pickLemmaDistractors.mockResolvedValue(['ran', 'jog', 'walk']);
+    distractor.pickTranslationDistractors.mockResolvedValue(['a', 'b', 'c']);
+    // No sampling: surface every feasible type so we can assert presence.
+    service = new QuestionBuilderService(
+      distractor as never,
+      {
+        clozeFamilyCapPerLesson: 99,
+        maxTypesPerBand: 99,
+      } as never,
+    );
+  });
+
+  it('translation↔lemma pair appears when a translation is available', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({ vocab: richVocab(), translationLang: 'vi' }),
+    );
+    const types = ladder.map((q) => q.type);
+    expect(types).toContain(QuestionType.WORD_FROM_TRANSLATION);
+    expect(types).toContain(QuestionType.TRANSLATION_FROM_WORD);
+  });
+
+  it('audio types (listening_choice, dictation) appear when audio is present', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({ vocab: richVocab(), translationLang: 'vi' }),
+    );
+    const types = ladder.map((q) => q.type);
+    expect(types).toContain(QuestionType.LISTENING_CHOICE);
+    expect(types).toContain(QuestionType.DICTATION);
+  });
+
+  it('image_choice appears only when a sense has an image', async () => {
+    const withImage = makeVocab({
+      senses: [
+        makeSense(
+          'sense-1',
+          [makeExample('ex-1', 'I run every morning')],
+          [{ language: 'vi', translation: 'chạy' }],
+          'https://cdn/run.jpg',
+        ),
+      ],
+    });
+    const withImageLadder = await service.buildLadder(
+      makeCtx({ vocab: withImage, translationLang: 'vi' }),
+    );
+    expect(withImageLadder.map((q) => q.type)).toContain(
+      QuestionType.IMAGE_CHOICE,
+    );
+
+    const noImageLadder = await service.buildLadder(
+      makeCtx({ vocab: richVocab(), translationLang: 'vi' }),
+    );
+    expect(noImageLadder.map((q) => q.type)).not.toContain(
+      QuestionType.IMAGE_CHOICE,
+    );
+  });
+
+  it('pronunciation needs only an example — present without audio or translation', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({ translationLang: null }),
+    );
+    const types = ladder.map((q) => q.type);
+    expect(types).toContain(QuestionType.PRONUNCIATION);
+    // No audio/translation, so these stay out:
+    expect(types).not.toContain(QuestionType.LISTENING_CHOICE);
+    expect(types).not.toContain(QuestionType.DICTATION);
+    expect(types).not.toContain(QuestionType.WORD_FROM_TRANSLATION);
+  });
+});
+
+describe('QuestionBuilderService — per-band sampling cap', () => {
+  let service: QuestionBuilderService;
+  const distractor = {
+    pickLemmaDistractors: jest.fn().mockResolvedValue(['ran', 'jog', 'walk']),
+    pickTranslationDistractors: jest.fn().mockResolvedValue(['a', 'b', 'c']),
+  };
+
+  beforeEach(() => {
+    // Cap each band at 1 sampled quiz type (flashcard is exempt).
+    service = new QuestionBuilderService(
+      distractor as never,
+      {
+        clozeFamilyCapPerLesson: 99,
+        maxTypesPerBand: 1,
+      } as never,
+    );
+  });
+
+  it('keeps the flashcard plus at most one sampled NEW-band type', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({ vocab: richVocab(), translationLang: 'vi' }),
+    );
+    const types = ladder.map((q) => q.type);
+    expect(types[0]).toBe(QuestionType.FLASHCARD);
+    const newBand = types.filter((t) => bandOf(t) === DifficultyBand.NEW);
+    // flashcard (forced) + at most 1 sampled optional type.
+    expect(newBand.length).toBeLessThanOrEqual(2);
+    expect(newBand).toContain(QuestionType.FLASHCARD);
+  });
+
+  it('caps each non-NEW band to the sampled count too', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({
+        vocab: richVocab(),
+        translationLang: 'vi',
+        status: ProgressStatus.LEARNING,
+      }),
+    );
+    const types = ladder.map((q) => q.type);
+    const review = types.filter((t) => bandOf(t) === DifficultyBand.REVIEW);
+    expect(review.length).toBeLessThanOrEqual(1);
+  });
+
+  it('is deterministic for the same vocab id', async () => {
+    const ctx = () => makeCtx({ vocab: richVocab(), translationLang: 'vi' });
+    const a = (await service.buildLadder(ctx())).map((q) => q.type);
+    const b = (await service.buildLadder(ctx())).map((q) => q.type);
+    expect(a).toEqual(b);
   });
 });

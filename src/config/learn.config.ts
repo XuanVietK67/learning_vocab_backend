@@ -45,4 +45,13 @@ export default registerAs('learn', () => ({
     1,
     parseInt(process.env.LEARN_CLOZE_FAMILY_CAP_PER_LESSON ?? '2', 10) || 2,
   ),
+  // Max number of *sampled* quiz types per difficulty band in a single word's
+  // lesson ladder. With many types per band, this keeps a lesson short and
+  // makes different words exercise different types (the subset is chosen
+  // deterministically by vocab id). The FLASHCARD study step is always kept and
+  // is exempt from this cap. Default 2.
+  maxTypesPerBand: Math.max(
+    1,
+    parseInt(process.env.LEARN_MAX_TYPES_PER_BAND ?? '2', 10) || 2,
+  ),
 }));

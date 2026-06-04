@@ -232,6 +232,120 @@ describe('AnswerGraderService — FLASHCARD (self-rated)', () => {
   });
 });
 
+describe('AnswerGraderService — lemma MCQ (WORD_FROM_TRANSLATION / LISTENING_CHOICE / IMAGE_CHOICE)', () => {
+  for (const type of [
+    QuestionType.WORD_FROM_TRANSLATION,
+    QuestionType.LISTENING_CHOICE,
+    QuestionType.IMAGE_CHOICE,
+  ]) {
+    it(`${type}: chose the lemma + fast → correct, quality 5`, () => {
+      const out = grader.grade({
+        type,
+        vocab: makeVocab(),
+        sense: makeSense(),
+        example: makeExample('She studies biology.'),
+        translationLang: 'vi',
+        userAnswer: 'study',
+        latencyMs: 2_000,
+      });
+      expect(out.correct).toBe(true);
+      expect(out.correctAnswer).toBe('study');
+      expect(out.quality).toBe(5);
+    });
+
+    it(`${type}: chose another lemma → wrong, quality 2`, () => {
+      const out = grader.grade({
+        type,
+        vocab: makeVocab(),
+        sense: makeSense(),
+        example: makeExample('She studies biology.'),
+        translationLang: 'vi',
+        userAnswer: 'teach',
+        latencyMs: 2_000,
+      });
+      expect(out.correct).toBe(false);
+      expect(out.quality).toBe(2);
+    });
+  }
+});
+
+describe('AnswerGraderService — TRANSLATION_FROM_WORD (twin of meaning-in-context)', () => {
+  it('correct translation → 5', () => {
+    const out = grader.grade({
+      type: QuestionType.TRANSLATION_FROM_WORD,
+      vocab: makeVocab(),
+      sense: makeSense(),
+      example: makeExample('She studies biology.'),
+      translationLang: 'vi',
+      userAnswer: 'học',
+      latencyMs: 2_000,
+    });
+    expect(out.correct).toBe(true);
+    expect(out.correctAnswer).toBe('học');
+    expect(out.quality).toBe(5);
+  });
+
+  it('wrong translation → 2', () => {
+    const out = grader.grade({
+      type: QuestionType.TRANSLATION_FROM_WORD,
+      vocab: makeVocab(),
+      sense: makeSense(),
+      example: makeExample('She studies biology.'),
+      translationLang: 'vi',
+      userAnswer: 'nghiên cứu',
+      latencyMs: 2_000,
+    });
+    expect(out.correct).toBe(false);
+    expect(out.quality).toBe(2);
+  });
+});
+
+describe('AnswerGraderService — lemma typing (DICTATION / PRONUNCIATION)', () => {
+  for (const type of [QuestionType.DICTATION, QuestionType.PRONUNCIATION]) {
+    it(`${type}: exact lemma + fast → correct, quality 5`, () => {
+      const out = grader.grade({
+        type,
+        vocab: makeVocab(),
+        sense: makeSense(),
+        example: makeExample('She studies biology.'),
+        translationLang: 'vi',
+        userAnswer: 'study',
+        latencyMs: 3_000,
+      });
+      expect(out.correct).toBe(true);
+      expect(out.correctAnswer).toBe('study');
+      expect(out.quality).toBe(5);
+    });
+
+    it(`${type}: one-edit typo → quality 3 (not correct)`, () => {
+      const out = grader.grade({
+        type,
+        vocab: makeVocab(),
+        sense: makeSense(),
+        example: makeExample('She studies biology.'),
+        translationLang: 'vi',
+        userAnswer: 'studh', // 1 edit from "study"
+        latencyMs: 3_000,
+      });
+      expect(out.correct).toBe(false);
+      expect(out.quality).toBe(3);
+    });
+
+    it(`${type}: far-off answer → quality 2`, () => {
+      const out = grader.grade({
+        type,
+        vocab: makeVocab(),
+        sense: makeSense(),
+        example: makeExample('She studies biology.'),
+        translationLang: 'vi',
+        userAnswer: 'banana',
+        latencyMs: 3_000,
+      });
+      expect(out.quality).toBe(2);
+    });
+  }
+});
+
 describe('AnswerGraderService — SENSE_DISAMBIGUATION', () => {
   it('picks translation of the example sentence sense', () => {
     const out = grader.grade({

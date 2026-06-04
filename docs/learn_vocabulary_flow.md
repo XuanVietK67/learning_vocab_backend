@@ -129,7 +129,7 @@ Every item shares an **envelope** plus a `prompt` whose shape depends on `prompt
 
 ### Question types — render `prompt` by `prompt.type`
 
-There are seven types (a discriminated union). Switch on `prompt.type`:
+There are thirteen types (a discriminated union). Switch on `prompt.type`:
 
 | `type` | Prompt fields | Render | What the user submits as `userAnswer` |
 |---|---|---|---|
@@ -140,16 +140,22 @@ There are seven types (a discriminated union). Switch on `prompt.type`:
 | `sentence_build` | `translation`, `tokens[]` (shuffled) | Drag/tap tokens to build the sentence | the assembled sentence (space-joined) |
 | `sense_disambiguation` | `sentences[] [{exampleId, sentence}]`, `options[]` | Two example sentences + two meanings to match | the chosen meaning text |
 | `listening_cloze` | `audioUrl`, `sentenceWithBlank`, `hintTranslation`, `options[]` | Play audio, fill the blank (4-option MCQ in v1) | the chosen option text |
+| `word_from_translation` | `translation`, `options[]` | Show the translation, pick the matching word from the options | the chosen option (a lemma) text |
+| `translation_from_word` | `lemma`, `options[]` | Show the word, pick its translation from the options | the chosen option (a translation) text |
+| `listening_choice` | `audioUrl`, `options[]` | Play audio, pick the matching word from the options | the chosen option (a lemma) text |
+| `dictation` | `audioUrl`, `hintTranslation` | Play audio, type the word you heard | the typed word |
+| `image_choice` | `imageUrl`, `options[]` | Show the image, pick the matching word from the options | the chosen option (a lemma) text |
+| `pronunciation` | `lemma`, `ipa`, `audioUrl` | Show the word (+ optional reference audio); user taps to speak it. **Run speech-to-text on the client** (Web Speech API / device dictation) and submit the transcript. | the speech-to-text transcript (graded leniently against the lemma) |
 
 Which types a word gets depends on its mastery stage, and the easiest band drops away as the word matures — but the frontend doesn't choose; it just renders whatever `type` arrives, in `stepIndex` order:
 
 | Word stage | Question bands in the ladder |
 |---|---|
-| **new** (first encounter) | the full ladder: flashcard + recognition (`cloze_mcq`, `meaning_in_context`, `listening_cloze`) + recall + production |
-| **learning / review** | recall (`cloze_typing`) + production (`sentence_build`, `sense_disambiguation`) — recognition dropped |
-| **mastered** | production only |
+| **new** (first encounter) | recognition: flashcard + a sample of (`cloze_mcq`, `meaning_in_context`, `word_from_translation`, `translation_from_word`, `listening_cloze`, `listening_choice`, `image_choice`) + recall + production |
+| **learning / review** | recall + production: a sample of (`cloze_typing`, `dictation`, `sense_disambiguation`, `pronunciation`) + `sentence_build` — recognition dropped |
+| **mastered** | production only (`sentence_build`) |
 
-Data availability (audio, multiple senses, translation language) still skips individual types, and the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running.
+Data availability (audio, a sense image, multiple senses, translation language) still skips individual types. Two caps shape the ladder: the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running, and **each band samples at most a couple of quiz types per word** (the flashcard study step is always kept) — so a single word's lesson stays short and different words exercise different types. The frontend just renders what arrives.
 
 ---
 
