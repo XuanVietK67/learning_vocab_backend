@@ -40,12 +40,24 @@ export class AnswerGraderService {
         return this.gradeClozeMcq(input);
       case QuestionType.CLOZE_TYPING:
         return this.gradeClozeTyping(input);
+      // Show-lemma → choose-translation is the no-context twin of
+      // meaning-in-context: same correct answer (the sense translation).
       case QuestionType.MEANING_IN_CONTEXT:
+      case QuestionType.TRANSLATION_FROM_WORD:
         return this.gradeMeaningInContext(input);
       case QuestionType.SENTENCE_BUILD:
         return this.gradeSentenceBuild(input);
       case QuestionType.SENSE_DISAMBIGUATION:
         return this.gradeSenseDisambiguation(input);
+      // Recognition MCQs whose correct option is the lemma itself.
+      case QuestionType.WORD_FROM_TRANSLATION:
+      case QuestionType.LISTENING_CHOICE:
+      case QuestionType.IMAGE_CHOICE:
+        return this.gradeLemmaMcq(input);
+      // Typed/spoken production of the bare lemma.
+      case QuestionType.DICTATION:
+      case QuestionType.PRONUNCIATION:
+        return this.gradeLemmaTyping(input);
     }
   }
 
@@ -88,6 +100,32 @@ export class AnswerGraderService {
       input.vocab.partOfSpeech,
     );
     const correctAnswer = cloze?.blankedForm ?? input.vocab.lemma;
+    return this.gradeTyping(correctAnswer, input);
+  }
+
+  // Dictation / pronunciation: the user produces the bare lemma (typed, or a
+  // client-side speech-to-text transcript). Same lenient typing comparison.
+  private gradeLemmaTyping(input: GradeInput): GradeOutput {
+    return this.gradeTyping(input.vocab.lemma, input);
+  }
+
+  // Recognition MCQs (word-from-translation / listening-choice / image-choice):
+  // the userAnswer is the chosen option; the correct option is the lemma.
+  private gradeLemmaMcq(input: GradeInput): GradeOutput {
+    const correctAnswer = input.vocab.lemma;
+    const correct =
+      normalizeAnswer(input.userAnswer) === normalizeAnswer(correctAnswer);
+    return {
+      correct,
+      correctAnswer,
+      quality: mcqQuality(correct, input.latencyMs),
+    };
+  }
+
+  // Shared typing comparison: exact match grades on speed (5 fast / 4 slow);
+  // a single-edit typo is "close" (quality 3, not correct); anything further
+  // off is quality 2.
+  private gradeTyping(correctAnswer: string, input: GradeInput): GradeOutput {
     const user = normalizeAnswer(input.userAnswer);
     const target = normalizeAnswer(correctAnswer);
     if (user === target) {

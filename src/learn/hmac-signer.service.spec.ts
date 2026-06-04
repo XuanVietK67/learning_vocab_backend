@@ -11,6 +11,7 @@ function makeSigner(ttlMs = 1800_000): HmacSignerService {
     learningStepsMinutes: [1, 10],
     requeueWindowMinutes: 15,
     clozeFamilyCapPerLesson: 2,
+    maxTypesPerBand: 2,
   });
 }
 

@@ -17,9 +17,15 @@ const LADDER: { type: QuestionType; band: DifficultyBand }[] = [
   { type: QuestionType.FLASHCARD, band: DifficultyBand.NEW },
   { type: QuestionType.CLOZE_MCQ, band: DifficultyBand.NEW },
   { type: QuestionType.MEANING_IN_CONTEXT, band: DifficultyBand.NEW },
+  { type: QuestionType.WORD_FROM_TRANSLATION, band: DifficultyBand.NEW },
+  { type: QuestionType.TRANSLATION_FROM_WORD, band: DifficultyBand.NEW },
   { type: QuestionType.LISTENING_CLOZE, band: DifficultyBand.NEW },
+  { type: QuestionType.LISTENING_CHOICE, band: DifficultyBand.NEW },
+  { type: QuestionType.IMAGE_CHOICE, band: DifficultyBand.NEW },
   { type: QuestionType.CLOZE_TYPING, band: DifficultyBand.REVIEW },
+  { type: QuestionType.DICTATION, band: DifficultyBand.REVIEW },
   { type: QuestionType.SENSE_DISAMBIGUATION, band: DifficultyBand.REVIEW },
+  { type: QuestionType.PRONUNCIATION, band: DifficultyBand.REVIEW },
   { type: QuestionType.SENTENCE_BUILD, band: DifficultyBand.MASTER },
 ];
 
@@ -38,6 +44,12 @@ export function isClozeFamily(type: QuestionType): boolean {
 
 export function bandOf(type: QuestionType): DifficultyBand {
   return LADDER.find((e) => e.type === type)!.band;
+}
+
+// Position of a type in the full ladder (ascending difficulty). Used to keep a
+// band's selected questions in easy→hard order after deterministic sampling.
+export function ladderIndex(type: QuestionType): number {
+  return LADDER.findIndex((e) => e.type === type);
 }
 
 // Lowest band a word at this stage still practises. As a word matures the
