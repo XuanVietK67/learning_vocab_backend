@@ -1,10 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  buildCloze,
-  levenshtein,
-  normalizeAnswer,
-  tokenizeSentence,
-} from '@/learn/cloze.util';
+import { buildCloze, levenshtein, normalizeAnswer } from '@/learn/cloze.util';
 import { QuestionType } from '@/learn/enums/question-type.enum';
 import { ReviewQuality } from '@/progress/srs';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
@@ -45,8 +40,6 @@ export class AnswerGraderService {
       case QuestionType.MEANING_IN_CONTEXT:
       case QuestionType.TRANSLATION_FROM_WORD:
         return this.gradeMeaningInContext(input);
-      case QuestionType.SENTENCE_BUILD:
-        return this.gradeSentenceBuild(input);
       case QuestionType.SENSE_DISAMBIGUATION:
         return this.gradeSenseDisambiguation(input);
       // Recognition MCQs whose correct option is the lemma itself.
@@ -159,37 +152,6 @@ export class AnswerGraderService {
     };
   }
 
-  // userAnswer = the joined sequence the user produced (space-separated tokens).
-  // We compare against the original example.sentence (whitespace-normalized).
-  private gradeSentenceBuild(input: GradeInput): GradeOutput {
-    const correctAnswer = input.example.sentence;
-    const user = normalizeAnswer(input.userAnswer);
-    const target = normalizeAnswer(correctAnswer);
-    if (user === target) {
-      return {
-        correct: true,
-        correctAnswer,
-        quality: input.latencyMs <= FAST_THRESHOLD_MS ? 5 : 4,
-      };
-    }
-    // Check "one swap" tolerance: same multiset of tokens, ≤1 adjacent swap
-    const userTokens = tokenizeSentence(user);
-    const targetTokens = tokenizeSentence(target);
-    if (
-      userTokens.length === targetTokens.length &&
-      sameMultiset(userTokens, targetTokens)
-    ) {
-      let diffs = 0;
-      for (let i = 0; i < userTokens.length; i++) {
-        if (userTokens[i] !== targetTokens[i]) diffs++;
-      }
-      if (diffs === 2) {
-        return { correct: false, correctAnswer, quality: 3 };
-      }
-    }
-    return { correct: false, correctAnswer, quality: 2 };
-  }
-
   // The frontend submits the translation it picked for the FIRST sentence of
   // the disambiguation pair. The correct answer is the translation of that
   // example's parent sense.
@@ -233,16 +195,4 @@ function flashcardQuality(rating: string): ReviewQuality {
     default:
       return 4;
   }
-}
-
-function sameMultiset(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const counts = new Map<string, number>();
-  for (const t of a) counts.set(t, (counts.get(t) ?? 0) + 1);
-  for (const t of b) {
-    const c = counts.get(t);
-    if (!c) return false;
-    counts.set(t, c - 1);
-  }
-  return true;
 }

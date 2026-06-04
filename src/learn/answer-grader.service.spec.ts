@@ -149,48 +149,6 @@ describe('AnswerGraderService — MEANING_IN_CONTEXT', () => {
   });
 });
 
-describe('AnswerGraderService — SENTENCE_BUILD', () => {
-  it('exact match → 5', () => {
-    const out = grader.grade({
-      type: QuestionType.SENTENCE_BUILD,
-      vocab: makeVocab(),
-      sense: makeSense(),
-      example: makeExample('She studies biology at university.'),
-      translationLang: 'vi',
-      userAnswer: 'She studies biology at university.',
-      latencyMs: 4_000,
-    });
-    expect(out.quality).toBe(5);
-  });
-
-  it('single swap of two tokens → quality 3', () => {
-    const out = grader.grade({
-      type: QuestionType.SENTENCE_BUILD,
-      vocab: makeVocab(),
-      sense: makeSense(),
-      example: makeExample('She studies biology at university.'),
-      translationLang: 'vi',
-      userAnswer: 'She studies at biology university.',
-      latencyMs: 4_000,
-    });
-    expect(out.correct).toBe(false);
-    expect(out.quality).toBe(3);
-  });
-
-  it('completely wrong order → 2', () => {
-    const out = grader.grade({
-      type: QuestionType.SENTENCE_BUILD,
-      vocab: makeVocab(),
-      sense: makeSense(),
-      example: makeExample('She studies biology at university.'),
-      translationLang: 'vi',
-      userAnswer: 'biology She at university studies.',
-      latencyMs: 4_000,
-    });
-    expect(out.quality).toBe(2);
-  });
-});
-
 describe('AnswerGraderService — FLASHCARD (self-rated)', () => {
   function gradeRating(rating: string) {
     return grader.grade({
