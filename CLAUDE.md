@@ -38,6 +38,7 @@ Frontend-facing documentation is split into **one doc per feature/endpoint**, no
 2. **New endpoint/feature** → create a new per-feature doc in [docs/](docs/), then add one link row to the index in [docs/frontend_handoff.md](docs/frontend_handoff.md).
 3. **Changed endpoint** (DTO field added/removed/renamed, new validation constraint, new status code, new error condition, renamed path/method) → edit that endpoint's existing per-feature doc.
 4. **Removed endpoint** → delete its per-feature doc and remove its link row from the index.
+5. **Inline content still living in [docs/frontend_handoff.md](docs/frontend_handoff.md)** → when you touch a feature whose request/response shape is still written out inline in the handoff file (a leftover from before the split), **migrate it**: move that block into a new per-feature `docs/<area>_<action>.md`, then replace the inline block in the handoff file with a one-line link (`### METHOD /path` + a sentence + a link to the new doc) and add/keep its row in the index table. The handoff file must stay an index — never grow per-endpoint request/response bodies back into it. Migrate only the feature you are touching; leave other inline sections alone until their turn.
 
 Conventions for per-feature docs:
 - **Filename:** `docs/<area>_<action>.md` in `snake_case`, e.g. `admin_create_vocabulary.md`, `auth_login.md`, `decks_add_vocabularies.md`.
