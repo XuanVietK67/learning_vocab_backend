@@ -129,7 +129,7 @@ Every item shares an **envelope** plus a `prompt` whose shape depends on `prompt
 
 ### Question types — render `prompt` by `prompt.type`
 
-There are thirteen types (a discriminated union). Switch on `prompt.type`:
+There are twelve types (a discriminated union). Switch on `prompt.type`:
 
 | `type` | Prompt fields | Render | What the user submits as `userAnswer` |
 |---|---|---|---|
@@ -137,7 +137,6 @@ There are thirteen types (a discriminated union). Switch on `prompt.type`:
 | `cloze_mcq` | `sentenceWithBlank`, `hintTranslation`, `audioUrl`, `options[]` | Sentence with a blank + multiple-choice options | the chosen option **text** |
 | `cloze_typing` | `sentenceWithBlank`, `hintTranslation`, `audioUrl` | Sentence with a blank, free-text input | the typed word |
 | `meaning_in_context` | `sentence`, `highlightedSpan {start,end}`, `options[]` | Sentence with a highlighted span + translation options | the chosen option text |
-| `sentence_build` | `translation`, `tokens[]` (shuffled) | Drag/tap tokens to build the sentence | the assembled sentence (space-joined) |
 | `sense_disambiguation` | `sentences[] [{exampleId, sentence}]`, `options[]` | Two example sentences + two meanings to match | the chosen meaning text |
 | `listening_cloze` | `audioUrl`, `sentenceWithBlank`, `hintTranslation`, `options[]` | Play audio, fill the blank (4-option MCQ in v1) | the chosen option text |
 | `word_from_translation` | `translation`, `options[]` | Show the translation, pick the matching word from the options | the chosen option (a lemma) text |
@@ -151,9 +150,9 @@ Which types a word gets depends on its mastery stage, and the easiest band drops
 
 | Word stage | Question bands in the ladder |
 |---|---|
-| **new** (first encounter) | recognition: flashcard + a sample of (`cloze_mcq`, `meaning_in_context`, `word_from_translation`, `translation_from_word`, `listening_cloze`, `listening_choice`, `image_choice`) + recall + production |
-| **learning / review** | recall + production: a sample of (`cloze_typing`, `dictation`, `sense_disambiguation`, `pronunciation`) + `sentence_build` — recognition dropped |
-| **mastered** | production only (`sentence_build`) |
+| **new** (first encounter) | recognition: flashcard + a sample of (`cloze_mcq`, `meaning_in_context`, `word_from_translation`, `translation_from_word`, `listening_cloze`, `listening_choice`, `image_choice`) + recall + the hardest band |
+| **learning / review** | recall: a sample of (`cloze_typing`, `dictation`, `pronunciation`) + the hardest band (`sense_disambiguation`) — recognition dropped |
+| **mastered** | hardest band only (`sense_disambiguation`) |
 
 Data availability (audio, a sense image, multiple senses, translation language) still skips individual types. Two caps shape the ladder: the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running, and **each band samples at most a couple of quiz types per word** (the flashcard study step is always kept) — so a single word's lesson stays short and different words exercise different types. The frontend just renders what arrives.
 
@@ -299,7 +298,7 @@ Not required to call the API, but explains the numbers:
 
 - **Grading (learn `/answer`):** the server compares `userAnswer` to the expected answer for that question `type` and derives an SM-2 `quality` (0–5). For `flashcard` there's no objective answer — the user's self-rating maps to a quality (`forgot`→1, `hard`→3, `good`→4, `easy`→5). You receive `correct`, the canonical `correctAnswer`, and the `quality` it used. The manual `/review` endpoint instead takes the `quality` you send.
 - **A lesson is one SRS event:** a word's ladder can be several questions, but only the final step calls the scheduler. Earlier steps are graded for feedback only (their `progress` is `null`), so a multi-question lesson can't graduate a card in a single sitting.
-- **Stage → bands:** which question types a word draws from is decided by its `status`: `new` gets the full ladder (incl. the self-rated flashcard); `learning`/`review` drop the recognition band (recall + production only); `mastered` is production only.
+- **Stage → bands:** which question types a word draws from is decided by its `status`: `new` gets the full ladder (incl. the self-rated flashcard); `learning`/`review` drop the recognition band (recall + the hardest band); `mastered` draws only from the hardest band (`sense_disambiguation`).
 - **Scheduling:** SM-2 (SuperMemo-2) extended with Anki-style **learning steps**. New/lapsed cards step through minute-scale intervals (default `1, 10` min): a wrong answer (`quality < 3`) resets to step 0; a correct answer advances a step, then **graduates** to the day-scale ladder (1 day → 6 days → `interval × easeFactor`). A card reaching a 90-day interval becomes `mastered`. `easeFactor` adjusts on every review.
 - **Status** (`new` → `learning` → `review` → `mastered`) is what `counts` and the per-card `status` reflect.
 - **Intra-session requeue:** because early intervals are minutes, a just-finished word often comes due again inside the same session — that's the `requeue` field (the word's next-stage ladder), so the client can re-show it without another `/session` call.

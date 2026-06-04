@@ -24,9 +24,10 @@ const LADDER: { type: QuestionType; band: DifficultyBand }[] = [
   { type: QuestionType.IMAGE_CHOICE, band: DifficultyBand.NEW },
   { type: QuestionType.CLOZE_TYPING, band: DifficultyBand.REVIEW },
   { type: QuestionType.DICTATION, band: DifficultyBand.REVIEW },
-  { type: QuestionType.SENSE_DISAMBIGUATION, band: DifficultyBand.REVIEW },
   { type: QuestionType.PRONUNCIATION, band: DifficultyBand.REVIEW },
-  { type: QuestionType.SENTENCE_BUILD, band: DifficultyBand.MASTER },
+  // Sense disambiguation is the hardest tier: the learner must discriminate
+  // between the word's senses. It's the sole MASTER-band type.
+  { type: QuestionType.SENSE_DISAMBIGUATION, band: DifficultyBand.MASTER },
 ];
 
 // The cloze family all blank a word in a sentence (so they re-use the same

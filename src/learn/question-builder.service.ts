@@ -13,7 +13,6 @@ import {
   MeaningInContextPrompt,
   PronunciationPrompt,
   SenseDisambiguationPrompt,
-  SentenceBuildPrompt,
   SessionItemPrompt,
   TranslationFromWordPrompt,
   WordFromTranslationPrompt,
@@ -22,7 +21,6 @@ import {
   buildCloze,
   deterministicShuffle,
   findLemmaSpan,
-  tokenizeSentence,
 } from '@/learn/cloze.util';
 import { DistractorService } from '@/learn/distractor.service';
 import { QuestionType } from '@/learn/enums/question-type.enum';
@@ -127,8 +125,6 @@ export class QuestionBuilderService {
         return this.buildClozeTyping(ctx);
       case QuestionType.MEANING_IN_CONTEXT:
         return this.buildMeaningInContext(ctx);
-      case QuestionType.SENTENCE_BUILD:
-        return this.buildSentenceBuild(ctx);
       case QuestionType.SENSE_DISAMBIGUATION:
         return this.buildSenseDisambiguation(ctx);
       case QuestionType.LISTENING_CLOZE:
@@ -294,28 +290,6 @@ export class QuestionBuilderService {
         exampleId: exampleWithSpan.example.id,
         prompt,
       };
-    }
-    return null;
-  }
-
-  private buildSentenceBuild(ctx: BuildContext): BuiltQuestion | null {
-    if (!ctx.translationLang) return null;
-    for (const sense of ctx.vocab.senses ?? []) {
-      for (const ex of sense.examples ?? []) {
-        if (ctx.excludeExampleIds?.has(ex.id)) continue;
-        const translation =
-          ex.translation ?? firstTranslationOfSense(sense, ctx.translationLang);
-        if (!translation) continue;
-        const tokens = tokenizeSentence(ex.sentence);
-        if (tokens.length < 3 || tokens.length > 18) continue;
-        const shuffled = deterministicShuffle(tokens, `sb-${ex.id}`);
-        const prompt: SentenceBuildPrompt = {
-          type: QuestionType.SENTENCE_BUILD,
-          translation,
-          tokens: shuffled,
-        };
-        return { type: QuestionType.SENTENCE_BUILD, exampleId: ex.id, prompt };
-      }
     }
     return null;
   }

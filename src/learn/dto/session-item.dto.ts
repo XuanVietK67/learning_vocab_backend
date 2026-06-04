@@ -75,12 +75,6 @@ export interface MeaningInContextPrompt {
   options: string[]; // translation candidates in target language
 }
 
-export interface SentenceBuildPrompt {
-  type: QuestionType.SENTENCE_BUILD;
-  translation: string;
-  tokens: string[]; // shuffled
-}
-
 export interface SenseDisambiguationPair {
   exampleId: string;
   sentence: string;
@@ -150,7 +144,6 @@ export type SessionItemPrompt =
   | ClozeMcqPrompt
   | ClozeTypingPrompt
   | MeaningInContextPrompt
-  | SentenceBuildPrompt
   | SenseDisambiguationPrompt
   | ListeningClozePrompt
   | WordFromTranslationPrompt

@@ -94,7 +94,7 @@ describe('question-bands — eligibleTypesForStatus', () => {
     const types = eligibleTypesForStatus(ProgressStatus.NEW);
     expect(types[0]).toBe(QuestionType.FLASHCARD);
     expect(types).toContain(QuestionType.CLOZE_MCQ);
-    expect(types).toContain(QuestionType.SENTENCE_BUILD);
+    expect(types).toContain(QuestionType.SENSE_DISAMBIGUATION);
   });
 
   it('LEARNING/REVIEW → Review+Master only (recognition dropped)', () => {
@@ -105,13 +105,13 @@ describe('question-bands — eligibleTypesForStatus', () => {
       expect(types).not.toContain(QuestionType.MEANING_IN_CONTEXT);
       expect(types).not.toContain(QuestionType.LISTENING_CLOZE);
       expect(types).toContain(QuestionType.CLOZE_TYPING);
-      expect(types).toContain(QuestionType.SENTENCE_BUILD);
+      expect(types).toContain(QuestionType.SENSE_DISAMBIGUATION);
     }
   });
 
   it('MASTERED → Master band only', () => {
     expect(eligibleTypesForStatus(ProgressStatus.MASTERED)).toEqual([
-      QuestionType.SENTENCE_BUILD,
+      QuestionType.SENSE_DISAMBIGUATION,
     ]);
   });
 });
@@ -153,7 +153,6 @@ describe('QuestionBuilderService — buildLadder', () => {
         QuestionType.MEANING_IN_CONTEXT,
         QuestionType.LISTENING_CLOZE,
         QuestionType.SENSE_DISAMBIGUATION,
-        QuestionType.SENTENCE_BUILD,
       ]),
     );
   });
@@ -179,7 +178,7 @@ describe('QuestionBuilderService — buildLadder', () => {
     expect(types).toEqual(
       expect.arrayContaining([
         QuestionType.CLOZE_TYPING,
-        QuestionType.SENTENCE_BUILD,
+        QuestionType.SENSE_DISAMBIGUATION,
       ]),
     );
   });
@@ -192,7 +191,9 @@ describe('QuestionBuilderService — buildLadder', () => {
         status: ProgressStatus.MASTERED,
       }),
     );
-    expect(ladder.map((q) => q.type)).toEqual([QuestionType.SENTENCE_BUILD]);
+    expect(ladder.map((q) => q.type)).toEqual([
+      QuestionType.SENSE_DISAMBIGUATION,
+    ]);
   });
 
   it('cloze typing surfaces in NEW when listening is infeasible (no audio frees the cap)', async () => {
@@ -223,7 +224,7 @@ describe('QuestionBuilderService — buildLadder', () => {
     const types = ladder.map((q) => q.type);
     expect(types[0]).toBe(QuestionType.FLASHCARD);
     expect(types).not.toContain(QuestionType.MEANING_IN_CONTEXT);
-    expect(types).not.toContain(QuestionType.SENTENCE_BUILD);
+    expect(types).not.toContain(QuestionType.SENSE_DISAMBIGUATION);
     expect(types).not.toContain(QuestionType.LISTENING_CLOZE);
   });
 
