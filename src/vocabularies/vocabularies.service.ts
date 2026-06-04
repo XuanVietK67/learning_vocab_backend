@@ -207,6 +207,15 @@ export class VocabulariesService {
       .map((id) => byId.get(id))
       .filter((v): v is Vocabulary => v !== undefined);
 
+    // Surface a representative thumbnail at the vocab level for the admin list
+    // table. Senses are ordered by sense_order ASC, so the first one carrying an
+    // image wins; the per-sense images stay available under senses[].imageUrl.
+    for (const v of data) {
+      const senseImage = (v.senses ?? []).find((s) => s.imageUrl)?.imageUrl;
+      (v as Vocabulary & { imageUrl: string | null }).imageUrl =
+        senseImage ?? null;
+    }
+
     return plainToInstance(
       PaginatedAdminVocabulariesResponseDto,
       { data, page, limit, total },
