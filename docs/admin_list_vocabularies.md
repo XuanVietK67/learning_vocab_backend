@@ -33,6 +33,7 @@ Each `data[]` row is a full vocabulary with admin-only fields inlined. Notable f
 | Field | Type | Notes |
 | --- | --- | --- |
 | `imageUrl` | string \| null | **Representative thumbnail** for the list/table. The `imageUrl` of the lowest-ordered sense that has one, or `null` if no sense has an image. Convenience only — the full per-sense images stay under `senses[].imageUrl`. |
+| `images` | string[] | **All distinct sense images** for this vocabulary, in `senseOrder`, with nulls dropped and duplicate URLs collapsed. Empty array `[]` when no sense has an image. `imageUrl` equals `images[0] ?? null`. |
 | `visibility` | `system` \| `private` \| `public` | admin-only |
 | `isApproved` | boolean | admin-only |
 | `createdByUserId` | uuid \| null | admin-only; `null` for system rows |
@@ -63,6 +64,7 @@ Authorization: Bearer <admin-accessToken>
       "audioUrl": null,
       "source": "system",
       "imageUrl": "https://cdn.example.com/vocab/apple.png",
+      "images": ["https://cdn.example.com/vocab/apple.png"],
       "visibility": "system",
       "isApproved": true,
       "createdByUserId": null,
@@ -105,5 +107,6 @@ Authorization: Bearer <admin-accessToken>
 ## Frontend notes
 
 - **Thumbnail:** render `imageUrl` directly in the table cell; show a placeholder when it is `null`. No need to dig into `senses[]` for the list view.
+- **All images:** use `images` (distinct, ordered) to render a gallery/stack of every sense thumbnail in a row; it is `[]` when there are none.
 - **Pagination:** `total` is the unfiltered-by-page count for the current filter set — use it with `page`/`limit` to drive the pager.
 - Filters compose with `AND`; `q` is a case-insensitive **prefix** match on `lemma`.

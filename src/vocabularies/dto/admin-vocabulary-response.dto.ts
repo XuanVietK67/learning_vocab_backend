@@ -7,6 +7,10 @@ export class AdminVocabularyResponseDto extends VocabularyResponseDto {
   // lowest-ordered sense that has one, or null when no sense has an image.
   // The full per-sense images remain available under `senses[].imageUrl`.
   @Expose() imageUrl!: string | null;
+  // All distinct sense image URLs for this vocabulary, in sense_order, with
+  // nulls dropped. Lets a list view render every available thumbnail without
+  // walking `senses[]`. Empty array when no sense has an image.
+  @Expose() images!: string[];
   @Expose() visibility!: Visibility;
   @Expose() isApproved!: boolean;
   @Expose() createdByUserId!: string | null;
