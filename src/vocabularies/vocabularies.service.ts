@@ -207,13 +207,20 @@ export class VocabulariesService {
       .map((id) => byId.get(id))
       .filter((v): v is Vocabulary => v !== undefined);
 
-    // Surface a representative thumbnail at the vocab level for the admin list
-    // table. Senses are ordered by sense_order ASC, so the first one carrying an
-    // image wins; the per-sense images stay available under senses[].imageUrl.
+    // Surface image data at the vocab level for the admin list table. Senses
+    // are ordered by sense_order ASC, so `imageUrl` is the first one carrying
+    // an image, and `images` is every distinct sense image in that order. The
+    // per-sense images stay available under senses[].imageUrl.
     for (const v of data) {
-      const senseImage = (v.senses ?? []).find((s) => s.imageUrl)?.imageUrl;
-      (v as Vocabulary & { imageUrl: string | null }).imageUrl =
-        senseImage ?? null;
+      const senseImages = (v.senses ?? [])
+        .map((s) => s.imageUrl)
+        .filter((url): url is string => Boolean(url));
+      const images = [...new Set(senseImages)];
+      (
+        v as Vocabulary & { imageUrl: string | null; images: string[] }
+      ).imageUrl = images[0] ?? null;
+      (v as Vocabulary & { imageUrl: string | null; images: string[] }).images =
+        images;
     }
 
     return plainToInstance(
