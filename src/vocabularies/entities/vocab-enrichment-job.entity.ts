@@ -19,6 +19,7 @@ import { VocabEnrichmentJobStatus } from '@/vocabularies/entities/vocab-enrichme
  */
 @Index('IDX_vocab_enrichment_jobs_status', ['status'])
 @Index('IDX_vocab_enrichment_jobs_lang_lemma', ['language', 'lemma'])
+@Index('IDX_vocab_enrichment_jobs_batch_id', ['batchId'])
 @Entity('vocab_enrichment_jobs')
 export class VocabEnrichmentJob {
   @PrimaryGeneratedColumn('uuid')
@@ -29,6 +30,11 @@ export class VocabEnrichmentJob {
 
   @Column({ type: 'varchar', length: 128 })
   lemma!: string;
+
+  // Groups the per-lemma jobs created by one bulk quick-create submission.
+  // Null for single-lemma quick-create jobs.
+  @Column({ name: 'batch_id', type: 'uuid', nullable: true })
+  batchId!: string | null;
 
   @Column({
     type: 'enum',

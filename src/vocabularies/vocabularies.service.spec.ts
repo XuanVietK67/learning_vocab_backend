@@ -11,6 +11,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 const VOCAB_ID = '22222222-2222-2222-2222-222222222222';
 const JOB_ID = '33333333-3333-3333-3333-333333333333';
 const USER_ID = '11111111-1111-1111-1111-111111111111';
+const BATCH_ID = '44444444-4444-4444-4444-444444444444';
 
 function makeChainableQb(rows: unknown[]) {
   const qb = {
@@ -29,11 +30,13 @@ describe('VocabulariesService — quick-create & approve', () => {
   let service: VocabulariesService;
   const vocabRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
   const enrichmentJobRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
   };
@@ -169,6 +172,73 @@ describe('VocabulariesService — quick-create & approve', () => {
     it('throws NotFound when the system vocabulary is missing', async () => {
       vocabRepo.findOne.mockResolvedValue(null);
       await expect(service.approveVocabulary(VOCAB_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('bulkQuickCreateVocabulary', () => {
+    it('skips lemmas with a pending job or existing system vocab, enqueues the rest', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([{ lemma: 'run' }]); // pending
+      vocabRepo.find.mockResolvedValue([{ lemma: 'jump' }]); // in catalog
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockImplementation((rows: { lemma: string }[]) =>
+        Promise.resolve(rows.map((r, i) => ({ ...r, id: `job-${i}` }))),
+      );
+
+      const res = await service.bulkQuickCreateVocabulary(
+        { lemmas: ['run', 'jump', 'serendipity', 'ephemeral'] },
+        USER_ID,
+      );
+
+      expect(res.accepted).toBe(2);
+      expect(res.skipped).toBe(2);
+      expect(res.batchId).toBeTruthy();
+      expect(enrichmentProducer.enqueue).toHaveBeenCalledTimes(2);
+      // All created jobs share one batchId.
+      const calls = enrichmentJobRepo.create.mock.calls as Array<
+        [{ batchId: string }]
+      >;
+      const batchIds = calls.map((c) => c[0].batchId);
+      expect(new Set(batchIds).size).toBe(1);
+    });
+
+    it('returns a null batchId when every lemma is skipped', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([{ lemma: 'run' }]);
+      vocabRepo.find.mockResolvedValue([]);
+
+      const res = await service.bulkQuickCreateVocabulary(
+        { lemmas: ['run'] },
+        USER_ID,
+      );
+
+      expect(res.batchId).toBeNull();
+      expect(res.accepted).toBe(0);
+      expect(res.skipped).toBe(1);
+      expect(enrichmentProducer.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getEnrichmentBatch', () => {
+    it('aggregates job statuses and flattens result ids', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([
+        { status: 'completed', resultVocabularyIds: ['v1', 'v2'] },
+        { status: 'pending', resultVocabularyIds: [] },
+        { status: 'failed', resultVocabularyIds: [] },
+      ]);
+
+      const res = await service.getEnrichmentBatch(BATCH_ID);
+
+      expect(res.total).toBe(3);
+      expect(res.completed).toBe(1);
+      expect(res.pending).toBe(1);
+      expect(res.failed).toBe(1);
+      expect(res.resultVocabularyIds).toEqual(['v1', 'v2']);
+    });
+
+    it('throws NotFound when the batch has no jobs', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([]);
+      await expect(service.getEnrichmentBatch(BATCH_ID)).rejects.toThrow(
         NotFoundException,
       );
     });
