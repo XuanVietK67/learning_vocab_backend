@@ -248,7 +248,10 @@ export class VocabPickerService {
       .select('v.id', 'id')
       .where('v.language = :lang', { lang: user.targetLanguage })
       .andWhere(
-        '(v.source = :system OR (v.source = :user AND v.created_by_user_id = :userId))',
+        // System words must be approved to be served; a learner's own words do
+        // not need approval. Keeps quick-create drafts (system, unapproved) out
+        // of sessions while leaving user-created vocab untouched.
+        '((v.source = :system AND v.is_approved = true) OR (v.source = :user AND v.created_by_user_id = :userId))',
         {
           system: VocabularySource.SYSTEM,
           user: VocabularySource.USER,

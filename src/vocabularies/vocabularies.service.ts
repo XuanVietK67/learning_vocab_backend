@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -12,6 +13,8 @@ import { TopicResponseDto } from '@/topics/dto/topic-response.dto';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
+import { EnrichmentQueueProducer } from '@/vocabularies/enrichment/enrichment-queue.producer';
+import { ImageQueueProducer } from '@/vocabularies/images/image-queue.producer';
 import {
   CreateAdminExampleDto,
   UpdateAdminExampleDto,
@@ -50,12 +53,33 @@ import {
   VocabularySenseResponseDto,
   VocabularyTranslationResponseDto,
 } from '@/vocabularies/dto/vocabulary-response.dto';
+import {
+  BulkQuickCreateDto,
+  BulkQuickCreateResponseDto,
+} from '@/vocabularies/dto/bulk-quick-create.dto';
+import { EnrichmentBatchResponseDto } from '@/vocabularies/dto/enrichment-batch-response.dto';
+import { EnrichmentJobResponseDto } from '@/vocabularies/dto/enrichment-job-response.dto';
+import { ExtractLemmasResponseDto } from '@/vocabularies/dto/extract-lemmas.dto';
+import { QuickCreateVocabularyDto } from '@/vocabularies/dto/quick-create-vocabulary.dto';
+import {
+  extractCandidates,
+  SourceKind,
+} from '@/vocabularies/enrichment/import/lemma-extractor';
+import { normalizeLemmas } from '@/vocabularies/enrichment/import/normalize';
+import { ExtractMode } from '@/vocabularies/enrichment/import/tokenize';
+import { VocabEnrichmentJobStatus } from '@/vocabularies/entities/vocab-enrichment-job-status.enum';
+import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+
+// Max candidate lemmas returned from a single extract (the admin reviews these).
+const EXTRACT_CANDIDATE_CAP = 1000;
+// Max lemmas enriched in one bulk submit (matches the bulk-import cap).
+const BULK_QUICK_CREATE_MAX = 500;
 
 interface UpsertOutcome {
   vocab: Vocabulary;
@@ -75,8 +99,12 @@ export class VocabulariesService {
   constructor(
     @InjectRepository(Vocabulary)
     private readonly vocabRepo: Repository<Vocabulary>,
+    @InjectRepository(VocabEnrichmentJob)
+    private readonly enrichmentJobRepo: Repository<VocabEnrichmentJob>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly audioProducer: AudioQueueProducer,
+    private readonly enrichmentProducer: EnrichmentQueueProducer,
+    private readonly imageProducer: ImageQueueProducer,
   ) {}
 
   async findAll(
@@ -90,7 +118,9 @@ export class VocabulariesService {
       .select('vocab.id', 'id')
       .addSelect('vocab.frequency_rank', 'frequency_rank')
       .addSelect('vocab.lemma', 'lemma')
-      .where('vocab.source = :source', { source: VocabularySource.SYSTEM });
+      .where('vocab.source = :source', { source: VocabularySource.SYSTEM })
+      // Only published (approved) system words are public; drafts stay hidden.
+      .andWhere('vocab.is_approved = true');
 
     if (language) idQb.andWhere('vocab.language = :language', { language });
     if (cefrLevel)
@@ -243,6 +273,25 @@ export class VocabulariesService {
     });
   }
 
+  // Public detail read: serves only published (approved) system words. Unlike
+  // the internal findById, this hides quick-create drafts and non-system rows.
+  async findPublicById(
+    id: string,
+    translationLang?: string,
+  ): Promise<VocabularyResponseDto> {
+    const [vocab] = await this.hydrateVocabulariesByIds([id], translationLang);
+    if (
+      !vocab ||
+      vocab.source !== VocabularySource.SYSTEM ||
+      !vocab.isApproved
+    ) {
+      throw new NotFoundException('vocabulary not found');
+    }
+    return plainToInstance(VocabularyResponseDto, vocab, {
+      excludeExtraneousValues: true,
+    });
+  }
+
   async createSystemVocabulary(
     dto: CreateVocabularyDto,
   ): Promise<VocabularyResponseDto> {
@@ -273,6 +322,265 @@ export class VocabulariesService {
       );
     }
     return this.findById(outcome.vocab.id);
+  }
+
+  // ---- Quick-create (lemma-only) + enrichment ----
+
+  /**
+   * Create a quick-create enrichment job from just a lemma (+ optional language,
+   * default 'en'). A background worker fills the rest and lands one draft
+   * vocabulary per part of speech. Returns immediately with the job for polling.
+   * Idempotent per (language, lemma): an existing pending job is returned
+   * instead of starting a duplicate.
+   */
+  async quickCreateVocabulary(
+    dto: QuickCreateVocabularyDto,
+    requestedByUserId: string,
+  ): Promise<EnrichmentJobResponseDto> {
+    const language = dto.language ?? 'en';
+    const lemma = dto.lemma.trim();
+
+    const existingJob = await this.enrichmentJobRepo.findOne({
+      where: { language, lemma, status: VocabEnrichmentJobStatus.PENDING },
+      order: { createdAt: 'DESC' },
+    });
+    if (existingJob) {
+      return this.toEnrichmentJobResponse(existingJob);
+    }
+
+    const job = await this.enrichmentJobRepo.save(
+      this.enrichmentJobRepo.create({
+        language,
+        lemma,
+        status: VocabEnrichmentJobStatus.PENDING,
+        requestedByUserId,
+      }),
+    );
+    await this.enrichmentProducer.enqueue(job.id);
+    return this.toEnrichmentJobResponse(job);
+  }
+
+  async getEnrichmentJob(jobId: string): Promise<EnrichmentJobResponseDto> {
+    const job = await this.enrichmentJobRepo.findOne({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException('enrichment job not found');
+    }
+    return this.toEnrichmentJobResponse(job);
+  }
+
+  // ---- Bulk quick-create from a list/file ----
+
+  /**
+   * Parse an uploaded file (or pasted text) into candidate lemmas for review.
+   * Stateless: no jobs, no writes. Drops words already in the system catalog so
+   * the admin doesn't re-enrich what already exists.
+   */
+  async extractLemmas(params: {
+    kind: SourceKind;
+    mode: ExtractMode;
+    language: string;
+    buffer?: Buffer;
+    text?: string;
+  }): Promise<ExtractLemmasResponseDto> {
+    const { lemmas: raw, removedStopwords } = await extractCandidates({
+      kind: params.kind,
+      mode: params.mode,
+      buffer: params.buffer,
+      text: params.text,
+    });
+
+    const extracted = raw.length;
+    const {
+      lemmas: normalized,
+      deduped,
+      capped,
+    } = normalizeLemmas(raw, EXTRACT_CANDIDATE_CAP);
+
+    let alreadyInCatalog = 0;
+    let lemmas = normalized;
+    if (normalized.length > 0) {
+      const existing = await this.vocabRepo.find({
+        where: {
+          language: params.language,
+          lemma: In(normalized),
+          source: VocabularySource.SYSTEM,
+        },
+        select: { lemma: true },
+      });
+      if (existing.length > 0) {
+        const taken = new Set(existing.map((v) => v.lemma.toLowerCase()));
+        lemmas = normalized.filter((l) => !taken.has(l.toLowerCase()));
+        alreadyInCatalog = normalized.length - lemmas.length;
+      }
+    }
+
+    return plainToInstance(
+      ExtractLemmasResponseDto,
+      {
+        lemmas,
+        stats: {
+          extracted,
+          deduped,
+          removedStopwords,
+          alreadyInCatalog,
+          capped,
+        },
+      },
+      { excludeExtraneousValues: true },
+    );
+  }
+
+  /**
+   * Create one enrichment job per confirmed lemma, grouped under a batch id.
+   * Skips lemmas that already have a pending job or an existing system vocab, so
+   * re-submitting a list is cheap. Reuses the single-lemma enrichment pipeline.
+   */
+  async bulkQuickCreateVocabulary(
+    dto: BulkQuickCreateDto,
+    requestedByUserId: string,
+  ): Promise<BulkQuickCreateResponseDto> {
+    const language = dto.language ?? 'en';
+    const { lemmas } = normalizeLemmas(dto.lemmas, BULK_QUICK_CREATE_MAX);
+    if (lemmas.length === 0) {
+      return plainToInstance(BulkQuickCreateResponseDto, {
+        batchId: null,
+        accepted: 0,
+        skipped: 0,
+      });
+    }
+
+    const taken = await this.lemmasAlreadyHandled(language, lemmas);
+    const toCreate = lemmas.filter((l) => !taken.has(l.toLowerCase()));
+    const skipped = lemmas.length - toCreate.length;
+    if (toCreate.length === 0) {
+      return plainToInstance(BulkQuickCreateResponseDto, {
+        batchId: null,
+        accepted: 0,
+        skipped,
+      });
+    }
+
+    const batchId = randomUUID();
+    const jobs = await this.enrichmentJobRepo.save(
+      toCreate.map((lemma) =>
+        this.enrichmentJobRepo.create({
+          language,
+          lemma,
+          status: VocabEnrichmentJobStatus.PENDING,
+          batchId,
+          requestedByUserId,
+        }),
+      ),
+    );
+    for (const job of jobs) {
+      await this.enrichmentProducer.enqueue(job.id);
+    }
+
+    return plainToInstance(BulkQuickCreateResponseDto, {
+      batchId,
+      accepted: jobs.length,
+      skipped,
+    });
+  }
+
+  async getEnrichmentBatch(
+    batchId: string,
+  ): Promise<EnrichmentBatchResponseDto> {
+    const jobs = await this.enrichmentJobRepo.find({ where: { batchId } });
+    if (jobs.length === 0) {
+      throw new NotFoundException('batch not found');
+    }
+
+    let pending = 0;
+    let completed = 0;
+    let failed = 0;
+    const resultVocabularyIds: string[] = [];
+    for (const job of jobs) {
+      if (job.status === VocabEnrichmentJobStatus.PENDING) pending++;
+      else if (job.status === VocabEnrichmentJobStatus.COMPLETED) completed++;
+      else if (job.status === VocabEnrichmentJobStatus.FAILED) failed++;
+      resultVocabularyIds.push(...(job.resultVocabularyIds ?? []));
+    }
+
+    return plainToInstance(EnrichmentBatchResponseDto, {
+      batchId,
+      total: jobs.length,
+      pending,
+      completed,
+      failed,
+      resultVocabularyIds,
+    });
+  }
+
+  // Lowercased set of lemmas that already have a pending enrichment job or an
+  // existing system vocabulary (any part of speech) — the lemmas a bulk submit
+  // should skip. Two IN queries rather than per-lemma lookups.
+  private async lemmasAlreadyHandled(
+    language: string,
+    lemmas: string[],
+  ): Promise<Set<string>> {
+    const [pendingJobs, systemVocabs] = await Promise.all([
+      this.enrichmentJobRepo.find({
+        where: {
+          language,
+          lemma: In(lemmas),
+          status: VocabEnrichmentJobStatus.PENDING,
+        },
+        select: { lemma: true },
+      }),
+      this.vocabRepo.find({
+        where: {
+          language,
+          lemma: In(lemmas),
+          source: VocabularySource.SYSTEM,
+        },
+        select: { lemma: true },
+      }),
+    ]);
+    return new Set(
+      [...pendingJobs, ...systemVocabs].map((r) => r.lemma.toLowerCase()),
+    );
+  }
+
+  /**
+   * Publish a draft system vocabulary: flip is_approved and trigger media
+   * generation (audio if missing, image per sense without one). Idempotent —
+   * approving an already-approved word just re-returns it after re-checking media.
+   */
+  async approveVocabulary(id: string): Promise<VocabularyResponseDto> {
+    const vocab = await this.vocabRepo.findOne({
+      where: { id, source: VocabularySource.SYSTEM },
+      relations: { senses: true },
+    });
+    if (!vocab) {
+      throw new NotFoundException('vocabulary not found');
+    }
+
+    if (!vocab.isApproved) {
+      vocab.isApproved = true;
+      await this.vocabRepo.save(vocab);
+    }
+
+    // Generate media for the published word. Both are enqueued post-save and
+    // skip when a URL already exists, so re-approving is safe.
+    if (!vocab.audioUrl) {
+      await this.audioProducer.enqueue(vocab.id, vocab.lemma, vocab.language);
+    }
+    for (const sense of vocab.senses ?? []) {
+      if (!sense.imageUrl) {
+        await this.imageProducer.enqueue(sense.id, vocab.lemma, vocab.language);
+      }
+    }
+
+    return this.findById(vocab.id);
+  }
+
+  private toEnrichmentJobResponse(
+    job: VocabEnrichmentJob,
+  ): EnrichmentJobResponseDto {
+    return plainToInstance(EnrichmentJobResponseDto, job, {
+      excludeExtraneousValues: true,
+    });
   }
 
   async updateSystemVocabulary(
