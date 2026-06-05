@@ -154,7 +154,13 @@ export async function scoreSentence(
   const url = `${opts.baseUrl}/models/${opts.model}:generateContent?key=${opts.apiKey}`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: buildJudgePrompt(input) }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
+    // thinkingBudget: 0 disables hidden reasoning tokens that would otherwise eat
+    // the output budget and truncate the rubric JSON. See gemma.config.ts.
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 512,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
 
   const controller = new AbortController();

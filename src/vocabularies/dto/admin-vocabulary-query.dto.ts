@@ -58,11 +58,15 @@ export class AdminVocabularyQueryDto {
   source?: VocabularySource;
 
   // Missing / empty / unrecognized → undefined (no filter). Only literal
-  // "true"/"false" enable the filter.
+  // "true"/"false" enable the filter. Read the RAW query value from `obj`, not
+  // the `value` arg: the global pipe's enableImplicitConversion coerces the
+  // string to this field's boolean type first via Boolean("false") === true, so
+  // `value` would already be the wrong boolean. `obj.isApproved` is untouched.
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === true || value === 'true') return true;
-    if (value === false || value === 'false') return false;
+  @Transform(({ obj }) => {
+    const raw = (obj as { isApproved?: unknown }).isApproved;
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
     return undefined;
   })
   isApproved?: boolean;

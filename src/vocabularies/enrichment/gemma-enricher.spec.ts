@@ -20,6 +20,28 @@ describe('buildExamplesPrompt', () => {
     expect(prompt).toContain('2. operate');
     expect(prompt).toContain('exactly 2 item(s)');
   });
+
+  it('omits the translation field when no translationLanguage is given', () => {
+    const prompt = buildExamplesPrompt({
+      lemma: 'run',
+      partOfSpeech: 'verb',
+      language: 'en',
+      senses: [{ definition: 'move quickly' }],
+    });
+    expect(prompt).not.toContain('translation');
+  });
+
+  it('asks for a translation in the requested language when given', () => {
+    const prompt = buildExamplesPrompt({
+      lemma: 'run',
+      partOfSpeech: 'verb',
+      language: 'en',
+      senses: [{ definition: 'move quickly' }],
+      translationLanguage: 'vi',
+    });
+    expect(prompt).toContain('"translation"');
+    expect(prompt).toContain('language "vi"');
+  });
 });
 
 describe('parseExamplesResponse', () => {
@@ -37,6 +59,24 @@ describe('parseExamplesResponse', () => {
     expect(r.senses).toHaveLength(2);
     expect(r.senses[0].gloss).toBe('move fast');
     expect(r.senses[0].examples).toHaveLength(2);
+  });
+
+  it('parses a per-sense translation when present, undefined when absent', () => {
+    const withTranslation = JSON.stringify({
+      cefr: 'B1',
+      senses: [
+        {
+          gloss: 'move fast',
+          translation: 'chạy',
+          examples: ['I run daily.', 'She runs home.'],
+        },
+      ],
+    });
+    const r = parseExamplesResponse(withTranslation, 1);
+    expect(r.senses[0].translation).toBe('chạy');
+
+    const r2 = parseExamplesResponse(valid, 1);
+    expect(r2.senses[0].translation).toBeUndefined();
   });
 
   it('strips ```json fences', () => {

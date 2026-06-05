@@ -31,6 +31,17 @@ export class VocabEnrichmentJob {
   @Column({ type: 'varchar', length: 128 })
   lemma!: string;
 
+  // Target language for the per-sense translation the worker asks Gemma to
+  // produce. Null = use the configured default; equal to `language` = skip
+  // translation. Carried from the quick-create request through to the worker.
+  @Column({
+    name: 'translation_language',
+    type: 'varchar',
+    length: 8,
+    nullable: true,
+  })
+  translationLanguage!: string | null;
+
   // Groups the per-lemma jobs created by one bulk quick-create submission.
   // Null for single-lemma quick-create jobs.
   @Column({ name: 'batch_id', type: 'uuid', nullable: true })
