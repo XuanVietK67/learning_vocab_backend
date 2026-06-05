@@ -10,7 +10,12 @@ export default registerAs('gemma', () => ({
   baseUrl:
     process.env.GEMMA_BASE_URL ??
     'https://generativelanguage.googleapis.com/v1beta',
-  model: process.env.GEMMA_MODEL ?? 'gemma-3-27b-it',
+  // gemini-2.5-flash-lite, not a Gemma model: Google retired gemma-3-* from AI
+  // Studio, and the gemma-4-* replacements are reasoning models that (a) always
+  // spend the output budget on hidden "thinking" tokens and (b) reject
+  // thinkingConfig, so their JSON gets truncated (finishReason MAX_TOKENS). The
+  // callers pass thinkingConfig.thinkingBudget=0, which only Gemini honours.
+  model: process.env.GEMMA_MODEL ?? 'gemini-2.5-flash-lite',
   // Per-request timeout for the generateContent call.
   timeoutMs: parseInt(process.env.GEMMA_TIMEOUT_MS ?? '30000', 10),
   // Worker self-throttle: max scoring jobs started per minute (stay under the

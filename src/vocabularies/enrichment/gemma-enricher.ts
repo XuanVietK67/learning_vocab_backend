@@ -185,7 +185,15 @@ export async function callGemma(
   const url = `${opts.baseUrl}/models/${opts.model}:generateContent?key=${opts.apiKey}`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
+    // thinkingBudget: 0 disables the model's hidden reasoning tokens. Without it
+    // a thinking model spends the whole output budget on thoughts and truncates
+    // the JSON (finishReason MAX_TOKENS). 2048 leaves headroom for the heaviest
+    // scratch words (many parts of speech x several senses). See gemma.config.ts.
+    generationConfig: {
+      temperature: 0.4,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
 
   const controller = new AbortController();
