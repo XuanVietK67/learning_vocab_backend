@@ -352,6 +352,7 @@ export class VocabulariesService {
       this.enrichmentJobRepo.create({
         language,
         lemma,
+        translationLanguage: dto.translationLanguage ?? null,
         status: VocabEnrichmentJobStatus.PENDING,
         requestedByUserId,
       }),
@@ -477,6 +478,7 @@ export class VocabulariesService {
         this.enrichmentJobRepo.create({
           language,
           lemma,
+          translationLanguage: dto.translationLanguage ?? null,
           status: VocabEnrichmentJobStatus.PENDING,
           batchId,
           requestedByUserId,

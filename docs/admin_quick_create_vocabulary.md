@@ -20,7 +20,7 @@ How the **admin "quick add word" flow** talks to the backend. Instead of hand-fi
 [Admin types a word and submits]
         │
         ▼
-POST /v1/admin/vocabularies/quick   { lemma, language? }
+POST /v1/admin/vocabularies/quick   { lemma, language?, translationLanguage? }
         │
         └─ 202 → { id (jobId), status: "pending", resultVocabularyIds: [] }
                  │
@@ -59,8 +59,9 @@ Content-Type: application/json
 
 ```jsonc
 {
-  "lemma": "ephemeral",   // required — the word
-  "language": "en"        // optional — ISO code, defaults to "en"
+  "lemma": "ephemeral",        // required — the word
+  "language": "en",            // optional — ISO code, defaults to "en"
+  "translationLanguage": "vi"  // optional — target language for sense translations
 }
 ```
 
@@ -70,6 +71,7 @@ Content-Type: application/json
 |---|---|---|---|
 | `lemma` | yes | string | length 1–128 (trimmed server-side) |
 | `language` | no | string | length 2–8, ISO 639-1 (`/^[a-z]{2}(-[A-Z]{2})?$/`), e.g. `en`, `vi`, `pt-BR`. Defaults to `en`. Non-English words skip the dictionary and are enriched by Gemma only (no IPA). |
+| `translationLanguage` | no | string | length 2–8, ISO 639-1 (same regex as `language`). Target language for the translation Gemma adds to **each sense**. Omitted → falls back to the server default (`vi`). Set it equal to `language` to **skip** translation entirely. |
 
 ### Response — `202 Accepted`
 
@@ -144,7 +146,7 @@ Once approved, the word immediately becomes eligible for learners' sessions and 
 
 | Status | When | Frontend handling |
 |---|---|---|
-| 400 | `lemma` missing/too long, or `language` not a valid ISO code | Show field errors |
+| 400 | `lemma` missing/too long, or `language`/`translationLanguage` not a valid ISO code | Show field errors |
 | 401 | Token missing/expired | Send to login / refresh |
 | 403 | Logged in but not `admin` | Hide/disable the screen |
 | 404 | `GET quick/:jobId` unknown job, or `approve` on a non-existent system vocabulary | Show "not found"; the draft may have been deleted |
@@ -157,3 +159,4 @@ Once approved, the word immediately becomes eligible for learners' sessions and 
 - **One word → many drafts.** Always treat `resultVocabularyIds` as a list and render each draft separately.
 - **Empty `resultVocabularyIds` on `completed`** is a success, not an error — it means the word already existed in the catalog.
 - **Quality is machine-generated.** The review step exists precisely because dictionary/LLM output can be wrong (especially IPA and example sentences) — encourage admins to skim before approving.
+- **Translations are per-sense and machine-generated too.** Each draft sense carries one translation (`source: "gemma"`) in `translationLanguage`. The model occasionally omits one for a sense; the review queue's translation editor (`PATCH/POST …/translations`) is the place to fix or add them.

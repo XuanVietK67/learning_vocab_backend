@@ -26,7 +26,7 @@ POST /v1/admin/vocabularies/quick/extract   (multipart: file? + text? + mode + l
         [Show lemmas as an editable checklist; admin unticks junk]
                  │
                  ▼
-POST /v1/admin/vocabularies/quick/bulk   { lemmas: [confirmed], language, topics? }
+POST /v1/admin/vocabularies/quick/bulk   { lemmas: [confirmed], language, translationLanguage?, topics? }
         │
         └─ 202 { batchId, accepted, skipped }   (drafts + existing words tagged with topics)
                  │
@@ -92,6 +92,7 @@ Send the **confirmed** lemmas as JSON.
 {
   "lemmas": ["ephemeral", "serendipity", "ubiquitous"],  // 1–500
   "language": "en",                                       // optional, default en
+  "translationLanguage": "vi",                            // optional, default vi
   "topics": ["academic"]                                  // optional topic slugs
 }
 ```
@@ -100,6 +101,7 @@ Send the **confirmed** lemmas as JSON.
 |---|---|---|---|
 | `lemmas` | yes | string[] | 1–500 items, each 1–128 chars |
 | `language` | no | string | ISO code, default `en` |
+| `translationLanguage` | no | string | ISO code (same regex as `language`). Target language for the per-sense translation Gemma adds to **every** lemma in the batch. Omitted → server default (`vi`); set equal to `language` to skip translation. |
 | `topics` | no | string[] | 0–32 topic slugs, each `[a-z0-9-]+`, 1–64 chars. **Must already exist** in the topic catalog (`GET /v1/topics`) — any unknown slug fails the whole request with **400**. |
 
 ### Response — `202 Accepted`
