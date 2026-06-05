@@ -32,6 +32,18 @@ export class BulkQuickCreateDto {
   })
   language?: string;
 
+  // Target language for the per-sense translation the worker asks Gemma to
+  // produce on every lemma in this batch. Omitted → configured default; equal to
+  // `language` → translation is skipped.
+  @IsOptional()
+  @IsString()
+  @Length(2, 8)
+  @Matches(LANGUAGE_CODE_REGEX, {
+    message:
+      'translationLanguage must be an ISO 639-1 code (e.g. "en", "vi", "pt-BR")',
+  })
+  translationLanguage?: string;
+
   // Topic slugs to attach to every word this submission touches: each created
   // draft is linked, and any lemma that already exists as a system word is
   // tagged in place (tag-on-skip). Slugs must already exist in the catalog.

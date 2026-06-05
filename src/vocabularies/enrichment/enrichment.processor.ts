@@ -28,6 +28,7 @@ import {
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import {
   PersistSense,
+  PersistTranslation,
   VocabularyPersistenceService,
 } from '@/vocabularies/vocabulary-persistence.service';
 
@@ -83,9 +84,14 @@ export class EnrichmentProcessor extends WorkerHost {
     }
 
     const { lemma, language } = jobRow;
+    const translationLanguage = this.resolveTranslationLanguage(jobRow);
 
     // May throw on dictionary/Gemma network or parse errors — let BullMQ retry.
-    const drafts = await this.prepareDrafts(lemma, language);
+    const drafts = await this.prepareDrafts(
+      lemma,
+      language,
+      translationLanguage,
+    );
     if (drafts.length === 0) {
       await this.markFailed(jobId, 'enrichment produced no usable content');
       return;
@@ -137,21 +143,54 @@ export class EnrichmentProcessor extends WorkerHost {
     );
   }
 
+  // Target language for the per-sense translation, or null to skip it. Falls
+  // back to the configured default when the job didn't specify one, and never
+  // translates a word into its own language.
+  private resolveTranslationLanguage(job: VocabEnrichmentJob): string | null {
+    const target =
+      job.translationLanguage ??
+      this.config.get<string>('gemma.translationLanguage', 'vi');
+    if (!target || target === job.language) return null;
+    return target;
+  }
+
+  // Wrap a Gemma-produced translation as a single PersistTranslation, or omit it
+  // when there is no target language or the model returned nothing.
+  private buildTranslations(
+    language: string | null,
+    translation: string | undefined,
+  ): PersistTranslation[] | undefined {
+    if (!language || !translation) return undefined;
+    return [{ language, translation, source: 'gemma' }];
+  }
+
   // Build draft inputs from the dictionary (English) plus Gemma, falling back to
   // Gemma-only when the dictionary has no entry or the language is non-English.
   private async prepareDrafts(
     lemma: string,
     language: string,
+    translationLanguage: string | null,
   ): Promise<DraftInput[]> {
     const gemmaOpts = this.gemmaOptions();
 
     if (language === 'en') {
       const groups = await fetchDictionaryEntry(lemma, DICTIONARY_TIMEOUT_MS);
       if (groups) {
-        return this.draftsFromDictionary(lemma, language, groups, gemmaOpts);
+        return this.draftsFromDictionary(
+          lemma,
+          language,
+          groups,
+          gemmaOpts,
+          translationLanguage,
+        );
       }
     }
-    return this.draftsFromScratch(lemma, language, gemmaOpts);
+    return this.draftsFromScratch(
+      lemma,
+      language,
+      gemmaOpts,
+      translationLanguage,
+    );
   }
 
   private async draftsFromDictionary(
@@ -159,6 +198,7 @@ export class EnrichmentProcessor extends WorkerHost {
     language: string,
     groups: DictionaryPosGroup[],
     gemmaOpts: GemmaClientOptions,
+    translationLanguage: string | null,
   ): Promise<DraftInput[]> {
     const drafts: DraftInput[] = [];
     for (const group of groups) {
@@ -172,6 +212,7 @@ export class EnrichmentProcessor extends WorkerHost {
           partOfSpeech: pos,
           language,
           senses: capped.map((s) => ({ definition: s.definition })),
+          translationLanguage: translationLanguage ?? undefined,
         },
         gemmaOpts,
       );
@@ -191,6 +232,10 @@ export class EnrichmentProcessor extends WorkerHost {
           synonyms: dictSense.synonyms,
           antonyms: dictSense.antonyms,
           examples,
+          translations: this.buildTranslations(
+            translationLanguage,
+            enriched.senses[i].translation,
+          ),
         };
       });
 
@@ -208,8 +253,14 @@ export class EnrichmentProcessor extends WorkerHost {
     lemma: string,
     language: string,
     gemmaOpts: GemmaClientOptions,
+    translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    const groups = await enrichFromScratch(lemma, language, gemmaOpts);
+    const groups = await enrichFromScratch(
+      lemma,
+      language,
+      gemmaOpts,
+      translationLanguage ?? undefined,
+    );
     return groups.map((group) => ({
       partOfSpeech: group.partOfSpeech,
       ipa: null,
@@ -218,6 +269,10 @@ export class EnrichmentProcessor extends WorkerHost {
         gloss: s.gloss || null,
         definition: s.definition,
         examples: s.examples.map((sentence) => ({ sentence, source: 'gemma' })),
+        translations: this.buildTranslations(
+          translationLanguage,
+          s.translation,
+        ),
       })),
     }));
   }

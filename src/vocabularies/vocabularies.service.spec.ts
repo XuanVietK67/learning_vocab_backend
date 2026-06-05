@@ -274,7 +274,9 @@ describe('VocabulariesService — quick-create & approve', () => {
         Promise.resolve(rows.map((r, i) => ({ ...r, id: `job-${i}` }))),
       );
 
-      const topicTxRepo = { findOne: jest.fn().mockResolvedValue({ id: 't1' }) };
+      const topicTxRepo = {
+        findOne: jest.fn().mockResolvedValue({ id: 't1' }),
+      };
       const vtRepo = {
         findOne: jest.fn().mockResolvedValue(null),
         create: jest.fn((x: object) => x),

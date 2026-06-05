@@ -31,4 +31,8 @@ export default registerAs('gemma', () => ({
     process.env.GEMMA_DAILY_ATTEMPTS_PER_USER ?? '30',
     10,
   ),
+  // Default target language for the sense translation the enrichment worker asks
+  // Gemma to produce, used when a quick-create request doesn't specify one. Set
+  // it to the same code as the word's own language to skip translation entirely.
+  translationLanguage: process.env.ENRICHMENT_TRANSLATION_LANGUAGE ?? 'vi',
 }));

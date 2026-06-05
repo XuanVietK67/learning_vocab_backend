@@ -19,4 +19,16 @@ export class QuickCreateVocabularyDto {
     message: 'language must be an ISO 639-1 code (e.g. "en", "vi", "pt-BR")',
   })
   language?: string;
+
+  // Target language for the per-sense translation the worker asks Gemma to
+  // produce. Omitted → falls back to the configured default; equal to `language`
+  // → translation is skipped.
+  @IsOptional()
+  @IsString()
+  @Length(2, 8)
+  @Matches(LANGUAGE_CODE_REGEX, {
+    message:
+      'translationLanguage must be an ISO 639-1 code (e.g. "en", "vi", "pt-BR")',
+  })
+  translationLanguage?: string;
 }

@@ -28,6 +28,8 @@ const GLOSS_MAX = 128;
 const DEFINITION_MAX = 2000;
 const EXAMPLE_MAX = 1000;
 const MAX_EXAMPLES_PER_SENSE = 3;
+// Matches the translation column / CreateAdminTranslationDto cap.
+const TRANSLATION_MAX = 255;
 
 // ---- generateExamples (dictionary-assisted path) ----
 
@@ -40,11 +42,16 @@ export interface EnrichExamplesInput {
   partOfSpeech: string;
   language: string;
   senses: SenseToEnrich[];
+  // When set, Gemma is also asked for a short translation of each sense into
+  // this language. Omit (or pass the word's own language) to skip translation.
+  translationLanguage?: string;
 }
 
 export interface EnrichedSense {
   gloss: string;
   examples: string[];
+  // Present only when the request asked for a translation language.
+  translation?: string;
 }
 
 export interface EnrichExamplesResult {
@@ -57,6 +64,12 @@ export function buildExamplesPrompt(input: EnrichExamplesInput): string {
     .map((s, i) => `${i + 1}. ${s.definition}`)
     .join('\n');
 
+  const t = input.translationLanguage;
+  const translationInstruction = t
+    ? `\n- "translation": a short translation (1-3 words) of "${input.lemma}" for THAT sense, written in language "${t}".`
+    : '';
+  const translationField = t ? `, "translation": "<short translation>"` : '';
+
   return `You help build a language-learning dictionary. The target word is "${input.lemma}" used as a ${input.partOfSpeech}. Example sentences must be written in language code "${input.language}".
 
 Here are ${input.senses.length} numbered sense(s) of the word:
@@ -64,7 +77,7 @@ ${senseList}
 
 For EACH sense, in the same order, produce:
 - "gloss": a very short label of 1-4 words summarising that sense.
-- "examples": an array of at least 2 natural sentences that use "${input.lemma}" (or an inflected form) with THAT sense, written in language "${input.language}".
+- "examples": an array of at least 2 natural sentences that use "${input.lemma}" (or an inflected form) with THAT sense, written in language "${input.language}".${translationInstruction}
 
 Also estimate "cefr": the overall CEFR difficulty of the word itself (A1, A2, B1, B2, C1, or C2).
 
@@ -72,7 +85,7 @@ Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
 {
   "cefr": "<A1|A2|B1|B2|C1|C2>",
   "senses": [
-    { "gloss": "<short label>", "examples": ["<sentence>", "<sentence>"] }
+    { "gloss": "<short label>", "examples": ["<sentence>", "<sentence>"]${translationField} }
   ]
 }
 The "senses" array MUST have exactly ${input.senses.length} item(s), one per numbered sense above, in order.`;
@@ -98,7 +111,11 @@ export function parseExamplesResponse(
     if (examples.length < 2) {
       throw new Error(`sense ${i + 1} returned fewer than 2 examples`);
     }
-    senses.push({ gloss: coerceGloss(s.gloss), examples });
+    senses.push({
+      gloss: coerceGloss(s.gloss),
+      examples,
+      translation: coerceTranslation(s.translation),
+    });
   }
   return { cefr, senses };
 }
@@ -109,6 +126,8 @@ export interface ScratchSense {
   gloss: string;
   definition: string;
   examples: string[];
+  // Present only when the request asked for a translation language.
+  translation?: string;
 }
 
 export interface ScratchPosGroup {
@@ -117,10 +136,20 @@ export interface ScratchPosGroup {
   senses: ScratchSense[];
 }
 
-export function buildScratchPrompt(lemma: string, language: string): string {
+export function buildScratchPrompt(
+  lemma: string,
+  language: string,
+  translationLanguage?: string,
+): string {
+  const t = translationLanguage;
+  const translationInstruction = t
+    ? ` Also give a short "translation" (1-3 words) of "${lemma}" for that sense, written in language "${t}".`
+    : '';
+  const translationField = t ? `, "translation": "<short translation>"` : '';
+
   return `You help build a language-learning dictionary for language code "${language}". Describe the word "${lemma}".
 
-For each part of speech the word can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use "${lemma}" (or an inflected form).
+For each part of speech the word can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use "${lemma}" (or an inflected form).${translationInstruction}
 
 Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2).
 
@@ -131,7 +160,7 @@ Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
     {
       "partOfSpeech": "<noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|phrase>",
       "senses": [
-        { "gloss": "<short label>", "definition": "<definition>", "examples": ["<sentence>", "<sentence>"] }
+        { "gloss": "<short label>", "definition": "<definition>", "examples": ["<sentence>", "<sentence>"]${translationField} }
       ]
     }
   ]
@@ -164,6 +193,7 @@ export function parseScratchResponse(raw: string): ScratchPosGroup[] {
         gloss: coerceGloss(s.gloss),
         definition: definition.slice(0, DEFINITION_MAX),
         examples,
+        translation: coerceTranslation(s.translation),
       });
     }
     if (senses.length > 0) groups.push({ partOfSpeech: pos, cefr, senses });
@@ -236,8 +266,12 @@ export async function enrichFromScratch(
   lemma: string,
   language: string,
   opts: GemmaClientOptions,
+  translationLanguage?: string,
 ): Promise<ScratchPosGroup[]> {
-  const text = await callGemma(buildScratchPrompt(lemma, language), opts);
+  const text = await callGemma(
+    buildScratchPrompt(lemma, language, translationLanguage),
+    opts,
+  );
   return parseScratchResponse(text);
 }
 
@@ -254,6 +288,14 @@ function coerceCefr(value: unknown): ProficiencyLevel {
 function coerceGloss(value: unknown): string {
   const gloss = typeof value === 'string' ? value.trim() : '';
   return gloss.slice(0, GLOSS_MAX);
+}
+
+// Optional: a missing/blank translation is fine (the request may not have asked
+// for one, or the model omitted it) — callers only persist a translation when a
+// non-empty value comes back.
+function coerceTranslation(value: unknown): string | undefined {
+  const translation = typeof value === 'string' ? value.trim() : '';
+  return translation ? translation.slice(0, TRANSLATION_MAX) : undefined;
 }
 
 function coerceExamples(value: unknown): string[] {
