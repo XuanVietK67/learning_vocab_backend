@@ -5,7 +5,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import audioConfig from './config/audio.config';
 import databaseConfig from './config/database.config';
+import gemmaConfig from './config/gemma.config';
 import redisConfig from './config/redis.config';
+import { ProductionAttempt } from './practice/entities/production-attempt.entity';
+import { PRACTICE_SCORING_QUEUE } from './practice/scoring-queue.constants';
+import { ScoringProcessor } from './practice/scoring.processor';
 import { AUDIO_QUEUE } from './vocabularies/audio/audio-queue.constants';
 import { AudioProcessor } from './vocabularies/audio/audio.processor';
 import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
@@ -19,7 +23,7 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, audioConfig],
+      load: [databaseConfig, redisConfig, audioConfig, gemmaConfig],
       envFilePath: ['.env'],
     }),
     TypeOrmModule.forRootAsync({
@@ -40,7 +44,7 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
         synchronize: false,
       }),
     }),
-    TypeOrmModule.forFeature([Vocabulary]),
+    TypeOrmModule.forFeature([Vocabulary, ProductionAttempt]),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -52,7 +56,8 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
       }),
     }),
     BullModule.registerQueue({ name: AUDIO_QUEUE }),
+    BullModule.registerQueue({ name: PRACTICE_SCORING_QUEUE }),
   ],
-  providers: [AudioProcessor],
+  providers: [AudioProcessor, ScoringProcessor],
 })
 export class WorkerModule {}
