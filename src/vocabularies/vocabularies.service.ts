@@ -449,9 +449,20 @@ export class VocabulariesService {
       });
     }
 
+    // Validate the chosen topics once, up front: a bad slug fails the whole
+    // submit with 400 rather than every background job dying silently.
+    const topicSlugs = await this.validateTopicSlugs(dto.topics);
+
     const taken = await this.lemmasAlreadyHandled(language, lemmas);
     const toCreate = lemmas.filter((l) => !taken.has(l.toLowerCase()));
     const skipped = lemmas.length - toCreate.length;
+
+    // Tag-on-skip: lemmas already present as system words won't get a job, but
+    // they still join the chosen topic(s) so the admin's word list lands whole.
+    if (topicSlugs.length > 0) {
+      await this.tagExistingSystemVocabs(language, lemmas, topicSlugs);
+    }
+
     if (toCreate.length === 0) {
       return plainToInstance(BulkQuickCreateResponseDto, {
         batchId: null,
@@ -469,6 +480,7 @@ export class VocabulariesService {
           status: VocabEnrichmentJobStatus.PENDING,
           batchId,
           requestedByUserId,
+          topicSlugs,
         }),
       ),
     );
@@ -509,6 +521,46 @@ export class VocabulariesService {
       completed,
       failed,
       resultVocabularyIds,
+    });
+  }
+
+  // Resolves and validates topic slugs for a bulk quick-create. Dedupes, and
+  // throws 400 listing any slug that isn't in the catalog. Returns [] when no
+  // topics were supplied.
+  private async validateTopicSlugs(slugs?: string[]): Promise<string[]> {
+    if (!slugs || slugs.length === 0) return [];
+    const unique = [...new Set(slugs)];
+    const found = await this.dataSource.getRepository(Topic).find({
+      where: { slug: In(unique) },
+      select: { slug: true },
+    });
+    const known = new Set(found.map((t) => t.slug));
+    const unknown = unique.filter((s) => !known.has(s));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `unknown topic slug(s): ${unknown.join(', ')}`,
+      );
+    }
+    return unique;
+  }
+
+  // Links every existing system vocabulary for the submitted lemmas to the
+  // chosen topics (idempotent). The `toCreate` lemmas have no system rows yet,
+  // so this only touches the ones that would otherwise be skipped.
+  private async tagExistingSystemVocabs(
+    language: string,
+    lemmas: string[],
+    topicSlugs: string[],
+  ): Promise<void> {
+    const existing = await this.vocabRepo.find({
+      where: { language, lemma: In(lemmas), source: VocabularySource.SYSTEM },
+      select: { id: true },
+    });
+    if (existing.length === 0) return;
+    await this.dataSource.transaction(async (manager) => {
+      for (const v of existing) {
+        await this.upsertTopicLinks(manager, v.id, topicSlugs);
+      }
     });
   }
 

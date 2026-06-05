@@ -1,6 +1,6 @@
 # Admin — Bulk quick-create from a list or file (frontend guide)
 
-How the **admin "import many words" flow** talks to the backend. The admin pastes a word list or uploads a `.txt` / `.csv` / `.xlsx` / `.pdf` file; the backend parses it into candidate lemmas; the admin curates the list; then each lemma runs through the **same** enrichment pipeline as single quick-create, landing **unapproved drafts** for review.
+How the **admin "import many words" flow** talks to the backend. The admin (optionally picks a topic, then) pastes a word list or uploads a `.txt` / `.csv` / `.xlsx` / `.pdf` file; the backend parses it into candidate lemmas; the admin curates the list; then each lemma runs through the **same** enrichment pipeline as single quick-create, landing **unapproved drafts** for review — linked to the chosen topic if one was given.
 
 - **Endpoints:**
   - `POST /v1/admin/vocabularies/quick/extract` — parse a file/text → candidate lemmas (no jobs created)
@@ -26,9 +26,9 @@ POST /v1/admin/vocabularies/quick/extract   (multipart: file? + text? + mode + l
         [Show lemmas as an editable checklist; admin unticks junk]
                  │
                  ▼
-POST /v1/admin/vocabularies/quick/bulk   { lemmas: [confirmed], language }
+POST /v1/admin/vocabularies/quick/bulk   { lemmas: [confirmed], language, topics? }
         │
-        └─ 202 { batchId, accepted, skipped }
+        └─ 202 { batchId, accepted, skipped }   (drafts + existing words tagged with topics)
                  │
                  ▼   poll every ~3–5s
         GET /v1/admin/vocabularies/quick/batch/:batchId
@@ -91,7 +91,8 @@ Send the **confirmed** lemmas as JSON.
 ```jsonc
 {
   "lemmas": ["ephemeral", "serendipity", "ubiquitous"],  // 1–500
-  "language": "en"                                        // optional, default en
+  "language": "en",                                       // optional, default en
+  "topics": ["academic"]                                  // optional topic slugs
 }
 ```
 
@@ -99,6 +100,7 @@ Send the **confirmed** lemmas as JSON.
 |---|---|---|---|
 | `lemmas` | yes | string[] | 1–500 items, each 1–128 chars |
 | `language` | no | string | ISO code, default `en` |
+| `topics` | no | string[] | 0–32 topic slugs, each `[a-z0-9-]+`, 1–64 chars. **Must already exist** in the topic catalog (`GET /v1/topics`) — any unknown slug fails the whole request with **400**. |
 
 ### Response — `202 Accepted`
 
@@ -111,6 +113,13 @@ Send the **confirmed** lemmas as JSON.
 ```
 
 The backend re-dedupes and skips lemmas that already have a pending job or an existing system word — so re-submitting the same list is cheap and safe.
+
+**Topics (pick a topic, then paste the list).** When you send `topics`, the chosen slugs are attached to **every** word the submission touches:
+
+- Each **newly created draft** is linked to the topic(s) as it's enriched (the link rides along on the background job).
+- Any lemma that was **skipped because it already exists** as a system word is still **tagged in place** (tag-on-skip) — so an existing word in your list lands in the topic too, even though it doesn't show up in `accepted` or in the batch's `resultVocabularyIds`.
+
+So `topics` is *additive and idempotent*: re-submitting a list to add a topic is safe, and words already carrying that topic aren't duplicated. The link is the same one `PUT /v1/admin/vocabularies/:id/topics` manages, so you can still adjust per-word topics during review.
 
 ---
 

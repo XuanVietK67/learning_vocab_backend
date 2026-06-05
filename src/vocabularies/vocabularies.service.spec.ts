@@ -1,6 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
+import { Topic } from '@/topics/entities/topic.entity';
+import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import { EnrichmentQueueProducer } from '@/vocabularies/enrichment/enrichment-queue.producer';
 import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
@@ -40,7 +42,7 @@ describe('VocabulariesService — quick-create & approve', () => {
     create: jest.fn(),
     save: jest.fn(),
   };
-  const dataSource = { transaction: jest.fn() };
+  const dataSource = { transaction: jest.fn(), getRepository: jest.fn() };
   const audioProducer = { enqueue: jest.fn() };
   const enrichmentProducer = { enqueue: jest.fn() };
   const imageProducer = { enqueue: jest.fn() };
@@ -216,6 +218,87 @@ describe('VocabulariesService — quick-create & approve', () => {
       expect(res.accepted).toBe(0);
       expect(res.skipped).toBe(1);
       expect(enrichmentProducer.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown topic slug with 400', async () => {
+      dataSource.getRepository.mockReturnValue({
+        find: jest.fn().mockResolvedValue([{ slug: 'household' }]),
+      });
+
+      await expect(
+        service.bulkQuickCreateVocabulary(
+          { lemmas: ['lamp'], topics: ['household', 'made-up'] },
+          USER_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(enrichmentJobRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('carries the chosen topics through to every created job', async () => {
+      dataSource.getRepository.mockReturnValue({
+        find: jest.fn().mockResolvedValue([{ slug: 'household' }]),
+      });
+      enrichmentJobRepo.find.mockResolvedValue([]); // no pending jobs
+      vocabRepo.find.mockResolvedValue([]); // nothing in catalog yet
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockImplementation((rows: { lemma: string }[]) =>
+        Promise.resolve(rows.map((r, i) => ({ ...r, id: `job-${i}` }))),
+      );
+
+      const res = await service.bulkQuickCreateVocabulary(
+        { lemmas: ['lamp', 'sofa'], topics: ['household'] },
+        USER_ID,
+      );
+
+      expect(res.accepted).toBe(2);
+      const calls = enrichmentJobRepo.create.mock.calls as Array<
+        [{ topicSlugs: string[] }]
+      >;
+      for (const [arg] of calls) {
+        expect(arg.topicSlugs).toEqual(['household']);
+      }
+    });
+
+    it('tag-on-skip: links existing system words to the topic in place', async () => {
+      dataSource.getRepository.mockReturnValue({
+        find: jest.fn().mockResolvedValue([{ slug: 'household' }]),
+      });
+      enrichmentJobRepo.find.mockResolvedValue([]); // no pending jobs
+      // First find() (skip detection) sees 'lamp' already in the catalog;
+      // second find() (tag-on-skip) returns its row id to link.
+      vocabRepo.find
+        .mockResolvedValueOnce([{ lemma: 'lamp' }])
+        .mockResolvedValueOnce([{ id: VOCAB_ID }]);
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockImplementation((rows: { lemma: string }[]) =>
+        Promise.resolve(rows.map((r, i) => ({ ...r, id: `job-${i}` }))),
+      );
+
+      const topicTxRepo = { findOne: jest.fn().mockResolvedValue({ id: 't1' }) };
+      const vtRepo = {
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn((x: object) => x),
+        save: jest.fn(),
+      };
+      const manager = {
+        getRepository: jest.fn((entity: unknown) =>
+          entity === Topic ? topicTxRepo : vtRepo,
+        ),
+      };
+      dataSource.transaction.mockImplementation(
+        (cb: (m: typeof manager) => unknown) => cb(manager),
+      );
+
+      const res = await service.bulkQuickCreateVocabulary(
+        { lemmas: ['lamp', 'sofa'], topics: ['household'] },
+        USER_ID,
+      );
+
+      // 'lamp' is skipped (already exists) but still tagged; 'sofa' is created.
+      expect(res.accepted).toBe(1);
+      expect(res.skipped).toBe(1);
+      expect(manager.getRepository).toHaveBeenCalledWith(VocabularyTopic);
+      expect(vtRepo.save).toHaveBeenCalledTimes(1);
     });
   });
 
