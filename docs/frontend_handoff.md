@@ -44,6 +44,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 |---|---|---|---|
 | Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
+| Admin — quick-create vocabulary (lemma only) | `POST /v1/admin/vocabularies/quick`, `GET /v1/admin/vocabularies/quick/:jobId`, `POST /v1/admin/vocabularies/:id/approve` | admin | [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md) |
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |

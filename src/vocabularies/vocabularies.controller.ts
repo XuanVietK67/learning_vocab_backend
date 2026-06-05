@@ -25,6 +25,6 @@ export class VocabulariesController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Query() query: VocabularyDetailQueryDto,
   ): Promise<VocabularyResponseDto> {
-    return this.vocabulariesService.findById(id, query.translationLang);
+    return this.vocabulariesService.findPublicById(id, query.translationLang);
   }
 }

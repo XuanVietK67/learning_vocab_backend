@@ -7,6 +7,7 @@ import audioConfig from './config/audio.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
 import gemmaConfig from './config/gemma.config';
+import imageConfig from './config/image.config';
 import learnConfig from './config/learn.config';
 import mailConfig from './config/mail.config';
 import redisConfig from './config/redis.config';
@@ -32,6 +33,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         redisConfig,
         audioConfig,
         gemmaConfig,
+        imageConfig,
       ],
       envFilePath: ['.env'],
     }),

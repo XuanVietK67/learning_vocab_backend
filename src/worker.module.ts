@@ -6,13 +6,21 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import audioConfig from './config/audio.config';
 import databaseConfig from './config/database.config';
 import gemmaConfig from './config/gemma.config';
+import imageConfig from './config/image.config';
 import redisConfig from './config/redis.config';
 import { ProductionAttempt } from './practice/entities/production-attempt.entity';
 import { PRACTICE_SCORING_QUEUE } from './practice/scoring-queue.constants';
 import { ScoringProcessor } from './practice/scoring.processor';
 import { AUDIO_QUEUE } from './vocabularies/audio/audio-queue.constants';
 import { AudioProcessor } from './vocabularies/audio/audio.processor';
+import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.constants';
+import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
+import { VocabEnrichmentJob } from './vocabularies/entities/vocab-enrichment-job.entity';
+import { VocabularySense } from './vocabularies/entities/vocabulary-sense.entity';
 import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
+import { IMAGE_QUEUE } from './vocabularies/images/image-queue.constants';
+import { ImageProcessor } from './vocabularies/images/image.processor';
+import { VocabularyPersistenceService } from './vocabularies/vocabulary-persistence.service';
 
 /**
  * Standalone module for the audio worker process (see worker.ts). It is a pure
@@ -23,7 +31,13 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, audioConfig, gemmaConfig],
+      load: [
+        databaseConfig,
+        redisConfig,
+        audioConfig,
+        gemmaConfig,
+        imageConfig,
+      ],
       envFilePath: ['.env'],
     }),
     TypeOrmModule.forRootAsync({
@@ -44,7 +58,12 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
         synchronize: false,
       }),
     }),
-    TypeOrmModule.forFeature([Vocabulary, ProductionAttempt]),
+    TypeOrmModule.forFeature([
+      Vocabulary,
+      VocabularySense,
+      VocabEnrichmentJob,
+      ProductionAttempt,
+    ]),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -57,7 +76,15 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
     }),
     BullModule.registerQueue({ name: AUDIO_QUEUE }),
     BullModule.registerQueue({ name: PRACTICE_SCORING_QUEUE }),
+    BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
+    BullModule.registerQueue({ name: IMAGE_QUEUE }),
   ],
-  providers: [AudioProcessor, ScoringProcessor],
+  providers: [
+    AudioProcessor,
+    ScoringProcessor,
+    EnrichmentProcessor,
+    ImageProcessor,
+    VocabularyPersistenceService,
+  ],
 })
 export class WorkerModule {}

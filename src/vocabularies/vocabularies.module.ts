@@ -6,10 +6,16 @@ import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { AUDIO_QUEUE } from '@/vocabularies/audio/audio-queue.constants';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
+import { ENRICHMENT_QUEUE } from '@/vocabularies/enrichment/enrichment-queue.constants';
+import { EnrichmentQueueProducer } from '@/vocabularies/enrichment/enrichment-queue.producer';
+import { IMAGE_QUEUE } from '@/vocabularies/images/image-queue.constants';
+import { ImageQueueProducer } from '@/vocabularies/images/image-queue.producer';
+import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
 import { VocabularyTranslation } from '@/vocabularies/entities/vocabulary-translation.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { VocabularyPersistenceService } from '@/vocabularies/vocabulary-persistence.service';
 import { AdminVocabulariesController } from '@/vocabularies/admin-vocabularies.controller';
 import { AdminVocabularyExamplesController } from '@/vocabularies/admin-vocabulary-examples.controller';
 import { AdminVocabularySensesController } from '@/vocabularies/admin-vocabulary-senses.controller';
@@ -26,6 +32,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       VocabularySense,
       VocabularyTranslation,
       VocabularyExample,
+      VocabEnrichmentJob,
       Topic,
       VocabularyTopic,
     ]),
@@ -40,6 +47,8 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       }),
     }),
     BullModule.registerQueue({ name: AUDIO_QUEUE }),
+    BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
+    BullModule.registerQueue({ name: IMAGE_QUEUE }),
   ],
   controllers: [
     VocabulariesController,
@@ -50,7 +59,13 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
     AdminVocabularyExamplesController,
     AdminVocabularyTopicsController,
   ],
-  providers: [VocabulariesService, AudioQueueProducer],
+  providers: [
+    VocabulariesService,
+    VocabularyPersistenceService,
+    AudioQueueProducer,
+    EnrichmentQueueProducer,
+    ImageQueueProducer,
+  ],
   exports: [VocabulariesService],
 })
 export class VocabulariesModule {}
