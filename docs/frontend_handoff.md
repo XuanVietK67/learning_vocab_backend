@@ -46,6 +46,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
+| User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |
 
 ---
 
