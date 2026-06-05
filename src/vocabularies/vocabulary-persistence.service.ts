@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
+import { Topic } from '@/topics/entities/topic.entity';
+import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { EnrichmentStatus } from '@/vocabularies/entities/enrichment-status.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
@@ -48,6 +50,10 @@ export interface PersistVocabularyInput {
   enrichmentStatus?: EnrichmentStatus | null;
   createdByUserId?: string | null;
   senses: PersistSense[];
+  // Topic slugs to link to the new vocabulary. Slugs that no longer resolve are
+  // skipped (callers validate up front; this tolerates a topic deleted between
+  // submit and write). Empty/omitted leaves the word untagged.
+  topicSlugs?: string[];
 }
 
 /**
@@ -59,8 +65,9 @@ export interface PersistVocabularyInput {
  * the HTTP/queue side of VocabulariesModule.
  *
  * This is CREATE-only (no upsert/merge): callers that may collide with an
- * existing row must check beforehand. Topics are intentionally not linked here;
- * drafts get topics assigned during admin review.
+ * existing row must check beforehand. Topics are linked when `topicSlugs` is
+ * supplied (e.g. a bulk quick-create that pre-picked a topic); otherwise the
+ * draft is left untagged for assignment during admin review.
  */
 @Injectable()
 export class VocabularyPersistenceService {
@@ -128,6 +135,23 @@ export class VocabularyPersistenceService {
                 source: t.source ?? 'manual',
               }),
             ),
+          );
+        }
+      }
+
+      if (input.topicSlugs && input.topicSlugs.length > 0) {
+        const topicRepo = manager.getRepository(Topic);
+        const linkRepo = manager.getRepository(VocabularyTopic);
+        for (const slug of input.topicSlugs) {
+          const topic = await topicRepo.findOne({
+            where: { slug },
+            select: { id: true },
+          });
+          // Tolerate a slug deleted after submit-time validation rather than
+          // failing the whole enrichment over one missing tag.
+          if (!topic) continue;
+          await linkRepo.save(
+            linkRepo.create({ vocabularyId: vocab.id, topicId: topic.id }),
           );
         }
       }

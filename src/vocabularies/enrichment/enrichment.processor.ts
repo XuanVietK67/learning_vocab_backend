@@ -119,6 +119,7 @@ export class EnrichmentProcessor extends WorkerHost {
         enrichmentStatus: EnrichmentStatus.ENRICHED,
         createdByUserId: null,
         senses: draft.senses,
+        topicSlugs: jobRow.topicSlugs,
       });
       createdIds.push(vocab.id);
     }

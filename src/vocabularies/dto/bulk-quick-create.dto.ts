@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 
 const LANGUAGE_CODE_REGEX = /^[a-z]{2}(-[A-Z]{2})?$/;
+const TOPIC_SLUG_REGEX = /^[a-z0-9-]+$/;
 
 /**
  * The confirmed list of lemmas to enrich (phase 2 of bulk quick-create). One
@@ -30,6 +31,20 @@ export class BulkQuickCreateDto {
     message: 'language must be an ISO 639-1 code (e.g. "en", "vi", "pt-BR")',
   })
   language?: string;
+
+  // Topic slugs to attach to every word this submission touches: each created
+  // draft is linked, and any lemma that already exists as a system word is
+  // tagged in place (tag-on-skip). Slugs must already exist in the catalog.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  @Length(1, 64, { each: true })
+  @Matches(TOPIC_SLUG_REGEX, {
+    each: true,
+    message: 'topic slug must match [a-z0-9-]+',
+  })
+  topics?: string[];
 }
 
 export class BulkQuickCreateResponseDto {

@@ -36,6 +36,16 @@ export class VocabEnrichmentJob {
   @Column({ name: 'batch_id', type: 'uuid', nullable: true })
   batchId!: string | null;
 
+  // Topic slugs the admin chose at submit time; the worker links every draft
+  // this job creates to them. Defaulted to '{}' so it is never null.
+  @Column({
+    name: 'topic_slugs',
+    type: 'text',
+    array: true,
+    default: () => "'{}'",
+  })
+  topicSlugs!: string[];
+
   @Column({
     type: 'enum',
     enum: VocabEnrichmentJobStatus,
