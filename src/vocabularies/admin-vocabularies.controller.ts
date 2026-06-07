@@ -23,7 +23,10 @@ import { RolesGuard } from '@/auth/guards/roles.guard';
 import type { AuthenticatedUser } from '@/auth/strategies/jwt.strategy';
 import { UserRole } from '@/users/entities/user.entity';
 import { AdminVocabularyQueryDto } from '@/vocabularies/dto/admin-vocabulary-query.dto';
-import { PaginatedAdminVocabulariesResponseDto } from '@/vocabularies/dto/admin-vocabulary-response.dto';
+import {
+  AdminVocabularyResponseDto,
+  PaginatedAdminVocabulariesResponseDto,
+} from '@/vocabularies/dto/admin-vocabulary-response.dto';
 import {
   BulkImportSummaryDto,
   BulkImportVocabulariesDto,
@@ -41,6 +44,7 @@ import {
 } from '@/vocabularies/dto/extract-lemmas.dto';
 import { QuickCreateVocabularyDto } from '@/vocabularies/dto/quick-create-vocabulary.dto';
 import { UpdateVocabularyDto } from '@/vocabularies/dto/update-vocabulary.dto';
+import { VocabularyDetailQueryDto } from '@/vocabularies/dto/vocabulary-query.dto';
 import { VocabularyResponseDto } from '@/vocabularies/dto/vocabulary-response.dto';
 import { SourceKind } from '@/vocabularies/enrichment/import/lemma-extractor';
 import { VocabulariesService } from '@/vocabularies/vocabularies.service';
@@ -163,6 +167,17 @@ export class AdminVocabulariesController {
     @Param('batchId', new ParseUUIDPipe({ version: '4' })) batchId: string,
   ): Promise<EnrichmentBatchResponseDto> {
     return this.vocabulariesService.getEnrichmentBatch(batchId);
+  }
+
+  // Admin detail read: returns a single system vocabulary by id, including
+  // unapproved quick-create drafts (the public GET /vocabularies/:id hides
+  // those). Use this to populate the pre-approval review/edit screen.
+  @Get(':id')
+  findOne(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: VocabularyDetailQueryDto,
+  ): Promise<AdminVocabularyResponseDto> {
+    return this.vocabulariesService.findByIdForAdmin(id, query.translationLang);
   }
 
   // Publish a draft: flip is_approved and trigger audio + image generation.

@@ -47,6 +47,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Admin — quick-create vocabulary (lemma only) | `POST /v1/admin/vocabularies/quick`, `GET /v1/admin/vocabularies/quick/:jobId`, `POST /v1/admin/vocabularies/:id/approve` | admin | [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md) |
 | Admin — bulk quick-create (list / Excel / PDF) | `POST /v1/admin/vocabularies/quick/extract`, `POST /v1/admin/vocabularies/quick/bulk`, `GET /v1/admin/vocabularies/quick/batch/:batchId` | admin | [admin_bulk_quick_create_vocabulary.md](admin_bulk_quick_create_vocabulary.md) |
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
+| Admin — get one vocabulary (incl. drafts) | `GET /v1/admin/vocabularies/:id` | admin | [admin_get_vocabulary.md](admin_get_vocabulary.md) |
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |
 
@@ -451,6 +452,9 @@ Requires JWT **and** `role = 'admin'` (`403` otherwise).
 
 ### `GET /v1/admin/vocabularies`
 Lists the entire `vocabularies` table (system + user-created) with admin-only fields inlined, including a top-level `imageUrl` thumbnail per row. Full request/response shape: **[admin_list_vocabularies.md](admin_list_vocabularies.md)**.
+
+### `GET /v1/admin/vocabularies/:id`
+Read one system vocabulary by id, **including unapproved quick-create drafts** (the public `GET /v1/vocabularies/:id` 404s on those). The read for the pre-approval edit screen. Full request/response shape: **[admin_get_vocabulary.md](admin_get_vocabulary.md)**.
 
 ### `POST /v1/admin/vocabularies`
 Body identical to `POST /v1/me/vocabularies`, but `source` is `'system'` on the resulting row. **409** on duplicate natural key — use bulk-import for upsert semantics.

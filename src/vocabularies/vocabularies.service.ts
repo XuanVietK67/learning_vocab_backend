@@ -34,7 +34,10 @@ import {
   AdminVocabularySortBy,
   SortDirection,
 } from '@/vocabularies/dto/admin-vocabulary-query.dto';
-import { PaginatedAdminVocabulariesResponseDto } from '@/vocabularies/dto/admin-vocabulary-response.dto';
+import {
+  AdminVocabularyResponseDto,
+  PaginatedAdminVocabulariesResponseDto,
+} from '@/vocabularies/dto/admin-vocabulary-response.dto';
 import {
   BulkImportSummaryDto,
   BulkImportVocabulariesDto,
@@ -269,6 +272,38 @@ export class VocabulariesService {
       throw new NotFoundException('vocabulary not found');
     }
     return plainToInstance(VocabularyResponseDto, vocab, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  // Admin detail read: serves any system vocabulary by id, including unapproved
+  // quick-create drafts (findPublicById hides those). Returns the richer admin
+  // shape so review/edit screens get approval + visibility state, mirroring the
+  // admin list.
+  async findByIdForAdmin(
+    id: string,
+    translationLang?: string,
+  ): Promise<AdminVocabularyResponseDto> {
+    const [vocab] = await this.hydrateVocabulariesByIds([id], translationLang);
+    if (!vocab || vocab.source !== VocabularySource.SYSTEM) {
+      throw new NotFoundException('vocabulary not found');
+    }
+
+    // Mirror findAllForAdmin: surface sense images at the vocab level. Senses
+    // are ordered by sense_order ASC, so imageUrl is the first sense carrying an
+    // image and images is every distinct sense image in that order.
+    const senseImages = (vocab.senses ?? [])
+      .map((s) => s.imageUrl)
+      .filter((url): url is string => Boolean(url));
+    const images = [...new Set(senseImages)];
+    const withImages = vocab as Vocabulary & {
+      imageUrl: string | null;
+      images: string[];
+    };
+    withImages.imageUrl = images[0] ?? null;
+    withImages.images = images;
+
+    return plainToInstance(AdminVocabularyResponseDto, vocab, {
       excludeExtraneousValues: true,
     });
   }
