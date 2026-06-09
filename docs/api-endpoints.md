@@ -199,3 +199,14 @@ Per-user spaced-repetition state and study stats. All endpoints require JWT auth
 | GET | `/v1/me/progress/due` | JWT | Fetch due cards (`next_review_at <= now`), oldest-due first. Query: `limit` (default 20, max 100), `translationLang` (filters nested translations). Each item includes the progress row and its full vocabulary (with senses → translations + examples). |
 | POST | `/v1/me/progress/review` | JWT | Submit a review grade. Body: `{ vocabularyId, quality }` where quality is 0–5 (≥3 counts as correct). Runs SM-2; updates `repetitions`, `easeFactor`, `intervalDays`, `nextReviewAt`, status, and correct/incorrect counters. Returns the updated progress row. Returns 404 if the user is not enrolled in that word. |
 | GET | `/v1/me/stats` | JWT | Snapshot for the home screen: `{ streakDays, dueNow, reviewedToday, dailyGoalMinutes, counts: { new, learning, review, mastered }, nextDueAt }`. Streak is consecutive UTC days with at least one review ending at the most recent review date (counts only if that date is today or yesterday). `nextDueAt` is the ISO timestamp of the soonest progress row scheduled in the future, or null when the user has no future-scheduled cards. |
+
+## Pronunciation — `/v1/pronunciation`
+
+Source: [src/pronunciation/pronunciation.controller.ts](../src/pronunciation/pronunciation.controller.ts)
+
+A thin proxy over the Python phoneme-scoring microservice (FastAPI `POST /score`, configured via `PRONUNCIATION_SERVICE_URL`). The learner uploads an audio clip of a target word; the service returns calibrated per-phoneme `0–100` scores (GOPT head) plus a coarse label per phone. Each call is persisted as a `pronunciation_attempt`. The decoder accepts **WAV/FLAC/OGG** only — browser `webm/opus` must be transcoded client-side first. All endpoints require JWT auth. See [docs/pronunciation_score.md](pronunciation_score.md).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/pronunciation/score` | JWT | Score a pronunciation. `multipart/form-data`: `audio` (WAV/FLAC/OGG, ≤5 MB) + exactly one of `vocabularyId` (uuid) or `word` (1–128 chars). Forwards to the scoring service, stores the attempt, returns `{ attemptId, word, transcriptPhonemes, overallScore, phonemes[], audioQuality, modelVersion, createdAt }`. 404 if `vocabularyId` is unknown, 422 if the audio/word is unscorable (too short, no/unmapped phones), 503 if the scoring service is unreachable. |
+| GET | `/v1/pronunciation/attempts` | JWT | The caller's attempt history, newest first. Query: `vocabularyId` (uuid), `word` (1–128 chars), `page` (default 1), `limit` (default 20, max 100). Returns `{ data: [{ id, vocabularyId, word, overallScore, phonemeScores[], modelVersion, createdAt }], page, limit, total }`. |
