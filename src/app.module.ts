@@ -10,6 +10,7 @@ import gemmaConfig from './config/gemma.config';
 import imageConfig from './config/image.config';
 import learnConfig from './config/learn.config';
 import mailConfig from './config/mail.config';
+import pronunciationConfig from './config/pronunciation.config';
 import redisConfig from './config/redis.config';
 import { AuthModule } from './auth/auth.module';
 import { DecksModule } from './decks/decks.module';
@@ -17,6 +18,7 @@ import { LearnModule } from './learn/learn.module';
 import { MailerModule } from './mailer/mailer.module';
 import { PracticeModule } from './practice/practice.module';
 import { ProgressModule } from './progress/progress.module';
+import { PronunciationModule } from './pronunciation/pronunciation.module';
 import { TopicsModule } from './topics/topics.module';
 import { UsersModule } from './users/users.module';
 import { VocabulariesModule } from './vocabularies/vocabularies.module';
@@ -34,6 +36,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         audioConfig,
         gemmaConfig,
         imageConfig,
+        pronunciationConfig,
       ],
       envFilePath: ['.env'],
     }),
@@ -59,6 +62,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     ProgressModule,
     LearnModule,
     PracticeModule,
+    PronunciationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
