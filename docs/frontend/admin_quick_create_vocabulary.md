@@ -8,7 +8,7 @@ How the **admin "quick add word" flow** talks to the backend. Instead of hand-fi
   - `POST /v1/admin/vocabularies/:id/approve` — publish a reviewed draft
 - **Auth:** `Authorization: Bearer <accessToken>` — the signed-in user must have role `admin`
 - **Content type:** `application/json`
-- Canonical contract: [api-endpoints.md](api-endpoints.md) · general conventions: [frontend_handoff.md](frontend_handoff.md)
+- Canonical contract: [api-endpoints.md](../backend/api-endpoints.md) · general conventions: [frontend_handoff.md](frontend_handoff.md)
 
 > This is **asynchronous**. The first call returns immediately with a job, *not* a vocabulary. The vocabulary rows appear later, as **unapproved drafts**, once the worker finishes. They are invisible to learners and to the public catalog until approved.
 
@@ -112,7 +112,7 @@ Drafts are normal vocabulary rows with `isApproved: false`. List them with the e
 GET /v1/admin/vocabularies?isApproved=false&q=ephemeral
 ```
 
-Edit anything that looks off using the existing granular admin endpoints (`PATCH …/senses/:senseId`, `…/examples/:exampleId`, `…/translations/:translationId`, `PUT …/topics`). See [api-endpoints.md](api-endpoints.md).
+Edit anything that looks off using the existing granular admin endpoints (`PATCH …/senses/:senseId`, `…/examples/:exampleId`, `…/translations/:translationId`, `PUT …/topics`). See [api-endpoints.md](../backend/api-endpoints.md).
 
 To **reject** a draft, delete it: `DELETE /v1/admin/vocabularies/:id`.
 

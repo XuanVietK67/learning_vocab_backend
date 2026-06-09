@@ -13,7 +13,7 @@ How a client establishes and maintains a session: get a token pair (register / l
 | `GET /v1/auth/me` | access token | Get the current user. |
 | `POST /v1/auth/{google,apple,github}` | none | Social sign-in; returns the same token pair. |
 
-Canonical contract: [api-endpoints.md](api-endpoints.md) · conventions: [frontend_handoff.md](frontend_handoff.md)
+Canonical contract: [api-endpoints.md](../backend/api-endpoints.md) · conventions: [frontend_handoff.md](frontend_handoff.md)
 
 ---
 
@@ -165,4 +165,4 @@ Not needed to integrate, but explains the behaviour:
 - **Rotation + reuse detection.** `/refresh` looks up the presented token among non-revoked, non-expired records, revokes it, and issues a new pair. If a token is **not** currently valid but *was* previously issued (i.e. a revoked token is being replayed), the server treats it as a possible theft and **revokes every active refresh token for that user** — forcing a fresh login everywhere. Practical effect: if your client accidentally reuses an old refresh token, the whole session chain is invalidated and the user must log in again.
 - **Access tokens are stateless.** They carry `{ sub: userId, email }`, are verified by signature + expiry on each request, and are resolved to the live user (inactive users are rejected). Because they aren't stored, logout/refresh can't revoke an already-issued access token — it simply expires within ≤15 min.
 
-Implementation: [auth.service.ts](../src/auth/auth.service.ts), [token.service.ts](../src/auth/services/token.service.ts), [jwt.strategy.ts](../src/auth/strategies/jwt.strategy.ts).
+Implementation: [auth.service.ts](../../src/auth/auth.service.ts), [token.service.ts](../../src/auth/services/token.service.ts), [jwt.strategy.ts](../../src/auth/strategies/jwt.strategy.ts).

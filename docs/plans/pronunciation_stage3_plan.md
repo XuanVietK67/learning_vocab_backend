@@ -3,7 +3,7 @@
 Companion to [pronunciation_scoring_design.md](pronunciation_scoring_design.md) and
 [pronunciation_stage1_2_plan.md](pronunciation_stage1_2_plan.md). Stage 3 trains the head that
 turns the per-phone **GOP feature vectors** (LPP) produced by Stage 2 into **calibrated 0–100
-scores**, replacing the placeholder `gop_to_score` in [app/gop.py](../learning-vocab-pronunciation/app/gop.py).
+scores**, replacing the placeholder `gop_to_score` in [app/gop.py](../../learning-vocab-pronunciation/app/gop.py).
 
 **Where SpeechBrain finally earns its place:** this is the one stage trained in the `Brain` loop.
 
@@ -36,7 +36,7 @@ per-phone LPP feature vectors  (from Stage 2, [L, V])  +  phone ids [L]
 Our Stage-1 model is **espeak/IPA**; speechocean762 labels are **ARPAbet**. To attach each
 label to a feature vector we map `ARPAbet → IPA → model-token-id`:
 
-- `ARPAbet→IPA`: a fixed 39-phone table ([stage3/arpabet_ipa.py](../learning-vocab-pronunciation/stage3/arpabet_ipa.py)), stress digits stripped.
+- `ARPAbet→IPA`: a fixed 39-phone table ([stage3/arpabet_ipa.py](../../learning-vocab-pronunciation/stage3/arpabet_ipa.py)), stress digits stripped.
 - `IPA→token`: reuse the Stage-2 maps (exact, then normalized). Multi-symbol IPA (diphthongs
   `aʊ`, affricates `tʃ`) is resolved by trying the whole symbol, then splitting into characters.
 - **Expansion rule:** if one ARPAbet phone maps to 2 tokens, both inherit its label; if it maps

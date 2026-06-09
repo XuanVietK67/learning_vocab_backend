@@ -6,7 +6,7 @@ Reads a single **system** vocabulary by id, **including unapproved quick-create 
 
 Returns the same admin shape as a row of [admin_list_vocabularies.md](admin_list_vocabularies.md), so the edit form gets the full sense tree plus the admin-only `isApproved` / `visibility` state.
 
-Source: [src/vocabularies/admin-vocabularies.controller.ts](../src/vocabularies/admin-vocabularies.controller.ts)
+Source: [src/vocabularies/admin-vocabularies.controller.ts](../../src/vocabularies/admin-vocabularies.controller.ts)
 
 ## Request
 

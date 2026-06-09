@@ -7,7 +7,7 @@ How the **admin "import many words" flow** talks to the backend. The admin (opti
   - `POST /v1/admin/vocabularies/quick/bulk` — enrich a confirmed list → 202 + `batchId`
   - `GET /v1/admin/vocabularies/quick/batch/:batchId` — poll batch progress
 - **Auth:** `Authorization: Bearer <accessToken>`, role `admin`
-- Builds on single quick-create — read that first: [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md). Canonical contract: [api-endpoints.md](api-endpoints.md).
+- Builds on single quick-create — read that first: [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md). Canonical contract: [api-endpoints.md](../backend/api-endpoints.md).
 
 > **Two phases on purpose.** Extraction (especially from a prose PDF) is fuzzy — you get *candidates*, not a clean list. The admin **confirms** the list before any enrichment runs, so you don't spend the (rate-limited) enrichment pipeline on junk. For a clean list/Excel the confirm step is just a preview.
 

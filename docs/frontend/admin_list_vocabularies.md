@@ -4,7 +4,7 @@
 
 Lists the **entire** `vocabularies` table (system + user-created) with admin-only fields inlined. Backs the admin "manage vocabulary" screen.
 
-Source: [src/vocabularies/admin-vocabularies.controller.ts](../src/vocabularies/admin-vocabularies.controller.ts)
+Source: [src/vocabularies/admin-vocabularies.controller.ts](../../src/vocabularies/admin-vocabularies.controller.ts)
 
 ## Request
 
