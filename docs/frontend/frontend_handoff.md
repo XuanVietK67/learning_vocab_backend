@@ -1,12 +1,12 @@
 # Frontend Handoff
 
-Index for frontend engineers integrating with this backend. This file holds the **shared conventions** (base URL, versioning, auth, pagination, errors) and a **table of contents** linking to one doc per feature/endpoint. The concrete request/response shapes for each endpoint live in their own per-feature docs under [docs/](.) — see the index below. For the canonical, terse contract see [api-endpoints.md](api-endpoints.md).
+Index for frontend engineers integrating with this backend. This file holds the **shared conventions** (base URL, versioning, auth, pagination, errors) and a **table of contents** linking to one doc per feature/endpoint. The concrete request/response shapes for each endpoint live in their own per-feature docs under [docs/](.) — see the index below. For the canonical, terse contract see [api-endpoints.md](../backend/api-endpoints.md).
 
-> Per-feature docs are the source for request/response shapes. When you add or change an endpoint, create/update its per-feature doc and link it from the index below — see [../CLAUDE.md](../CLAUDE.md). The detailed endpoint sections still inline below are legacy and are being migrated into per-feature docs incrementally.
+> Per-feature docs are the source for request/response shapes. When you add or change an endpoint, create/update its per-feature doc and link it from the index below — see [../CLAUDE.md](../../CLAUDE.md). The detailed endpoint sections still inline below are legacy and are being migrated into per-feature docs incrementally.
 
 ## Base URL and conventions
 
-- **Base URL (local dev):** `http://localhost:3000` (port via `PORT` env; see [.env.example](../.env.example)).
+- **Base URL (local dev):** `http://localhost:3000` (port via `PORT` env; see [.env.example](../../.env.example)).
 - **API version prefix:** `/v1`. All controllers are mounted under `/v1/...`. The only unversioned route is `GET /` (liveness).
 - **Content type:** all requests and responses are `application/json`. Send `Content-Type: application/json`.
 - **Validation:** global `ValidationPipe` with `whitelist + forbidNonWhitelisted + transform` — unknown body fields → `400`.
@@ -889,4 +889,4 @@ Home-screen snapshot.
 
 ## Learn — `/v1/me/learn`
 
-Moved to its own per-feature guide: **[learn_vocabulary_flow.md](learn_vocabulary_flow.md)** — the guided learn-session loop (`POST /v1/me/learn/session`, `POST /v1/me/learn/answer`), the seven question types including the self-rated `flashcard`, the stage-based **lesson ladder**, per-word grouping (`groupId`/`stepIndex`/`stepCount`), and how a word's whole lesson maps to a single SRS event. For the terse contract see [api-endpoints.md](api-endpoints.md).
+Moved to its own per-feature guide: **[learn_vocabulary_flow.md](learn_vocabulary_flow.md)** — the guided learn-session loop (`POST /v1/me/learn/session`, `POST /v1/me/learn/answer`), the seven question types including the self-rated `flashcard`, the stage-based **lesson ladder**, per-word grouping (`groupId`/`stepIndex`/`stepCount`), and how a word's whole lesson maps to a single SRS event. For the terse contract see [api-endpoints.md](../backend/api-endpoints.md).

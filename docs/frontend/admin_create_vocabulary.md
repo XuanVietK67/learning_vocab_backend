@@ -5,7 +5,7 @@ How the **admin "create vocabulary" screen** talks to the backend: the one API c
 - **Endpoint:** `POST /v1/admin/vocabularies`
 - **Auth:** `Authorization: Bearer <accessToken>` — the signed-in user must have role `admin`
 - **Content type:** `application/json`
-- Canonical contract: [api-endpoints.md](api-endpoints.md) · general conventions: [frontend_handoff.md](frontend_handoff.md)
+- Canonical contract: [api-endpoints.md](../backend/api-endpoints.md) · general conventions: [frontend_handoff.md](frontend_handoff.md)
 
 > This is the **admin / system** path: the word is created as `source: "system"`, publicly visible, and approved immediately. A separate end-user path (`POST /v1/me/vocabularies`) creates private user-owned words — don't confuse the two on the frontend.
 
@@ -188,4 +188,4 @@ Not needed to call the API, but useful context:
 5. After commit, if you didn't supply `audioUrl`, it queues a background audio-generation job (keyed by the word id, so it won't duplicate). A queue outage never fails the request.
 6. It returns the freshly re-read, fully-populated word.
 
-For the full internal trace, see the service [vocabularies.service.ts](../src/vocabularies/vocabularies.service.ts) (`createSystemVocabulary`).
+For the full internal trace, see the service [vocabularies.service.ts](../../src/vocabularies/vocabularies.service.ts) (`createSystemVocabulary`).

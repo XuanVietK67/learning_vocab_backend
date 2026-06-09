@@ -2,11 +2,11 @@
 
 Single source of truth for every HTTP endpoint exposed by this backend.
 
-**Update this file whenever an endpoint is added, removed, or its purpose changes.** See [CLAUDE.md](../CLAUDE.md).
+**Update this file whenever an endpoint is added, removed, or its purpose changes.** See [CLAUDE.md](../../CLAUDE.md).
 
 ## Conventions
 
-- URI versioning is enabled with default version `1` (see [src/main.ts](../src/main.ts)). All controllers using `version: '1'` are reachable under `/v1/...`. The unversioned `AppController` is reachable at `/`.
+- URI versioning is enabled with default version `1` (see [src/main.ts](../../src/main.ts)). All controllers using `version: '1'` are reachable under `/v1/...`. The unversioned `AppController` is reachable at `/`.
 - All request and response bodies are JSON.
 - Authenticated endpoints require `Authorization: Bearer <accessToken>` issued by `/v1/auth/*` flows.
 - Validation is global (`ValidationPipe` with `whitelist + forbidNonWhitelisted + transform`), so unknown body fields are rejected.
@@ -19,7 +19,7 @@ Single source of truth for every HTTP endpoint exposed by this backend.
 
 ## Auth — `/v1/auth`
 
-Source: [src/auth/auth.controller.ts](../src/auth/auth.controller.ts)
+Source: [src/auth/auth.controller.ts](../../src/auth/auth.controller.ts)
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -36,7 +36,7 @@ Source: [src/auth/auth.controller.ts](../src/auth/auth.controller.ts)
 
 ## Users — `/v1/users`
 
-Source: [src/users/users.controller.ts](../src/users/users.controller.ts)
+Source: [src/users/users.controller.ts](../../src/users/users.controller.ts)
 
 All endpoints require JWT auth and only allow the caller to act on their own user record (returns 403 otherwise).
 
@@ -47,7 +47,7 @@ All endpoints require JWT auth and only allow the caller to act on their own use
 
 ## Admin Users — `/v1/admin/users`
 
-Source: [src/users/admin-users.controller.ts](../src/users/admin-users.controller.ts)
+Source: [src/users/admin-users.controller.ts](../../src/users/admin-users.controller.ts)
 
 Admin-only write surface for user accounts. All endpoints require JWT auth **and** `role = 'admin'` (403 otherwise).
 
@@ -57,7 +57,7 @@ Admin-only write surface for user accounts. All endpoints require JWT auth **and
 
 ## Vocabularies — `/v1/vocabularies`
 
-Source: [src/vocabularies/vocabularies.controller.ts](../src/vocabularies/vocabularies.controller.ts)
+Source: [src/vocabularies/vocabularies.controller.ts](../../src/vocabularies/vocabularies.controller.ts)
 
 Public read access to the curated system vocabulary catalog. User-created words (`source = 'user'`) are intentionally excluded from these endpoints and will be served by a separate `/v1/me/vocabularies` surface in a later phase.
 
@@ -68,7 +68,7 @@ Public read access to the curated system vocabulary catalog. User-created words 
 
 ## My Vocabularies — `/v1/me/vocabularies`
 
-Source: [src/vocabularies/me-vocabularies.controller.ts](../src/vocabularies/me-vocabularies.controller.ts)
+Source: [src/vocabularies/me-vocabularies.controller.ts](../../src/vocabularies/me-vocabularies.controller.ts)
 
 User-created (`source = 'user'`) words owned by the authenticated caller. Private by default (`visibility = 'private'`, `is_approved = false`). They share storage with system vocabularies but are scoped to the owner — they don't appear on the public `/v1/vocabularies` surface. All endpoints require JWT auth; cross-user access returns 403.
 
@@ -82,7 +82,7 @@ User-created (`source = 'user'`) words owned by the authenticated caller. Privat
 
 ## Admin Vocabularies — `/v1/admin/vocabularies`
 
-Source: [src/vocabularies/admin-vocabularies.controller.ts](../src/vocabularies/admin-vocabularies.controller.ts)
+Source: [src/vocabularies/admin-vocabularies.controller.ts](../../src/vocabularies/admin-vocabularies.controller.ts)
 
 Write surface for the curated system catalog. All endpoints require JWT auth **and** the caller's `role = 'admin'` (returns 403 otherwise). Each write runs in a transaction so partial failures roll back.
 
@@ -114,7 +114,7 @@ Write surface for the curated system catalog. All endpoints require JWT auth **a
 
 ## Topics — `/v1/topics`
 
-Source: [src/topics/topics.controller.ts](../src/topics/topics.controller.ts)
+Source: [src/topics/topics.controller.ts](../../src/topics/topics.controller.ts)
 
 Public read access to the curated topic taxonomy used to tag vocabularies.
 
@@ -125,7 +125,7 @@ Public read access to the curated topic taxonomy used to tag vocabularies.
 
 ## Admin Topics — `/v1/admin/topics`
 
-Source: [src/topics/admin-topics.controller.ts](../src/topics/admin-topics.controller.ts)
+Source: [src/topics/admin-topics.controller.ts](../../src/topics/admin-topics.controller.ts)
 
 Write surface for the topic taxonomy. All endpoints require JWT auth **and** `role = 'admin'` (403 otherwise).
 
@@ -137,7 +137,7 @@ Write surface for the topic taxonomy. All endpoints require JWT auth **and** `ro
 
 ## Decks — `/v1/decks` and `/v1/me/decks`
 
-Source: [src/decks/decks.controller.ts](../src/decks/decks.controller.ts)
+Source: [src/decks/decks.controller.ts](../../src/decks/decks.controller.ts)
 
 Public catalog of system-curated learning decks plus the per-user "suggested for me" endpoint. User-owned decks are out of scope for these routes; they will land on `/v1/me/decks` in a later phase.
 
@@ -149,7 +149,7 @@ Public catalog of system-curated learning decks plus the per-user "suggested for
 
 ## My Decks — `/v1/me/decks`
 
-Source: [src/decks/decks.controller.ts](../src/decks/decks.controller.ts)
+Source: [src/decks/decks.controller.ts](../../src/decks/decks.controller.ts)
 
 Personal decks owned by the authenticated caller (`owner_id = me`, `visibility = 'private'`). Membership accepts system vocabularies plus the caller's own (`source='user'`) words — other users' private words are dropped into `inaccessibleVocabularyIds`. All endpoints require JWT auth; cross-user access returns 403.
 
@@ -167,11 +167,11 @@ Route ordering note: `GET /v1/me/decks/suggested` is a literal path declared bef
 
 ## Learn — `/v1/me/learn`
 
-Source: [src/learn/learn.controller.ts](../src/learn/learn.controller.ts)
+Source: [src/learn/learn.controller.ts](../../src/learn/learn.controller.ts)
 
 Context-anchored learning sessions: the server picks due cards, expands each word into a **lesson ladder** of questions (easy→hard for the word's mastery stage), and HMAC-signs each item so answers can be graded statelessly. Twelve question types: flashcard (self-rated study card), cloze MCQ, cloze typing, meaning-in-context, sense disambiguation, listening cloze, word-from-translation (translation → pick lemma), translation-from-word (lemma → pick translation), listening-choice (audio → pick lemma), dictation (audio → type lemma), image-choice (image → pick lemma), pronunciation (speak the word; the client runs speech-to-text and submits the transcript). Which types a word gets is driven by its SRS stage (NEW = recognition band incl. the flashcard; LEARNING/REVIEW = recall + the hardest band; MASTERED = sense disambiguation only); styles requiring extra data (audio, a sense image, multiple senses, translation language) are skipped silently when unavailable, the cloze family is capped per lesson, and each band samples at most `LEARN_MAX_TYPES_PER_BAND` quiz types (default 2, flashcard exempt) so lessons stay short and vary across words. All endpoints require JWT auth.
 
-`POST /v1/me/learn/session` is mode-driven — the caller picks one of `daily | topic | deck | review`. The server's `VocabPickerService` ([src/learn/vocab-picker.service.ts](../src/learn/vocab-picker.service.ts)) selects suitable vocab for each mode; for `daily/topic/deck` it auto-enrolls fresh picks into the user's progress as a side effect (`enrolledNewlyCount` in the response says how many). `daily` and `topic` require onboarding to be complete (`targetLanguage` and `proficiencyLevel`), else 400.
+`POST /v1/me/learn/session` is mode-driven — the caller picks one of `daily | topic | deck | review`. The server's `VocabPickerService` ([src/learn/vocab-picker.service.ts](../../src/learn/vocab-picker.service.ts)) selects suitable vocab for each mode; for `daily/topic/deck` it auto-enrolls fresh picks into the user's progress as a side effect (`enrolledNewlyCount` in the response says how many). `daily` and `topic` require onboarding to be complete (`targetLanguage` and `proficiencyLevel`), else 400.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -180,18 +180,18 @@ Context-anchored learning sessions: the server picks due cards, expands each wor
 
 ## Practice — `/v1/me/practice`
 
-Source: [src/practice/practice.controller.ts](../src/practice/practice.controller.ts)
+Source: [src/practice/practice.controller.ts](../../src/practice/practice.controller.ts)
 
-Open-production practice: the user writes (or speaks, via client speech-to-text) a sentence using a target word, and an LLM judge (Gemma 3 on Google AI Studio) scores it **asynchronously**. Scoring runs on a rate-limited BullMQ worker, so submit returns `202` immediately and the client polls for the result. The judge returns a rubric with an `overall` 0–100 score plus the CEFR level the sentence *demonstrates* (`A1`–`C2`) — this is the level of that one sentence, **not** the user's certified level. A per-user daily cap (`GEMMA_DAILY_ATTEMPTS_PER_USER`, default 30) bounds usage of the shared free key. All endpoints require JWT auth. See [docs/practice_submit_sentence.md](practice_submit_sentence.md).
+Open-production practice: the user writes (or speaks, via client speech-to-text) a sentence using a target word, and an LLM judge (Gemma 3 on Google AI Studio) scores it **asynchronously**. Scoring runs on a rate-limited BullMQ worker, so submit returns `202` immediately and the client polls for the result. The judge returns a rubric with an `overall` 0–100 score plus the CEFR level the sentence *demonstrates* (`A1`–`C2`) — this is the level of that one sentence, **not** the user's certified level. A per-user daily cap (`GEMMA_DAILY_ATTEMPTS_PER_USER`, default 30) bounds usage of the shared free key. All endpoints require JWT auth. See [docs/practice_submit_sentence.md](../frontend/practice_submit_sentence.md).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/v1/me/practice/attempts` | JWT | Submit a sentence for scoring. Body: `{ vocabularyId, text (1–280 chars), modality: 'writing' \| 'speaking' }`. Creates a pending attempt and enqueues it. Returns `202 { attemptId, status: 'pending' }`. 404 if the vocabulary doesn't exist, 429 if the daily cap is reached, 503 if the scoring queue is unreachable. |
 | GET | `/v1/me/practice/attempts/:id` | JWT | Poll for the result. Returns `{ id, vocabularyId, modality, text, status, score, cefr, rubric, feedback, error, createdAt, scoredAt }`. Scoring fields are null until `status='scored'`; `error` is set when `status='failed'`. 404 if the attempt isn't owned by the caller. |
 
-Source: [src/progress/progress.controller.ts](../src/progress/progress.controller.ts)
+Source: [src/progress/progress.controller.ts](../../src/progress/progress.controller.ts)
 
-Per-user spaced-repetition state and study stats. All endpoints require JWT auth. Scheduling uses SM-2 ([src/progress/srs.ts](../src/progress/srs.ts)) extended with Anki-style **learning steps**: new and lapsed cards cycle through minute-scale intervals (default `1m, 10m` via `LEARN_LEARNING_STEPS_MINUTES`) before graduating to the day-scale ladder. A card with `learningStepIndex !== null` is in step state; once past the final step it graduates to `intervalDays=1`, then `6`, then `interval * easeFactor`. After graduation `learning → review` follows 3 consecutive correct reps and `review → mastered` triggers when the interval reaches 90 days. A miss on a graduated card drops it back into step 0 (relearning).
+Per-user spaced-repetition state and study stats. All endpoints require JWT auth. Scheduling uses SM-2 ([src/progress/srs.ts](../../src/progress/srs.ts)) extended with Anki-style **learning steps**: new and lapsed cards cycle through minute-scale intervals (default `1m, 10m` via `LEARN_LEARNING_STEPS_MINUTES`) before graduating to the day-scale ladder. A card with `learningStepIndex !== null` is in step state; once past the final step it graduates to `intervalDays=1`, then `6`, then `interval * easeFactor`. After graduation `learning → review` follows 3 consecutive correct reps and `review → mastered` triggers when the interval reaches 90 days. A miss on a graduated card drops it back into step 0 (relearning).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -202,9 +202,9 @@ Per-user spaced-repetition state and study stats. All endpoints require JWT auth
 
 ## Pronunciation — `/v1/pronunciation`
 
-Source: [src/pronunciation/pronunciation.controller.ts](../src/pronunciation/pronunciation.controller.ts)
+Source: [src/pronunciation/pronunciation.controller.ts](../../src/pronunciation/pronunciation.controller.ts)
 
-A thin proxy over the Python phoneme-scoring microservice (FastAPI `POST /score`, configured via `PRONUNCIATION_SERVICE_URL`). The learner uploads an audio clip of a target word; the service returns calibrated per-phoneme `0–100` scores (GOPT head) plus a coarse label per phone. Each call is persisted as a `pronunciation_attempt`. The decoder accepts **WAV/FLAC/OGG** only — browser `webm/opus` must be transcoded client-side first. All endpoints require JWT auth. See [docs/pronunciation_score.md](pronunciation_score.md).
+A thin proxy over the Python phoneme-scoring microservice (FastAPI `POST /score`, configured via `PRONUNCIATION_SERVICE_URL`). The learner uploads an audio clip of a target word; the service returns calibrated per-phoneme `0–100` scores (GOPT head) plus a coarse label per phone. Each call is persisted as a `pronunciation_attempt`. The decoder accepts **WAV/FLAC/OGG** only — browser `webm/opus` must be transcoded client-side first. All endpoints require JWT auth. See [docs/pronunciation_score.md](../frontend/pronunciation_score.md).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |

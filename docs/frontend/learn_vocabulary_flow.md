@@ -13,7 +13,7 @@ How an end user studies vocabulary: the **guided learn-session loop** (the main 
 | `POST /v1/me/progress/review` | Submit a self-graded review for one card. |
 | `GET /v1/me/stats` | Dashboard numbers: streak, due count, status breakdown. |
 
-Canonical contract: [api-endpoints.md](api-endpoints.md) · conventions: [frontend_handoff.md](frontend_handoff.md)
+Canonical contract: [api-endpoints.md](../backend/api-endpoints.md) · conventions: [frontend_handoff.md](frontend_handoff.md)
 
 ---
 
@@ -303,4 +303,4 @@ Not required to call the API, but explains the numbers:
 - **Status** (`new` → `learning` → `review` → `mastered`) is what `counts` and the per-card `status` reflect.
 - **Intra-session requeue:** because early intervals are minutes, a just-finished word often comes due again inside the same session — that's the `requeue` field (the word's next-stage ladder), so the client can re-show it without another `/session` call.
 
-For the implementation see [learn.service.ts](../src/learn/learn.service.ts), [progress.service.ts](../src/progress/progress.service.ts), and the SRS algorithm in [srs.ts](../src/progress/srs.ts).
+For the implementation see [learn.service.ts](../../src/learn/learn.service.ts), [progress.service.ts](../../src/progress/progress.service.ts), and the SRS algorithm in [srs.ts](../../src/progress/srs.ts).

@@ -1,7 +1,7 @@
 # Plan — acoustic scoring for the `pronunciation` learn question type
 
 **Status:** Draft · **Scope:** backend (NestJS) · **Depends on:** the pronunciation scoring proxy
-([pronunciation_score.md](pronunciation_score.md)) and the running Python scoring service
+([pronunciation_score.md](../frontend/pronunciation_score.md)) and the running Python scoring service
 ([pronunciation_scoring_design.md](pronunciation_scoring_design.md)).
 
 ## 1. Goal
@@ -12,14 +12,14 @@ transcript compared loosely against the lemma.
 
 ## 2. Current behaviour
 
-- `PRONUNCIATION` already exists in [src/learn/enums/question-type.enum.ts](../src/learn/enums/question-type.enum.ts).
-- The question is built by `buildPronunciation` ([question-builder.service.ts:514](../src/learn/question-builder.service.ts#L514)) →
+- `PRONUNCIATION` already exists in [src/learn/enums/question-type.enum.ts](../../src/learn/enums/question-type.enum.ts).
+- The question is built by `buildPronunciation` ([question-builder.service.ts:514](../../src/learn/question-builder.service.ts#L514)) →
   prompt `{ type, lemma, ipa, audioUrl }`.
-- Grading falls through to `gradeLemmaTyping` ([answer-grader.service.ts:99-103](../src/learn/answer-grader.service.ts#L99-L103)):
+- Grading falls through to `gradeLemmaTyping` ([answer-grader.service.ts:99-103](../../src/learn/answer-grader.service.ts#L99-L103)):
   the **client** runs STT, submits the transcript as `userAnswer`, and the server does a lenient
   Levenshtein compare against the lemma. **No audio reaches the backend.**
 - The answer travels over `POST /v1/me/learn/answer` as signed JSON
-  ([submit-answer.dto.ts](../src/learn/dto/submit-answer.dto.ts)): `signature`, `nonce`,
+  ([submit-answer.dto.ts](../../src/learn/dto/submit-answer.dto.ts)): `signature`, `nonce`,
   `stepIndex/stepCount`, `latencyMs`, `userAnswer` (string ≤1000).
 
 ## 3. Target behaviour
@@ -56,9 +56,9 @@ surface for marginal benefit.
 
 | File | Change |
 |---|---|
-| [src/learn/answer-grader.service.ts](../src/learn/answer-grader.service.ts) | Split `PRONUNCIATION` out of `gradeLemmaTyping` into `gradePronunciation(score)`; add `pronunciationScore?: number` to `GradeInput`. |
-| [src/learn/learn.service.ts](../src/learn/learn.service.ts) | In `submitAnswer`, when `type === PRONUNCIATION` and `userAnswer` is a UUID, resolve the attempt and pass its `overallScore` into `grade()`. |
-| [src/learn/learn.module.ts](../src/learn/learn.module.ts) | Register the `PronunciationAttempt` repo (`TypeOrmModule.forFeature`) **or** import `PronunciationModule` and reuse a lookup method. |
+| [src/learn/answer-grader.service.ts](../../src/learn/answer-grader.service.ts) | Split `PRONUNCIATION` out of `gradeLemmaTyping` into `gradePronunciation(score)`; add `pronunciationScore?: number` to `GradeInput`. |
+| [src/learn/learn.service.ts](../../src/learn/learn.service.ts) | In `submitAnswer`, when `type === PRONUNCIATION` and `userAnswer` is a UUID, resolve the attempt and pass its `overallScore` into `grade()`. |
+| [src/learn/learn.module.ts](../../src/learn/learn.module.ts) | Register the `PronunciationAttempt` repo (`TypeOrmModule.forFeature`) **or** import `PronunciationModule` and reuse a lookup method. |
 
 No DTO or migration change — `userAnswer` already accepts the UUID string.
 

@@ -186,9 +186,9 @@ A thin proxy + persistence layer. **No PyTorch in Node.**
   `created_at` (timestamptz). Follows repo conventions (uuid PKs, snake_case, timestamptz).
 - **Config:** `PRONUNCIATION_SERVICE_URL` env var; timeout + retry around the HTTP call.
 - **Docs to update on implementation** (per repo rules):
-  - Add rows to [docs/api-endpoints.md](docs/api-endpoints.md).
+  - Add rows to [docs/api-endpoints.md](../backend/api-endpoints.md).
   - Add a per-feature frontend doc `docs/pronunciation_score.md` + link it from
-    [docs/frontend_handoff.md](docs/frontend_handoff.md).
+    [docs/frontend_handoff.md](../frontend/frontend_handoff.md).
 
 ---
 
