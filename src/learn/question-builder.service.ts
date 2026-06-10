@@ -294,44 +294,77 @@ export class QuestionBuilderService {
     return null;
   }
 
-  private buildSenseDisambiguation(ctx: BuildContext): BuiltQuestion | null {
+  // Show ONE sentence and pick the meaning that fits it. The point is to
+  // distinguish the word's senses, so the wrong options are the word's *other*
+  // senses' translations (polysemy traps); we then pad with sibling-word
+  // translations up to four. Needs the word to be polysemous — a sense with a
+  // translation + example to display, plus at least one other sense with a
+  // translation to act as the same-word trap. Falls back to null otherwise.
+  private async buildSenseDisambiguation(
+    ctx: BuildContext,
+  ): Promise<BuiltQuestion | null> {
     if (!ctx.translationLang) return null;
-    const eligibleSenses: VocabularySense[] = [];
-    for (const sense of ctx.vocab.senses ?? []) {
-      const hasTrans = (sense.translations ?? []).some(
-        (t) => t.language === ctx.translationLang,
-      );
-      const hasExample = (sense.examples ?? []).length > 0;
-      if (hasTrans && hasExample) eligibleSenses.push(sense);
-      if (eligibleSenses.length >= 2) break;
-    }
-    if (eligibleSenses.length < 2) return null;
 
-    const senseA = eligibleSenses[0];
-    const senseB = eligibleSenses[1];
+    // The graded sense: first one with a translation in target lang and an
+    // example to show.
+    const senseA = (ctx.vocab.senses ?? []).find(
+      (s) =>
+        (s.translations ?? []).some(
+          (t) => t.language === ctx.translationLang,
+        ) && (s.examples ?? []).length > 0,
+    );
+    if (!senseA) return null;
     const exA = senseA.examples[0];
-    const exB = senseB.examples[0];
-    const transA = senseA.translations.find(
-      (t) => t.language === ctx.translationLang,
-    )!.translation;
-    const transB = senseB.translations.find(
+    const correct = senseA.translations.find(
       (t) => t.language === ctx.translationLang,
     )!.translation;
 
-    // The exampleId tied to the question is the FIRST sentence's example;
-    // the answer-grader will reconstruct the correct ordering from the
-    // server-side senses on submission.
-    const sentences = [
-      { exampleId: exA.id, sentence: exA.sentence },
-      { exampleId: exB.id, sentence: exB.sentence },
-    ];
+    // Same-word traps: every other sense's translation in target lang.
+    const sameWordTraps: string[] = [];
+    for (const sense of ctx.vocab.senses ?? []) {
+      if (sense.id === senseA.id) continue;
+      const t = (sense.translations ?? []).find(
+        (tr) => tr.language === ctx.translationLang,
+      );
+      if (
+        t &&
+        t.translation !== correct &&
+        !sameWordTraps.includes(t.translation)
+      ) {
+        sameWordTraps.push(t.translation);
+      }
+    }
+    // Require at least one genuine same-word trap — without polysemy this
+    // question type has no reason to exist (use meaning_in_context instead).
+    if (sameWordTraps.length === 0) return null;
+
+    // Pad to four options with sibling-word translations.
+    const optionPool = [correct, ...sameWordTraps];
+    if (optionPool.length < 4) {
+      const padding = await this.distractor.pickTranslationDistractors(
+        ctx.vocab,
+        ctx.translationLang,
+        optionPool,
+        4 - optionPool.length,
+      );
+      optionPool.push(...padding);
+    }
     const options = deterministicShuffle(
-      [transA, transB],
-      `sd-${ctx.vocab.id}`,
+      optionPool.slice(0, 4),
+      `sd-${exA.id}`,
+    );
+
+    const span = findLemmaSpan(
+      exA.sentence,
+      ctx.vocab.lemma,
+      ctx.vocab.partOfSpeech,
     );
     const prompt: SenseDisambiguationPrompt = {
       type: QuestionType.SENSE_DISAMBIGUATION,
-      sentences,
+      sentence: exA.sentence,
+      ...(span
+        ? { highlightedSpan: { start: span.start, end: span.end } }
+        : {}),
       options,
     };
     return {

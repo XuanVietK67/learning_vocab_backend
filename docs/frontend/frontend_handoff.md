@@ -52,6 +52,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | User — learn session UI flow (screen-by-screen journey) | `GET /v1/me/stats`, `GET /v1/topics`, deck list APIs, `POST /v1/me/learn/{session,answer}` | user | [learn_session_ui_flow.md](learn_session_ui_flow.md) |
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |
 | User — pronunciation scoring | `POST /v1/pronunciation/score`, `GET /v1/pronunciation/attempts` | user | [pronunciation_score.md](pronunciation_score.md) |
+| User — learn `pronunciation` question (acoustic scoring) | `POST /v1/pronunciation/score` → `POST /v1/me/learn/answer` | user | [learn_pronunciation_question.md](learn_pronunciation_question.md) |
 
 ---
 

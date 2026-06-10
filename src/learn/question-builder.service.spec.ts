@@ -196,6 +196,51 @@ describe('QuestionBuilderService — buildLadder', () => {
     ]);
   });
 
+  it('sense_disambiguation renders ONE sentence with up to four meaning options', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({
+        vocab: richVocab(),
+        translationLang: 'vi',
+        status: ProgressStatus.MASTERED,
+      }),
+    );
+    const prompt = ladder[0].prompt as {
+      type: QuestionType;
+      sentence: string;
+      options: string[];
+      sentences?: unknown;
+    };
+    // Single sentence, not the old two-sentence matching array.
+    expect(typeof prompt.sentence).toBe('string');
+    expect(prompt.sentences).toBeUndefined();
+    // Graded sense translation + the same-word trap are both offered.
+    expect(prompt.options).toContain('chạy');
+    expect(prompt.options).toContain('điều hành');
+    expect(prompt.options.length).toBeGreaterThan(2);
+    expect(prompt.options.length).toBeLessThanOrEqual(4);
+  });
+
+  it('sense_disambiguation needs a same-word trap (single-sense word → not built)', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({
+        vocab: makeVocab({
+          senses: [
+            makeSense(
+              'sense-1',
+              [makeExample('ex-1', 'I run every morning')],
+              [{ language: 'vi', translation: 'chạy' }],
+            ),
+          ],
+        }),
+        translationLang: 'vi',
+        status: ProgressStatus.MASTERED,
+      }),
+    );
+    expect(ladder.map((q) => q.type)).not.toContain(
+      QuestionType.SENSE_DISAMBIGUATION,
+    );
+  });
+
   it('cloze typing surfaces in NEW when listening is infeasible (no audio frees the cap)', async () => {
     const ladder = await service.buildLadder(
       makeCtx({

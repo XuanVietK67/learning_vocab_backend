@@ -75,15 +75,16 @@ export interface MeaningInContextPrompt {
   options: string[]; // translation candidates in target language
 }
 
-export interface SenseDisambiguationPair {
-  exampleId: string;
-  sentence: string;
-}
-
+// Show ONE example sentence and ask which meaning fits it. The distractors are
+// the word's *other* senses' translations (polysemy traps), padded with
+// sibling-word translations up to four options. `userAnswer` = the chosen
+// meaning text. `highlightedSpan` marks the lemma occurrence when it could be
+// located in the sentence (absent if not).
 export interface SenseDisambiguationPrompt {
   type: QuestionType.SENSE_DISAMBIGUATION;
-  sentences: SenseDisambiguationPair[]; // two example sentences
-  options: string[]; // two translations, one per sense
+  sentence: string;
+  highlightedSpan?: { start: number; end: number };
+  options: string[]; // meaning candidates in the session's translationLang
 }
 
 export interface ListeningClozePrompt {
