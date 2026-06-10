@@ -48,6 +48,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Admin — bulk quick-create (list / Excel / PDF) | `POST /v1/admin/vocabularies/quick/extract`, `POST /v1/admin/vocabularies/quick/bulk`, `GET /v1/admin/vocabularies/quick/batch/:batchId` | admin | [admin_bulk_quick_create_vocabulary.md](admin_bulk_quick_create_vocabulary.md) |
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
 | Admin — get one vocabulary (incl. drafts) | `GET /v1/admin/vocabularies/:id` | admin | [admin_get_vocabulary.md](admin_get_vocabulary.md) |
+| Decks — publish, browse community & clone | `GET /v1/decks/public`, `POST /v1/me/decks/:id/clone`, `visibility` on `POST/PATCH /v1/me/decks` | mixed | [decks_share_and_clone.md](decks_share_and_clone.md) |
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 | User — learn session UI flow (screen-by-screen journey) | `GET /v1/me/stats`, `GET /v1/topics`, deck list APIs, `POST /v1/me/learn/{session,answer}` | user | [learn_session_ui_flow.md](learn_session_ui_flow.md) |
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |

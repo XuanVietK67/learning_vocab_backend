@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -10,8 +11,13 @@ import {
   Matches,
 } from 'class-validator';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
+import { Visibility } from '@/vocabularies/entities/visibility.enum';
 
 const LANGUAGE_CODE_REGEX = /^[a-z]{2}(-[A-Z]{2})?$/;
+
+// Visibility values a normal user may set on their own deck. `system` is
+// reserved for the seeded global catalog and must never be client-settable.
+const USER_DECK_VISIBILITIES = [Visibility.PRIVATE, Visibility.PUBLIC] as const;
 
 export class CreateDeckDto {
   @IsString()
@@ -42,4 +48,12 @@ export class CreateDeckDto {
   @Type(() => String)
   @IsUUID('4', { each: true })
   vocabularyIds?: string[];
+
+  // Omitted → the deck stays private. Set `public` to publish it to the
+  // community browse catalog. `system` is rejected (reserved for seeded decks).
+  @IsOptional()
+  @IsIn(USER_DECK_VISIBILITIES, {
+    message: 'visibility must be one of private, public',
+  })
+  visibility?: Visibility;
 }

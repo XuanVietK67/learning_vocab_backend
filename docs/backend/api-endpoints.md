@@ -139,28 +139,30 @@ Write surface for the topic taxonomy. All endpoints require JWT auth **and** `ro
 
 Source: [src/decks/decks.controller.ts](../../src/decks/decks.controller.ts)
 
-Public catalog of system-curated learning decks plus the per-user "suggested for me" endpoint. User-owned decks are out of scope for these routes; they will land on `/v1/me/decks` in a later phase.
+Public catalog of system-curated learning decks, the community catalog of user decks published as `public`, plus the per-user "suggested for me" endpoint.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/decks` | none | List system decks (those with `owner_id IS NULL`). Query: `language`, `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with summary fields only — no vocab inlined. |
-| GET | `/v1/decks/:id` | none | Fetch one deck with its ordered vocabulary list (each vocab includes its senses → translations + examples). Query: `translationLang` restricts the nested translations to one language. |
+| GET | `/v1/decks/public` | none | List user decks published as `public` (`owner_id IS NOT NULL AND visibility='public'`), newest first. Same query params and response shape as `GET /v1/decks`. Declared before `/:id` so the literal path resolves first. |
+| GET | `/v1/decks/:id` | none | Fetch one deck with its ordered vocabulary list (each vocab includes its senses → translations + examples). Serves only seeded (owner-less) decks and `public` user decks — a `private` deck returns 404 here (read it via `GET /v1/me/decks/:id`). Query: `translationLang` restricts the nested translations to one language. |
 | GET | `/v1/me/decks/suggested` | JWT | Returns system decks matching the authenticated user's `targetLanguage` and `proficiencyLevel` from onboarding. Returns an empty array if either onboarding field is unset. |
 
 ## My Decks — `/v1/me/decks`
 
 Source: [src/decks/decks.controller.ts](../../src/decks/decks.controller.ts)
 
-Personal decks owned by the authenticated caller (`owner_id = me`, `visibility = 'private'`). Membership accepts system vocabularies plus the caller's own (`source='user'`) words — other users' private words are dropped into `inaccessibleVocabularyIds`. All endpoints require JWT auth; cross-user access returns 403.
+Personal decks owned by the authenticated caller (`owner_id = me`, `visibility = 'private'` by default, or `'public'` once published). Membership accepts system vocabularies plus the caller's own (`source='user'`) words — other users' private words are dropped into `inaccessibleVocabularyIds`. All endpoints require JWT auth; cross-user access returns 403. Publishing a deck (`visibility='public'`) exposes its words — including the author's own user-words — to anyone via `GET /v1/decks/public` and `GET /v1/decks/:id`.
 
 Route ordering note: `GET /v1/me/decks/suggested` is a literal path declared before `/:id`, so it resolves correctly. The collection endpoints below coexist with it.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/me/decks` | JWT | Create a personal deck. Body: `{ name, description?, language, cefrLevel?, vocabularyIds? }`. If `vocabularyIds` is provided, members are appended in array order (inaccessible IDs surfaced via the membership endpoint instead — for create they are silently skipped). Server sets `owner_id`, `visibility='private'`, `vocab_count`. Returns the full deck detail. |
+| POST | `/v1/me/decks` | JWT | Create a personal deck. Body: `{ name, description?, language, cefrLevel?, vocabularyIds?, visibility? }`. `visibility` accepts `private` (default) or `public` — `system` is rejected. If `vocabularyIds` is provided, members are appended in array order (inaccessible IDs surfaced via the membership endpoint instead — for create they are silently skipped). Server sets `owner_id`, `vocab_count`. Returns the full deck detail. |
+| POST | `/v1/me/decks/:id/clone` | JWT | Save a copy of a seeded or `public` deck into the caller's own decks as a fresh `private` deck (members copied by reference, order preserved). Another user's `private` deck returns 404. Returns 201 with the new deck detail. |
 | GET | `/v1/me/decks` | JWT | List the caller's own decks, newest first. Query: `language`, `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` — summary fields only. |
 | GET | `/v1/me/decks/:id` | JWT | Fetch one of the caller's decks with its ordered vocabulary list. Query: `translationLang`. 403 if owned by someone else. |
-| PATCH | `/v1/me/decks/:id` | JWT | Top-level updates only (`name`, `description`, `language`, `cefrLevel`). Membership has its own endpoints. |
+| PATCH | `/v1/me/decks/:id` | JWT | Top-level updates only (`name`, `description`, `language`, `cefrLevel`, `visibility`). `visibility` toggles `private`/`public` (publish or unpublish); `system` is rejected. Membership has its own endpoints. |
 | DELETE | `/v1/me/decks/:id` | JWT | Hard-delete the caller's deck. Cascades to `deck_vocabularies` (vocabularies themselves stay). Returns 204. |
 | POST | `/v1/me/decks/:id/vocabularies` | JWT | Append words to the deck. Body: `{ vocabularyIds: string[] }` (1–500). Returns `{ added, alreadyMember, inaccessibleVocabularyIds, vocabCount }`. Positions are assigned after the current max. |
 | DELETE | `/v1/me/decks/:id/vocabularies/:vocabularyId` | JWT | Remove a word from the deck. 404 if it isn't in the deck. Returns 204. Decrements `vocab_count`. |

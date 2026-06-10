@@ -39,6 +39,13 @@ export class DecksController {
     return this.decksService.findAll(query);
   }
 
+  // Community catalog of user decks published as `public`. Declared before `:id`
+  // so the literal path is matched first.
+  @Get('public')
+  findPublic(@Query() query: DeckQueryDto): Promise<PaginatedDecksResponseDto> {
+    return this.decksService.findPublic(query);
+  }
+
   @Get(':id')
   findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -77,6 +84,16 @@ export class MeDecksController {
     @Body() dto: CreateDeckDto,
   ): Promise<DeckDetailResponseDto> {
     return this.decksService.createUserDeck(current.id, dto);
+  }
+
+  // Save a copy of a seeded or published-`public` deck into my own decks.
+  @Post(':id/clone')
+  @HttpCode(HttpStatus.CREATED)
+  clone(
+    @CurrentUser() current: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<DeckDetailResponseDto> {
+    return this.decksService.cloneDeck(current.id, id);
   }
 
   @Get(':id')

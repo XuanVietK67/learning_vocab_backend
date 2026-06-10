@@ -66,15 +66,49 @@ export class DecksService {
     );
   }
 
+  // Public detail read: only seeded (owner-less) decks and published `public`
+  // user decks are visible here. A user's `private` deck must never leak through
+  // this unauthenticated endpoint — fetch those via GET /v1/me/decks/:id.
   async findById(
     id: string,
     translationLang?: string,
   ): Promise<DeckDetailResponseDto> {
     const deck = await this.deckRepo.findOne({ where: { id } });
-    if (!deck) {
+    if (
+      !deck ||
+      (deck.ownerId !== null && deck.visibility !== Visibility.PUBLIC)
+    ) {
       throw new NotFoundException('deck not found');
     }
     return this.loadDeckDetail(deck, translationLang);
+  }
+
+  // Community catalog: user-owned decks their authors published as `public`.
+  async findPublic(query: DeckQueryDto): Promise<PaginatedDecksResponseDto> {
+    const { language, cefrLevel, page, limit } = query;
+
+    const qb = this.deckRepo
+      .createQueryBuilder('deck')
+      .where('deck.owner_id IS NOT NULL')
+      .andWhere('deck.visibility = :visibility', {
+        visibility: Visibility.PUBLIC,
+      });
+
+    if (language) qb.andWhere('deck.language = :language', { language });
+    if (cefrLevel) qb.andWhere('deck.cefr_level = :cefrLevel', { cefrLevel });
+
+    qb.orderBy('deck.created_at', 'DESC');
+
+    const [decks, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return plainToInstance(
+      PaginatedDecksResponseDto,
+      { data: decks, page, limit, total },
+      { excludeExtraneousValues: true },
+    );
   }
 
   async findSuggestedForUser(
@@ -118,7 +152,7 @@ export class DecksService {
         language: dto.language,
         cefrLevel: dto.cefrLevel ?? null,
         ownerId: userId,
-        visibility: Visibility.PRIVATE,
+        visibility: dto.visibility ?? Visibility.PRIVATE,
         vocabCount: 0,
       });
       const saved = await deckRepo.save(created);
@@ -134,7 +168,68 @@ export class DecksService {
       return saved;
     });
 
-    return this.findById(deck.id);
+    // Re-fetch for an up-to-date vocabCount; use the owner-scoped loader since a
+    // private deck is hidden from the public findById.
+    const owned = await this.assertOwnedByUser(userId, deck.id);
+    return this.loadDeckDetail(owned);
+  }
+
+  // Save a copy of a seeded or published-`public` deck into the caller's own
+  // decks as a fresh `private` deck. Members are copied by reference (same
+  // vocabulary rows), preserving order. Private decks owned by others are
+  // reported as not-found rather than forbidden, so their existence stays hidden.
+  async cloneDeck(
+    userId: string,
+    sourceDeckId: string,
+  ): Promise<DeckDetailResponseDto> {
+    const clone = await this.dataSource.transaction(async (manager) => {
+      const deckRepo = manager.getRepository(Deck);
+      const source = await deckRepo.findOne({ where: { id: sourceDeckId } });
+      if (
+        !source ||
+        (source.ownerId !== null && source.visibility !== Visibility.PUBLIC)
+      ) {
+        throw new NotFoundException('deck not found');
+      }
+
+      const created = await deckRepo.save(
+        deckRepo.create({
+          name: source.name,
+          description: source.description,
+          language: source.language,
+          cefrLevel: source.cefrLevel,
+          ownerId: userId,
+          visibility: Visibility.PRIVATE,
+          vocabCount: 0,
+        }),
+      );
+
+      const dvRepo = manager.getRepository(DeckVocabulary);
+      const members = await dvRepo.find({
+        where: { deckId: sourceDeckId },
+        order: { position: 'ASC' },
+      });
+      if (members.length > 0) {
+        await dvRepo.save(
+          members.map((m) =>
+            dvRepo.create({
+              deckId: created.id,
+              vocabularyId: m.vocabularyId,
+              position: m.position,
+            }),
+          ),
+        );
+        await deckRepo.update(
+          { id: created.id },
+          { vocabCount: members.length },
+        );
+      }
+
+      return created;
+    });
+
+    const owned = await this.assertOwnedByUser(userId, clone.id);
+    return this.loadDeckDetail(owned);
   }
 
   async findMyDecks(
