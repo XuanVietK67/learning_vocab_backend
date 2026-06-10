@@ -17,10 +17,16 @@ import {
   ProgressResponseDto,
 } from '@/progress/dto/progress-response.dto';
 import { ReviewDto } from '@/progress/dto/review.dto';
+import { ActivityQueryDto } from '@/progress/dto/activity-query.dto';
+import {
+  ActivityDayDto,
+  ActivityResponseDto,
+} from '@/progress/dto/activity-response.dto';
 import {
   ProgressCountsDto,
   StatsResponseDto,
 } from '@/progress/dto/stats-response.dto';
+import { LearningActivity } from '@/progress/entities/learning-activity.entity';
 import { ProgressStatus } from '@/progress/entities/progress-status.enum';
 import { UserWordProgress } from '@/progress/entities/user-word-progress.entity';
 import { applySm2, ReviewQuality } from '@/progress/srs';
@@ -179,6 +185,10 @@ export class ProgressService {
       now,
     );
 
+    // Capture event signals before mutating the row.
+    const wasNew = progress.lastReviewedAt === null;
+    const prevStatus = progress.status;
+
     progress.status = next.status;
     progress.repetitions = next.repetitions;
     progress.easeFactor = next.easeFactor;
@@ -189,10 +199,83 @@ export class ProgressService {
     if (dto.quality >= 3) progress.correctCount += 1;
     else progress.incorrectCount += 1;
 
-    await this.progressRepo.save(progress);
+    const becameMastered =
+      prevStatus !== ProgressStatus.MASTERED &&
+      next.status === ProgressStatus.MASTERED;
+
+    // Persist the schedule update and append the activity event atomically so a
+    // review can never half-record — one drives SRS, the other the heatmap,
+    // streak, and new-words leaderboard.
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(progress);
+      await manager.insert(LearningActivity, {
+        userId,
+        vocabularyId: dto.vocabularyId,
+        reviewedAt: now,
+        quality: dto.quality,
+        isCorrect: dto.quality >= 3,
+        wasNew,
+        becameMastered,
+      });
+    });
+
     return plainToInstance(ProgressResponseDto, progress, {
       excludeExtraneousValues: true,
     });
+  }
+
+  // Per-day study activity for a date range, bucketed by the caller's local day
+  // (per `tz`) so cells match the user's midnight. Returns only active days;
+  // the client fills the empty grid.
+  async getActivity(
+    userId: string,
+    query: ActivityQueryDto,
+  ): Promise<ActivityResponseDto> {
+    const tz = query.tz ?? 'UTC';
+    if (!isValidTimeZone(tz)) {
+      throw new BadRequestException('tz must be a valid IANA timezone name');
+    }
+
+    const to = query.to ?? todayInTimeZone(tz);
+    const from = query.from ?? addDaysToDateString(to, -364);
+    if (to < from) {
+      throw new BadRequestException('to must be on or after from');
+    }
+    if (dayDiff(from, to) > 366) {
+      throw new BadRequestException('date range must not exceed 366 days');
+    }
+
+    const rows = await this.progressRepo.manager.query<
+      { date: string; reviews: number; newWords: number }[]
+    >(
+      `SELECT (reviewed_at AT TIME ZONE $2)::date::text AS date,
+              COUNT(*)::int AS reviews,
+              COUNT(*) FILTER (WHERE was_new)::int AS "newWords"
+       FROM learning_activity
+       WHERE user_id = $1
+         AND (reviewed_at AT TIME ZONE $2)::date >= $3::date
+         AND (reviewed_at AT TIME ZONE $2)::date <= $4::date
+       GROUP BY 1
+       ORDER BY 1 ASC`,
+      [userId, tz, from, to],
+    );
+
+    const days: ActivityDayDto[] = rows.map((r) => ({
+      date: r.date,
+      reviews: Number(r.reviews),
+      newWords: Number(r.newWords),
+    }));
+
+    return {
+      from,
+      to,
+      timezone: tz,
+      totalReviews: days.reduce((sum, d) => sum + d.reviews, 0),
+      totalNewWords: days.reduce((sum, d) => sum + d.newWords, 0),
+      activeDays: days.length,
+      maxReviews: days.reduce((max, d) => Math.max(max, d.reviews), 0),
+      days,
+    };
   }
 
   async getStats(userId: string): Promise<StatsResponseDto> {
@@ -291,12 +374,13 @@ export class ProgressService {
 
   // Streak = consecutive UTC days with at least one review, ending at the
   // most recent review date. Counts only if that date is today or yesterday
-  // (otherwise the streak has been broken).
+  // (otherwise the streak has been broken). Reads the activity log (exact,
+  // one row per event) so the lit heatmap days and this count agree.
   private async computeStreak(userId: string): Promise<number> {
     const rows = await this.progressRepo.manager.query<{ d: string }[]>(
-      `SELECT DISTINCT (last_reviewed_at AT TIME ZONE 'UTC')::date::text AS d
-       FROM user_word_progress
-       WHERE user_id = $1 AND last_reviewed_at IS NOT NULL
+      `SELECT DISTINCT (reviewed_at AT TIME ZONE 'UTC')::date::text AS d
+       FROM learning_activity
+       WHERE user_id = $1
        ORDER BY d DESC`,
       [userId],
     );
@@ -328,4 +412,31 @@ export class ProgressService {
 
 function toUtcDateString(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function isValidTimeZone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Current calendar date in the given IANA timezone, as YYYY-MM-DD.
+function todayInTimeZone(tz: string): string {
+  // en-CA renders ISO-style YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+}
+
+function addDaysToDateString(dateStr: string, delta: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return toUtcDateString(d);
+}
+
+function dayDiff(fromStr: string, toStr: string): number {
+  const from = new Date(`${fromStr}T00:00:00Z`).getTime();
+  const to = new Date(`${toStr}T00:00:00Z`).getTime();
+  return Math.round((to - from) / 86_400_000);
 }

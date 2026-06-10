@@ -2,7 +2,7 @@
 
 `GET /v1/me/activity` — **JWT required.** Returns the authenticated user's per-day study activity for a date range, for rendering a GitHub-style contribution grid.
 
-> **Status: planned / not yet implemented.** This documents the agreed contract ahead of the backend work tracked in [../plans/learning_activity_heatmap_plan.md](../plans/learning_activity_heatmap_plan.md). Don't wire the real call until the endpoint ships.
+> **Status: live.** Implemented per [../plans/learning_activity_heatmap_plan.md](../plans/learning_activity_heatmap_plan.md). Activity is logged from the day this shipped; existing users got an approximate backfill from their last review per word, so early calendars may look sparse.
 
 ---
 
@@ -65,7 +65,7 @@ Only **active** days are returned — the client fills the empty cells of the gr
 - **Tooltip:** `"{reviews} reviews · {newWords} new words on {date}"`. Empty day → `"No activity on {date}"`.
 - **Headline label:** `"{totalReviews} reviews in the last year"` (or swap to `totalNewWords` — both are provided).
 - **Timezone matters.** Always send the device `tz`; otherwise a late-night session lands on the wrong day versus what the user expects. If the user changes timezone, re-fetch.
-- **Streak** is a separate call ([GET /v1/me/stats](../backend/api-endpoints.md#progress) → `streakDays`); it reads the same activity source once implemented, so the heatmap's lit days and the streak count will agree.
+- **Streak** is a separate call ([GET /v1/me/stats](../backend/api-endpoints.md#progress) → `streakDays`); it reads the same `learning_activity` source, so the heatmap's lit days and the streak count agree. (Streak buckets by UTC day; the heatmap buckets by your `tz` — they can differ by one day right around local midnight.)
 
 ## Errors
 

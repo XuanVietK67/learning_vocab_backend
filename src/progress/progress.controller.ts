@@ -11,6 +11,8 @@ import {
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '@/auth/strategies/jwt.strategy';
+import { ActivityQueryDto } from '@/progress/dto/activity-query.dto';
+import { ActivityResponseDto } from '@/progress/dto/activity-response.dto';
 import { DueQueryDto } from '@/progress/dto/due-query.dto';
 import { EnrollDto, EnrollResponseDto } from '@/progress/dto/enroll.dto';
 import {
@@ -61,5 +63,19 @@ export class MeStatsController {
   @Get()
   stats(@CurrentUser() current: AuthenticatedUser): Promise<StatsResponseDto> {
     return this.progressService.getStats(current.id);
+  }
+}
+
+@Controller({ path: 'me/activity', version: '1' })
+@UseGuards(JwtAuthGuard)
+export class MeActivityController {
+  constructor(private readonly progressService: ProgressService) {}
+
+  @Get()
+  activity(
+    @CurrentUser() current: AuthenticatedUser,
+    @Query() query: ActivityQueryDto,
+  ): Promise<ActivityResponseDto> {
+    return this.progressService.getActivity(current.id, query);
   }
 }

@@ -1,6 +1,6 @@
 # Plan — Learning activity log + contribution heatmap
 
-**Status:** Planned (not yet implemented).
+**Status:** Shipped — `learning_activity` log + write hook in `submitReview`, `GET /v1/me/activity`, the streak repoint, and the approximate backfill are all implemented. This unblocks the `new_words` board in [community_leaderboard_plan.md](community_leaderboard_plan.md) (currently 501).
 **Feature:** A GitHub-style per-day activity heatmap for the authenticated user ("which days did I study, and how many words per day"), plus the append-only event log that powers it.
 
 This is the **keystone** of the two community/analytics features. The same `learning_activity` log also feeds the windowed (weekly) leaderboard in [community_leaderboard_plan.md](community_leaderboard_plan.md) and lets us replace the lossy streak calc.
