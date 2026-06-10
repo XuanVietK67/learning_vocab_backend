@@ -116,6 +116,101 @@ describe('VocabulariesService — quick-create & approve', () => {
     });
   });
 
+  describe('quickCreateUserVocabulary', () => {
+    it('creates a user-owned job (ownerUserId set) and enqueues it', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue(null);
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockResolvedValue({
+        id: JOB_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'pending',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.quickCreateUserVocabulary(USER_ID, {
+        lemma: '  run  ',
+      });
+
+      expect(enrichmentJobRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          language: 'en',
+          lemma: 'run',
+          ownerUserId: USER_ID,
+        }),
+      );
+      expect(enrichmentProducer.enqueue).toHaveBeenCalledWith(JOB_ID);
+      expect(res.status).toBe('pending');
+    });
+
+    it("reuses the caller's existing pending job without re-enqueueing", async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: USER_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'pending',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.quickCreateUserVocabulary(USER_ID, {
+        lemma: 'run',
+      });
+
+      expect(res.id).toBe(JOB_ID);
+      expect(enrichmentJobRepo.save).not.toHaveBeenCalled();
+      expect(enrichmentProducer.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUserEnrichmentJob', () => {
+    it("returns the caller's own job", async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: USER_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'completed',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.getUserEnrichmentJob(USER_ID, JOB_ID);
+      expect(res.id).toBe(JOB_ID);
+    });
+
+    it('404s for a job owned by someone else', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: '99999999-9999-9999-9999-999999999999',
+        status: 'completed',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await expect(
+        service.getUserEnrichmentJob(USER_ID, JOB_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s when the job does not exist', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.getUserEnrichmentJob(USER_ID, JOB_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('approveVocabulary', () => {
     it('flips is_approved and enqueues audio + image for senses without media', async () => {
       const vocab = {

@@ -404,6 +404,60 @@ export class VocabulariesService {
     return this.toEnrichmentJobResponse(job);
   }
 
+  // ---- User-owned quick-create + enrichment ----
+
+  /**
+   * Like quickCreateVocabulary, but the produced word is owned by the caller
+   * (USER source, private, auto-approved) rather than a system catalog draft.
+   * Idempotent per (owner, language, lemma) pending job.
+   */
+  async quickCreateUserVocabulary(
+    userId: string,
+    dto: QuickCreateVocabularyDto,
+  ): Promise<EnrichmentJobResponseDto> {
+    const language = dto.language ?? 'en';
+    const lemma = dto.lemma.trim();
+
+    const existingJob = await this.enrichmentJobRepo.findOne({
+      where: {
+        ownerUserId: userId,
+        language,
+        lemma,
+        status: VocabEnrichmentJobStatus.PENDING,
+      },
+      order: { createdAt: 'DESC' },
+    });
+    if (existingJob) {
+      return this.toEnrichmentJobResponse(existingJob);
+    }
+
+    const job = await this.enrichmentJobRepo.save(
+      this.enrichmentJobRepo.create({
+        language,
+        lemma,
+        translationLanguage: dto.translationLanguage ?? null,
+        status: VocabEnrichmentJobStatus.PENDING,
+        requestedByUserId: userId,
+        ownerUserId: userId,
+      }),
+    );
+    await this.enrichmentProducer.enqueue(job.id);
+    return this.toEnrichmentJobResponse(job);
+  }
+
+  // User-scoped job read: a user can only poll jobs they own. Unknown or
+  // someone else's job is reported as not-found.
+  async getUserEnrichmentJob(
+    userId: string,
+    jobId: string,
+  ): Promise<EnrichmentJobResponseDto> {
+    const job = await this.enrichmentJobRepo.findOne({ where: { id: jobId } });
+    if (!job || job.ownerUserId !== userId) {
+      throw new NotFoundException('enrichment job not found');
+    }
+    return this.toEnrichmentJobResponse(job);
+  }
+
   // ---- Bulk quick-create from a list/file ----
 
   /**

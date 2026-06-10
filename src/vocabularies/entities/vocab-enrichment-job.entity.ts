@@ -86,6 +86,22 @@ export class VocabEnrichmentJob {
   @JoinColumn({ name: 'requested_by_user_id' })
   requestedBy!: User | null;
 
+  // When set, the worker lands the produced draft as a USER-source, private,
+  // auto-approved word owned by this user instead of a system catalog draft.
+  // Null = the default admin/system behavior.
+  @Index('IDX_vocab_enrichment_jobs_owner_user_id')
+  @Column({ name: 'owner_user_id', type: 'uuid', nullable: true })
+  ownerUserId!: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'owner_user_id' })
+  owner!: User | null;
+
+  // When set, the worker appends the produced word(s) to this deck after
+  // creating them (deck bulk-import). Null = don't touch any deck.
+  @Column({ name: 'target_deck_id', type: 'uuid', nullable: true })
+  targetDeckId!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

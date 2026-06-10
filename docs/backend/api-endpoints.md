@@ -70,11 +70,13 @@ Public read access to the curated system vocabulary catalog. User-created words 
 
 Source: [src/vocabularies/me-vocabularies.controller.ts](../../src/vocabularies/me-vocabularies.controller.ts)
 
-User-created (`source = 'user'`) words owned by the authenticated caller. Private by default (`visibility = 'private'`, `is_approved = false`). They share storage with system vocabularies but are scoped to the owner — they don't appear on the public `/v1/vocabularies` surface. All endpoints require JWT auth; cross-user access returns 403.
+User-created (`source = 'user'`) words owned by the authenticated caller, always `visibility = 'private'`. They share storage with system vocabularies but are scoped to the owner — they don't appear on the public `/v1/vocabularies` surface. All endpoints require JWT auth; cross-user access returns 403. Two ways to create: the full `POST` (you supply senses; `is_approved = false`), or `quick-create` (lemma only → worker-enriched and `is_approved = true`).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | POST | `/v1/me/vocabularies` | JWT | Create a personal vocabulary. Body carries one or more `senses[]`, each with its own translations, examples, and `imageUrl`. Topic slugs (vocab-level) must already exist in the system catalog. Returns 409 if the caller already has a word for `(language, lemma, partOfSpeech)`. |
+| POST | `/v1/me/vocabularies/quick-create` | JWT | Quick-create from just a lemma: body `{ lemma, language?, translationLanguage? }`. A background worker enriches it (dictionary + Gemma) into the caller's own private, **auto-approved** word(s) — one per resolved part of speech — and auto-generates audio. Returns `202` + the enrichment job to poll. Idempotent per (owner, language, lemma) pending job. |
+| GET | `/v1/me/vocabularies/jobs/:jobId` | JWT | Poll one of the caller's own quick-create jobs: `{ id, language, lemma, status, resultVocabularyIds, error, createdAt, updatedAt }`. 404 if the job doesn't exist or isn't owned by the caller. |
 | GET | `/v1/me/vocabularies` | JWT | List the caller's own vocabularies, newest first. Query: `language`, `q` (lemma prefix), `translationLang`, `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }` with senses and `topics[]` (sorted by slug) inlined. |
 | GET | `/v1/me/vocabularies/:id` | JWT | Fetch one of the caller's vocabularies with all of its senses (each with translations and examples) and its `topics[]`. Query: `translationLang`. 403 if the row exists but isn't owned by the caller. |
 | PATCH | `/v1/me/vocabularies/:id` | JWT | Partial update of top-level fields. Senses, translations, examples, and topic links are not patched here. |

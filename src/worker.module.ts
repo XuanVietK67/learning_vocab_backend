@@ -12,6 +12,7 @@ import { ProductionAttempt } from './practice/entities/production-attempt.entity
 import { PRACTICE_SCORING_QUEUE } from './practice/scoring-queue.constants';
 import { ScoringProcessor } from './practice/scoring.processor';
 import { AUDIO_QUEUE } from './vocabularies/audio/audio-queue.constants';
+import { AudioQueueProducer } from './vocabularies/audio/audio-queue.producer';
 import { AudioProcessor } from './vocabularies/audio/audio.processor';
 import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.constants';
 import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
@@ -85,6 +86,8 @@ import { VocabularyPersistenceService } from './vocabularies/vocabulary-persiste
     EnrichmentProcessor,
     ImageProcessor,
     VocabularyPersistenceService,
+    // The enrichment worker enqueues audio for auto-approved user words.
+    AudioQueueProducer,
   ],
 })
 export class WorkerModule {}
