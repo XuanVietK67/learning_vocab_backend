@@ -137,7 +137,7 @@ There are twelve types (a discriminated union). Switch on `prompt.type`:
 | `cloze_mcq` | `sentenceWithBlank`, `hintTranslation`, `audioUrl`, `options[]` | Sentence with a blank + multiple-choice options | the chosen option **text** |
 | `cloze_typing` | `sentenceWithBlank`, `hintTranslation`, `audioUrl` | Sentence with a blank, free-text input | the typed word |
 | `meaning_in_context` | `sentence`, `highlightedSpan {start,end}`, `options[]` | Sentence with a highlighted span + translation options | the chosen option text |
-| `sense_disambiguation` | `sentences[] [{exampleId, sentence}]`, `options[]` | Two example sentences + two meanings to match | the chosen meaning text |
+| `sense_disambiguation` | `sentence`, `highlightedSpan {start,end}` (optional), `options[]` | One example sentence; pick the meaning that fits it. Wrong options include the word's other senses (polysemy traps). | the chosen meaning text |
 | `listening_cloze` | `audioUrl`, `sentenceWithBlank`, `hintTranslation`, `options[]` | Play audio, fill the blank (4-option MCQ in v1) | the chosen option text |
 | `word_from_translation` | `translation`, `options[]` | Show the translation, pick the matching word from the options | the chosen option (a lemma) text |
 | `translation_from_word` | `lemma`, `options[]` | Show the word, pick its translation from the options | the chosen option (a translation) text |
