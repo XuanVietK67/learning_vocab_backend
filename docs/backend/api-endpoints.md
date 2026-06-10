@@ -43,7 +43,7 @@ All endpoints require JWT auth and only allow the caller to act on their own use
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/users/:id` | JWT (self) | Fetch the user's full profile (onboarding fields, role, identities meta). |
-| PATCH | `/v1/users/:id` | JWT (self) | Update onboarding profile fields: `nativeLanguage`, `targetLanguage`, `proficiencyLevel`, `dailyGoalMinutes`, `weeklyVocabGoal`. Setting all five marks the user as onboarded. |
+| PATCH | `/v1/users/:id` | JWT (self) | Update onboarding profile fields: `nativeLanguage`, `targetLanguage`, `proficiencyLevel`, `dailyGoalMinutes`, `weeklyVocabGoal`, plus the `leaderboardOptOut` privacy toggle. Setting all five onboarding fields marks the user as onboarded; `leaderboardOptOut` can be toggled independently at any time. |
 
 ## Admin Users — `/v1/admin/users`
 
@@ -183,6 +183,16 @@ Context-anchored learning sessions: the server picks due cards, expands each wor
 | --- | --- | --- | --- |
 | POST | `/v1/me/learn/session` | JWT | Build a session for a learning mode; each picked word expands into its lesson ladder, so `items[]` holds several questions per word. Body: `{ mode, topicSlug?, deckId?, limit?: 1–50 (default 15), translationLang? }`. `topicSlug` required iff `mode=topic`; `deckId` required iff `mode=deck`. Returns `{ sessionId, mode, enrolledNewlyCount, emptyReason, nextDueAt, items[] }`. Each item adds `groupId` (shared by all steps of one word), `stepIndex`, `stepCount` to the envelope. `emptyReason` is one of `no_due_cards | no_more_at_level | no_enrollment | deck_exhausted` (null when `items[]` is non-empty). `nextDueAt` is the ISO timestamp of the soonest future-scheduled card — populated only when `emptyReason='no_due_cards'`; null otherwise. Each item carries an HMAC signature + nonce + issuedAtMs (and the signed `stepIndex`/`stepCount`) the client echoes when submitting an answer. |
 | POST | `/v1/me/learn/answer` | JWT | Submit one answer. Body: `{ vocabularyId, type, exampleId, stepIndex, stepCount, userAnswer, latencyMs, nonce, issuedAtMs, signature, translationLang? }`. `userAnswer` for `flashcard` is the self-rating (`forgot | hard | good | easy`); for MCQ types (`cloze_mcq`, `meaning_in_context`, `sense_disambiguation`, `word_from_translation`, `translation_from_word`, `listening_choice`, `image_choice`) it is the chosen option text; for typed types (`cloze_typing`, `dictation`) the typed text; for `pronunciation` the client-produced speech-to-text transcript (graded leniently against the lemma). Server verifies HMAC (30 min TTL), re-derives the correct answer, grades the response (SM-2 quality 0–5). A word's lesson is **one SRS event**: only the final step (`stepIndex === stepCount - 1`) updates progress; earlier steps grade for feedback only. Returns `{ correct, correctAnswer, quality, progress, requeue }`. `progress` is null on non-final steps. `requeue` is `{ dueAtMs, items[] }` (the word's next-stage ladder) when the card comes back within `LEARN_REQUEUE_WINDOW_MINUTES` (default 15); null otherwise. 401 if the signature is invalid or expired. |
+
+## Leaderboard — `/v1/leaderboard`
+
+Source: [src/leaderboard/leaderboard.controller.ts](../../src/leaderboard/leaderboard.controller.ts)
+
+Community ranking of top learners. JWT required (so the response can also carry the caller's own rank). Eligible rows are real, active learners (`role='user'`, `is_active`) who have not opted out (`leaderboard_opt_out=false`); rows with `value=0` are omitted. Ranks are sequential (no shared ranks), ties broken by `username ASC`. See [docs/community_leaderboard.md](../frontend/community_leaderboard.md).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/leaderboard` | JWT | Ranked top learners plus the caller's own standing. Query: `metric` (`words_mastered` default \| `new_words`), `window` (`all` \| `week` \| `month`), `limit` (default 50, max 100). Returns `{ metric, window, periodStart, periodEnd, limit, data: [{ rank, userId, username, avatarUrl, value }], me: { rank, value } }`. `me.rank` is null (and `value` 0) when the caller has no qualifying activity or has opted out. 400 on an invalid metric/window combination (`words_mastered` supports only `window=all`) or out-of-range `limit`. The `new_words` board is not live yet (returns 501 until the activity log ships). |
 
 ## Practice — `/v1/me/practice`
 

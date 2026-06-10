@@ -2,7 +2,7 @@
 
 `GET /v1/leaderboard` — **JWT required.** Returns a ranked list of top learners plus the caller's own rank.
 
-> **Status: planned / not yet implemented.** This documents the agreed contract ahead of the backend work tracked in [../plans/community_leaderboard_plan.md](../plans/community_leaderboard_plan.md). Don't wire the real call until the endpoint ships.
+> **Status: partially live.** The **Mastered (all-time)** board (`metric=words_mastered&window=all`) and the privacy opt-out ship now. The **New words this week** board (`metric=new_words`) is **not live yet** — it returns `501` until the activity log lands (Phase 2, tracked in [../plans/community_leaderboard_plan.md](../plans/community_leaderboard_plan.md)). You can build the board toggle now but gate the `new_words` tab on a successful response.
 
 ---
 
@@ -70,7 +70,7 @@ Notes:
 - **Top 3** typically get medal styling; render the rest as a plain ranked list.
 - **Pin `me`.** If `me.rank` is beyond `limit`, show a sticky row at the bottom: `#{me.rank} · You · {me.value}`. If `me.rank` is null, show "Study a word to join the board."
 - **Refresh cadence.** Values update as people study; the server may cache for ~1–2 min, so don't poll aggressively — refetch on tab focus / pull-to-refresh.
-- **Privacy toggle (planned).** Users can opt out of appearing on the board via their profile settings (`PATCH /v1/users/:id`, field `leaderboardOptOut`). Opted-out users still see their own `me` but are absent from everyone's `data`. Surface this as an "Appear on leaderboard" switch in settings.
+- **Privacy toggle.** Users can opt out of appearing on the board via their profile settings (`PATCH /v1/users/:id`, field `leaderboardOptOut: boolean` — see [users_profile.md](users_profile.md)). Opted-out users are absent from everyone's `data` and from the rank denominator; their own `me` comes back as `{ rank: null, value: 0 }`. Surface this as an "Appear on leaderboard" switch in settings. The current value is on the user object (`leaderboardOptOut`) returned by `GET /v1/users/:id` and `GET /v1/auth/me`.
 
 ## Errors
 
@@ -78,6 +78,7 @@ Notes:
 |---|---|
 | `400` | Invalid `metric`/`window` combination (e.g. `words_mastered` + `window=week`), or `limit` out of range. |
 | `401` | Missing / invalid JWT. |
+| `501` | `metric=new_words` — the weekly/monthly board is not live yet (Phase 2). Treat the tab as "coming soon". |
 
 ## Empty state
 

@@ -182,6 +182,11 @@ export class UsersService {
       user.isOnboarded = true;
     }
 
+    // Privacy toggle — independent of onboarding completeness.
+    if (dto.leaderboardOptOut !== undefined) {
+      user.leaderboardOptOut = dto.leaderboardOptOut;
+    }
+
     return this.usersRepo.save(user);
   }
 
