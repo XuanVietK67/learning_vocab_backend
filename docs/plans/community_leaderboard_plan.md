@@ -1,6 +1,6 @@
 # Plan — Community leaderboard (two boards)
 
-**Status:** Planned (not yet implemented).
+**Status:** Phase 1 shipped — the all-time `words_mastered` board + `leaderboard_opt_out` opt-out are live behind `GET /v1/leaderboard`. The `new_words` board (Phase 2) returns `501` until the `learning_activity` log ([learning_activity_heatmap_plan.md](learning_activity_heatmap_plan.md)) ships.
 **Feature:** A community ranking of top learners. Two boards:
 1. **Words mastered** — all-time, by count of words reaching `mastered`. The stable, "depth" board.
 2. **New words this week** — momentum board; resets weekly so there's always a fresh race.

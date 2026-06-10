@@ -89,6 +89,11 @@ export class User {
   })
   weeklyVocabGoal!: number | null;
 
+  // When true, the user is excluded from every leaderboard's `data` and from
+  // the rank denominator, but still sees their own `me` standing.
+  @Column({ name: 'leaderboard_opt_out', type: 'boolean', default: false })
+  leaderboardOptOut!: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

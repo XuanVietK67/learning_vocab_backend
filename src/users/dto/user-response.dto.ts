@@ -16,6 +16,7 @@ export class UserResponseDto {
   @Expose() proficiencyLevel!: ProficiencyLevel | null;
   @Expose() dailyGoalMinutes!: number | null;
   @Expose() weeklyVocabGoal!: number | null;
+  @Expose() leaderboardOptOut!: boolean;
   @Expose() createdAt!: Date;
   @Expose() updatedAt!: Date;
 }

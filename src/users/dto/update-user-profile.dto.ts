@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -48,4 +49,8 @@ export class UpdateUserProfileDto {
   @Min(5)
   @Max(250)
   weeklyVocabGoal?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  leaderboardOptOut?: boolean;
 }

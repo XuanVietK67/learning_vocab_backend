@@ -14,6 +14,7 @@ import pronunciationConfig from './config/pronunciation.config';
 import redisConfig from './config/redis.config';
 import { AuthModule } from './auth/auth.module';
 import { DecksModule } from './decks/decks.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { LearnModule } from './learn/learn.module';
 import { MailerModule } from './mailer/mailer.module';
 import { PracticeModule } from './practice/practice.module';
@@ -61,6 +62,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     DecksModule,
     ProgressModule,
     LearnModule,
+    LeaderboardModule,
     PracticeModule,
     PronunciationModule,
   ],

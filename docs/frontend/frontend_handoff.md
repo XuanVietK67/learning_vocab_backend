@@ -43,6 +43,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Feature | Method + path | Auth | Doc |
 |---|---|---|---|
 | Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
+| User — read & update profile (onboarding + leaderboard opt-out) | `GET /v1/users/:id`, `PATCH /v1/users/:id` | user (self) | [users_profile.md](users_profile.md) |
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
 | Admin — quick-create vocabulary (lemma only) | `POST /v1/admin/vocabularies/quick`, `GET /v1/admin/vocabularies/quick/:jobId`, `POST /v1/admin/vocabularies/:id/approve` | admin | [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md) |
 | Admin — bulk quick-create (list / Excel / PDF) | `POST /v1/admin/vocabularies/quick/extract`, `POST /v1/admin/vocabularies/quick/bulk`, `GET /v1/admin/vocabularies/quick/batch/:batchId` | admin | [admin_bulk_quick_create_vocabulary.md](admin_bulk_quick_create_vocabulary.md) |
@@ -58,7 +59,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | User — pronunciation scoring | `POST /v1/pronunciation/score`, `GET /v1/pronunciation/attempts` | user | [pronunciation_score.md](pronunciation_score.md) |
 | User — learn `pronunciation` question (acoustic scoring) | `POST /v1/pronunciation/score` → `POST /v1/me/learn/answer` | user | [learn_pronunciation_question.md](learn_pronunciation_question.md) |
 | User — activity heatmap (contribution calendar) _(planned)_ | `GET /v1/me/activity` | user | [me_activity_heatmap.md](me_activity_heatmap.md) |
-| Community — leaderboard (top learners) _(planned)_ | `GET /v1/leaderboard` | user | [community_leaderboard.md](community_leaderboard.md) |
+| Community — leaderboard (top learners; `new_words` board is Phase 2) | `GET /v1/leaderboard` | user | [community_leaderboard.md](community_leaderboard.md) |
 
 ---
 
@@ -238,30 +239,8 @@ Verify the 6‑digit code the user received by email. **JWT required.** On succe
 
 ## Users — `/v1/users`
 
-All endpoints require JWT and only allow the caller to act on their own user record (`403` otherwise).
-
-### `GET /v1/users/:id`
-**Response 200**: `UserResponse` (same shape as `/v1/auth/me`).
-
-### `PATCH /v1/users/:id`
-Update onboarding fields. Sending all five flips `isOnboarded` to `true`.
-
-**Request body** (any subset; all optional)
-
-```json
-{
-  "nativeLanguage": "vi",
-  "targetLanguage": "en",
-  "proficiencyLevel": "B1",
-  "dailyGoalMinutes": 20,
-  "weeklyVocabGoal": 50
-}
-```
-
-- `dailyGoalMinutes`: integer 5–240.
-- `weeklyVocabGoal`: integer 5–250 (target new vocabularies to learn per week).
-
-**Response 200**: updated `UserResponse`.
+### `GET /v1/users/:id` · `PATCH /v1/users/:id`
+Read and update the caller's own profile (onboarding fields + the `leaderboardOptOut` privacy toggle). JWT required, self only. Full request/response shape: **[users_profile.md](users_profile.md)**.
 
 ---
 
