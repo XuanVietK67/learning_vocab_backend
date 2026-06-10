@@ -44,6 +44,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 |---|---|---|---|
 | Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
 | User — read & update profile (onboarding + leaderboard opt-out) | `GET /v1/users/:id`, `PATCH /v1/users/:id` | user (self) | [users_profile.md](users_profile.md) |
+| Overview — everything a normal user can do (for the homepage redesign) | (capability map, cross-feature) | user | [user_capabilities.md](user_capabilities.md) |
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
 | Admin — quick-create vocabulary (lemma only) | `POST /v1/admin/vocabularies/quick`, `GET /v1/admin/vocabularies/quick/:jobId`, `POST /v1/admin/vocabularies/:id/approve` | admin | [admin_quick_create_vocabulary.md](admin_quick_create_vocabulary.md) |
 | Admin — bulk quick-create (list / Excel / PDF) | `POST /v1/admin/vocabularies/quick/extract`, `POST /v1/admin/vocabularies/quick/bulk`, `GET /v1/admin/vocabularies/quick/batch/:batchId` | admin | [admin_bulk_quick_create_vocabulary.md](admin_bulk_quick_create_vocabulary.md) |
