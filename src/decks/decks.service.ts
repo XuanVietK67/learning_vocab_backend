@@ -5,9 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { Deck } from '@/decks/entities/deck.entity';
 import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
+import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { CreateDeckDto } from '@/decks/dto/create-deck.dto';
 import { DeckQueryDto } from '@/decks/dto/deck-query.dto';
 import {
@@ -22,9 +23,11 @@ import {
 import { MyDecksQueryDto } from '@/decks/dto/my-decks-query.dto';
 import { UpdateDeckDto } from '@/decks/dto/update-deck.dto';
 import { User } from '@/users/entities/user.entity';
-import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
+import { BulkDeckImportDto } from '@/vocabularies/dto/bulk-deck-import.dto';
+import { BulkQuickCreateResponseDto } from '@/vocabularies/dto/bulk-quick-create.dto';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 
 @Injectable()
 export class DecksService {
@@ -38,6 +41,8 @@ export class DecksService {
     @InjectRepository(Vocabulary)
     private readonly vocabRepo: Repository<Vocabulary>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly membership: DeckMembershipService,
+    private readonly vocabulariesService: VocabulariesService,
   ) {}
 
   async findAll(query: DeckQueryDto): Promise<PaginatedDecksResponseDto> {
@@ -158,7 +163,7 @@ export class DecksService {
       const saved = await deckRepo.save(created);
 
       if (dto.vocabularyIds && dto.vocabularyIds.length > 0) {
-        await this.appendDeckMembers(
+        await this.membership.appendMembers(
           manager,
           saved.id,
           dto.vocabularyIds,
@@ -291,7 +296,24 @@ export class DecksService {
   ): Promise<DeckMembershipSummaryDto> {
     await this.assertOwnedByUser(userId, deckId);
     return this.dataSource.transaction((manager) =>
-      this.appendDeckMembers(manager, deckId, dto.vocabularyIds, userId),
+      this.membership.appendMembers(manager, deckId, dto.vocabularyIds, userId),
+    );
+  }
+
+  // Bulk-import words into one of the caller's decks from a list of lemmas.
+  // Each lemma is enriched into the caller's own word(s) by the worker, which
+  // then appends them to this deck (target_deck_id on the job). Returns the
+  // batch handle to poll; the deck fills in as jobs complete.
+  async bulkImportToDeck(
+    userId: string,
+    deckId: string,
+    dto: BulkDeckImportDto,
+  ): Promise<BulkQuickCreateResponseDto> {
+    await this.assertOwnedByUser(userId, deckId);
+    return this.vocabulariesService.bulkQuickCreateUserVocabulary(
+      userId,
+      deckId,
+      dto,
     );
   }
 
@@ -362,85 +384,5 @@ export class DecksService {
       { ...deck, vocabularies },
       { excludeExtraneousValues: true },
     );
-  }
-
-  // Appends the given vocab IDs after existing members and updates vocab_count.
-  // Inaccessible (other users' private) and missing IDs are dropped into the
-  // summary so the client can show stale-UI hints.
-  private async appendDeckMembers(
-    manager: EntityManager,
-    deckId: string,
-    requestedIds: string[],
-    ownerUserId: string,
-  ): Promise<DeckMembershipSummaryDto> {
-    const dedupedIds = Array.from(new Set(requestedIds));
-
-    // Accessibility: system vocab + the owner's own user vocab.
-    const accessibleRows = await manager
-      .getRepository(Vocabulary)
-      .createQueryBuilder('v')
-      .select('v.id', 'id')
-      .where('v.id IN (:...ids)', { ids: dedupedIds })
-      .andWhere(
-        '(v.source = :system OR (v.source = :user AND v.created_by_user_id = :ownerUserId))',
-        {
-          system: VocabularySource.SYSTEM,
-          user: VocabularySource.USER,
-          ownerUserId,
-        },
-      )
-      .getRawMany<{ id: string }>();
-    const accessibleSet = new Set(accessibleRows.map((r) => r.id));
-    const inaccessibleVocabularyIds = dedupedIds.filter(
-      (id) => !accessibleSet.has(id),
-    );
-    const accessibleIds = dedupedIds.filter((id) => accessibleSet.has(id));
-
-    const dvRepo = manager.getRepository(DeckVocabulary);
-    let alreadyMember = 0;
-    let toInsert: string[] = [];
-    if (accessibleIds.length > 0) {
-      const existingRows = await dvRepo.find({
-        where: { deckId },
-        select: { vocabularyId: true },
-      });
-      const existingSet = new Set(existingRows.map((r) => r.vocabularyId));
-      toInsert = accessibleIds.filter((id) => !existingSet.has(id));
-      alreadyMember = accessibleIds.length - toInsert.length;
-    }
-
-    let added = 0;
-    if (toInsert.length > 0) {
-      const maxPosRow = await dvRepo
-        .createQueryBuilder('dv')
-        .select('COALESCE(MAX(dv.position), -1)', 'max')
-        .where('dv.deck_id = :deckId', { deckId })
-        .getRawOne<{ max: string | number | null }>();
-      const startPos = Number(maxPosRow?.max ?? -1) + 1;
-
-      const rows = toInsert.map((vocabularyId, i) =>
-        dvRepo.create({
-          deckId,
-          vocabularyId,
-          position: startPos + i,
-        }),
-      );
-      await dvRepo.save(rows);
-      added = rows.length;
-
-      const deckRepo = manager.getRepository(Deck);
-      await deckRepo.increment({ id: deckId }, 'vocabCount', added);
-    }
-
-    const updatedDeck = await manager
-      .getRepository(Deck)
-      .findOne({ where: { id: deckId }, select: { vocabCount: true } });
-
-    return {
-      added,
-      alreadyMember,
-      inaccessibleVocabularyIds,
-      vocabCount: updatedDeck?.vocabCount ?? 0,
-    };
   }
 }

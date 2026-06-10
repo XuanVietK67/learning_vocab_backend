@@ -16,6 +16,7 @@ import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '@/auth/strategies/jwt.strategy';
 import { CreateVocabularyDto } from '@/vocabularies/dto/create-vocabulary.dto';
+import { EnrichmentBatchResponseDto } from '@/vocabularies/dto/enrichment-batch-response.dto';
 import { EnrichmentJobResponseDto } from '@/vocabularies/dto/enrichment-job-response.dto';
 import { QuickCreateVocabularyDto } from '@/vocabularies/dto/quick-create-vocabulary.dto';
 import { UpdateVocabularyDto } from '@/vocabularies/dto/update-vocabulary.dto';
@@ -58,6 +59,15 @@ export class MeVocabulariesController {
     @Param('jobId', new ParseUUIDPipe({ version: '4' })) jobId: string,
   ): Promise<EnrichmentJobResponseDto> {
     return this.vocabulariesService.getUserEnrichmentJob(current.id, jobId);
+  }
+
+  // Poll a bulk deck-import batch the caller started (one job per lemma).
+  @Get('batches/:batchId')
+  getBatch(
+    @CurrentUser() current: AuthenticatedUser,
+    @Param('batchId', new ParseUUIDPipe({ version: '4' })) batchId: string,
+  ): Promise<EnrichmentBatchResponseDto> {
+    return this.vocabulariesService.getUserEnrichmentBatch(current.id, batchId);
   }
 
   @Get()

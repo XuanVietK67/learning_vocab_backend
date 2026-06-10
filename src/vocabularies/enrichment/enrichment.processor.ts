@@ -26,6 +26,7 @@ import {
   generateExamples,
 } from '@/vocabularies/enrichment/gemma-enricher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
+import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
   PersistSense,
@@ -67,6 +68,7 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly vocabRepo: Repository<Vocabulary>,
     private readonly persistence: VocabularyPersistenceService,
     private readonly audioProducer: AudioQueueProducer,
+    private readonly membership: DeckMembershipService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -155,6 +157,17 @@ export class EnrichmentProcessor extends WorkerHost {
       if (ownerUserId) {
         await this.audioProducer.enqueue(vocab.id, lemma, language);
       }
+    }
+
+    // Bulk-import jobs carry a target deck: append the freshly created word(s)
+    // to it once they exist. The owner of the job owns the deck and the words,
+    // so membership accessibility passes trivially.
+    if (jobRow.targetDeckId && ownerUserId && createdIds.length > 0) {
+      await this.membership.appendMembersTx(
+        jobRow.targetDeckId,
+        createdIds,
+        ownerUserId,
+      );
     }
 
     await this.jobRepo.update(

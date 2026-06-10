@@ -1,12 +1,14 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
+import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { Deck } from '@/decks/entities/deck.entity';
 import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
 import { DecksService } from '@/decks/decks.service';
 import { User } from '@/users/entities/user.entity';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
+import { VocabulariesService } from '@/vocabularies/vocabularies.service';
 
 const DECK_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = '11111111-1111-1111-1111-111111111111';
@@ -38,6 +40,8 @@ describe('DecksService — visibility & clone', () => {
   const userRepo = { findOne: jest.fn() };
   const vocabRepo = {};
   const dataSource = { transaction: jest.fn() };
+  const membership = { appendMembers: jest.fn(), appendMembersTx: jest.fn() };
+  const vocabulariesService = { bulkQuickCreateUserVocabulary: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -52,6 +56,8 @@ describe('DecksService — visibility & clone', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(Vocabulary), useValue: vocabRepo },
         { provide: getDataSourceToken(), useValue: dataSource },
+        { provide: DeckMembershipService, useValue: membership },
+        { provide: VocabulariesService, useValue: vocabulariesService },
       ],
     }).compile();
     service = moduleRef.get(DecksService);
@@ -116,6 +122,42 @@ describe('DecksService — visibility & clone', () => {
       await expect(service.cloneDeck(USER_ID, DECK_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('bulkImportToDeck', () => {
+    it('asserts ownership then delegates to the bulk enrichment service', async () => {
+      deckRepo.findOne.mockResolvedValue({ id: DECK_ID, ownerId: USER_ID });
+      vocabulariesService.bulkQuickCreateUserVocabulary.mockResolvedValue({
+        batchId: '55555555-5555-5555-5555-555555555555',
+        accepted: 2,
+        skipped: 0,
+      });
+
+      const res = await service.bulkImportToDeck(USER_ID, DECK_ID, {
+        lemmas: ['resilient', 'tenacious'],
+      });
+
+      expect(
+        vocabulariesService.bulkQuickCreateUserVocabulary,
+      ).toHaveBeenCalledWith(USER_ID, DECK_ID, {
+        lemmas: ['resilient', 'tenacious'],
+      });
+      expect(res.accepted).toBe(2);
+    });
+
+    it("rejects bulk-importing into another user's deck (403)", async () => {
+      deckRepo.findOne.mockResolvedValue({
+        id: DECK_ID,
+        ownerId: OTHER_USER_ID,
+      });
+
+      await expect(
+        service.bulkImportToDeck(USER_ID, DECK_ID, { lemmas: ['resilient'] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(
+        vocabulariesService.bulkQuickCreateUserVocabulary,
+      ).not.toHaveBeenCalled();
     });
   });
 });
