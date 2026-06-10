@@ -12,6 +12,7 @@ import { ProductionAttempt } from './practice/entities/production-attempt.entity
 import { PRACTICE_SCORING_QUEUE } from './practice/scoring-queue.constants';
 import { ScoringProcessor } from './practice/scoring.processor';
 import { AUDIO_QUEUE } from './vocabularies/audio/audio-queue.constants';
+import { AudioQueueProducer } from './vocabularies/audio/audio-queue.producer';
 import { AudioProcessor } from './vocabularies/audio/audio.processor';
 import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.constants';
 import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
@@ -21,6 +22,7 @@ import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
 import { IMAGE_QUEUE } from './vocabularies/images/image-queue.constants';
 import { ImageProcessor } from './vocabularies/images/image.processor';
 import { VocabularyPersistenceService } from './vocabularies/vocabulary-persistence.service';
+import { DeckMembershipService } from './decks/deck-membership.service';
 
 /**
  * Standalone module for the audio worker process (see worker.ts). It is a pure
@@ -85,6 +87,10 @@ import { VocabularyPersistenceService } from './vocabularies/vocabulary-persiste
     EnrichmentProcessor,
     ImageProcessor,
     VocabularyPersistenceService,
+    // The enrichment worker enqueues audio for auto-approved user words and
+    // appends bulk-imported words to their target deck.
+    AudioQueueProducer,
+    DeckMembershipService,
   ],
 })
 export class WorkerModule {}

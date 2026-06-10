@@ -26,6 +26,8 @@ import {
   generateExamples,
 } from '@/vocabularies/enrichment/gemma-enricher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
+import { DeckMembershipService } from '@/decks/deck-membership.service';
+import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
   PersistSense,
   PersistTranslation,
@@ -65,6 +67,8 @@ export class EnrichmentProcessor extends WorkerHost {
     @InjectRepository(Vocabulary)
     private readonly vocabRepo: Repository<Vocabulary>,
     private readonly persistence: VocabularyPersistenceService,
+    private readonly audioProducer: AudioQueueProducer,
+    private readonly membership: DeckMembershipService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -97,10 +101,28 @@ export class EnrichmentProcessor extends WorkerHost {
       return;
     }
 
-    // Skip any part of speech that already has a system row (approved or a prior
-    // draft): the partial unique index on (language, lemma, part_of_speech)
-    // WHERE source='system' forbids a duplicate, and we never clobber an
-    // existing word.
+    // A job with owner_user_id produces a user-owned, private, auto-approved
+    // word; otherwise it lands an unapproved system catalog draft. The dedup
+    // check is scoped to match: a user only collides with their own words, an
+    // admin job with the system catalog.
+    const ownerUserId = jobRow.ownerUserId;
+    const ownership = ownerUserId
+      ? {
+          source: VocabularySource.USER,
+          visibility: Visibility.PRIVATE,
+          isApproved: true,
+          createdByUserId: ownerUserId,
+        }
+      : {
+          source: VocabularySource.SYSTEM,
+          visibility: Visibility.SYSTEM,
+          isApproved: false,
+          createdByUserId: null,
+        };
+
+    // Skip any part of speech that already exists for this owner: we never
+    // clobber an existing word, and for system jobs the partial unique index on
+    // (language, lemma, part_of_speech) WHERE source='system' forbids a duplicate.
     const createdIds: string[] = [];
     for (const draft of drafts) {
       const exists = await this.vocabRepo.exists({
@@ -108,7 +130,8 @@ export class EnrichmentProcessor extends WorkerHost {
           language,
           lemma,
           partOfSpeech: draft.partOfSpeech,
-          source: VocabularySource.SYSTEM,
+          source: ownership.source,
+          ...(ownerUserId ? { createdByUserId: ownerUserId } : {}),
         },
       });
       if (exists) continue;
@@ -119,15 +142,32 @@ export class EnrichmentProcessor extends WorkerHost {
         partOfSpeech: draft.partOfSpeech,
         ipa: draft.ipa,
         cefrLevel: draft.cefrLevel,
-        source: VocabularySource.SYSTEM,
-        visibility: Visibility.SYSTEM,
-        isApproved: false,
+        source: ownership.source,
+        visibility: ownership.visibility,
+        isApproved: ownership.isApproved,
         enrichmentStatus: EnrichmentStatus.ENRICHED,
-        createdByUserId: null,
+        createdByUserId: ownership.createdByUserId,
         senses: draft.senses,
         topicSlugs: jobRow.topicSlugs,
       });
       createdIds.push(vocab.id);
+
+      // User words are auto-approved, so generate audio now (admin drafts get it
+      // at approve-time instead). Mirrors the manual createUserVocabulary path.
+      if (ownerUserId) {
+        await this.audioProducer.enqueue(vocab.id, lemma, language);
+      }
+    }
+
+    // Bulk-import jobs carry a target deck: append the freshly created word(s)
+    // to it once they exist. The owner of the job owns the deck and the words,
+    // so membership accessibility passes trivially.
+    if (jobRow.targetDeckId && ownerUserId && createdIds.length > 0) {
+      await this.membership.appendMembersTx(
+        jobRow.targetDeckId,
+        createdIds,
+        ownerUserId,
+      );
     }
 
     await this.jobRepo.update(

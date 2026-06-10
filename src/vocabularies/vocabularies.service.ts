@@ -56,6 +56,7 @@ import {
   VocabularySenseResponseDto,
   VocabularyTranslationResponseDto,
 } from '@/vocabularies/dto/vocabulary-response.dto';
+import { BulkDeckImportDto } from '@/vocabularies/dto/bulk-deck-import.dto';
 import {
   BulkQuickCreateDto,
   BulkQuickCreateResponseDto,
@@ -404,6 +405,168 @@ export class VocabulariesService {
     return this.toEnrichmentJobResponse(job);
   }
 
+  // ---- User-owned quick-create + enrichment ----
+
+  /**
+   * Like quickCreateVocabulary, but the produced word is owned by the caller
+   * (USER source, private, auto-approved) rather than a system catalog draft.
+   * Idempotent per (owner, language, lemma) pending job.
+   */
+  async quickCreateUserVocabulary(
+    userId: string,
+    dto: QuickCreateVocabularyDto,
+  ): Promise<EnrichmentJobResponseDto> {
+    const language = dto.language ?? 'en';
+    const lemma = dto.lemma.trim();
+
+    const existingJob = await this.enrichmentJobRepo.findOne({
+      where: {
+        ownerUserId: userId,
+        language,
+        lemma,
+        status: VocabEnrichmentJobStatus.PENDING,
+      },
+      order: { createdAt: 'DESC' },
+    });
+    if (existingJob) {
+      return this.toEnrichmentJobResponse(existingJob);
+    }
+
+    const job = await this.enrichmentJobRepo.save(
+      this.enrichmentJobRepo.create({
+        language,
+        lemma,
+        translationLanguage: dto.translationLanguage ?? null,
+        status: VocabEnrichmentJobStatus.PENDING,
+        requestedByUserId: userId,
+        ownerUserId: userId,
+      }),
+    );
+    await this.enrichmentProducer.enqueue(job.id);
+    return this.toEnrichmentJobResponse(job);
+  }
+
+  // User-scoped job read: a user can only poll jobs they own. Unknown or
+  // someone else's job is reported as not-found.
+  async getUserEnrichmentJob(
+    userId: string,
+    jobId: string,
+  ): Promise<EnrichmentJobResponseDto> {
+    const job = await this.enrichmentJobRepo.findOne({ where: { id: jobId } });
+    if (!job || job.ownerUserId !== userId) {
+      throw new NotFoundException('enrichment job not found');
+    }
+    return this.toEnrichmentJobResponse(job);
+  }
+
+  /**
+   * Bulk-import a list of lemmas into a deck as the caller's own words. One
+   * enrichment job per lemma (grouped under a batch id), each carrying the
+   * owner + target deck so the worker lands a user-owned word and appends it to
+   * the deck. Skips lemmas the caller already has a pending job for or already
+   * owns. The caller's deck ownership is asserted upstream (DecksService).
+   */
+  async bulkQuickCreateUserVocabulary(
+    userId: string,
+    deckId: string,
+    dto: BulkDeckImportDto,
+  ): Promise<BulkQuickCreateResponseDto> {
+    const language = dto.language ?? 'en';
+    const { lemmas } = normalizeLemmas(dto.lemmas, BULK_QUICK_CREATE_MAX);
+    if (lemmas.length === 0) {
+      return plainToInstance(BulkQuickCreateResponseDto, {
+        batchId: null,
+        accepted: 0,
+        skipped: 0,
+      });
+    }
+
+    const taken = await this.lemmasAlreadyHandledForUser(
+      userId,
+      language,
+      lemmas,
+    );
+    const toCreate = lemmas.filter((l) => !taken.has(l.toLowerCase()));
+    const skipped = lemmas.length - toCreate.length;
+    if (toCreate.length === 0) {
+      return plainToInstance(BulkQuickCreateResponseDto, {
+        batchId: null,
+        accepted: 0,
+        skipped,
+      });
+    }
+
+    const batchId = randomUUID();
+    const jobs = await this.enrichmentJobRepo.save(
+      toCreate.map((lemma) =>
+        this.enrichmentJobRepo.create({
+          language,
+          lemma,
+          translationLanguage: dto.translationLanguage ?? null,
+          status: VocabEnrichmentJobStatus.PENDING,
+          batchId,
+          requestedByUserId: userId,
+          ownerUserId: userId,
+          targetDeckId: deckId,
+        }),
+      ),
+    );
+    for (const job of jobs) {
+      await this.enrichmentProducer.enqueue(job.id);
+    }
+
+    return plainToInstance(BulkQuickCreateResponseDto, {
+      batchId,
+      accepted: jobs.length,
+      skipped,
+    });
+  }
+
+  // User-scoped batch read: only the owner of the batch may poll it.
+  async getUserEnrichmentBatch(
+    userId: string,
+    batchId: string,
+  ): Promise<EnrichmentBatchResponseDto> {
+    const jobs = await this.enrichmentJobRepo.find({ where: { batchId } });
+    if (jobs.length === 0 || jobs[0].ownerUserId !== userId) {
+      throw new NotFoundException('batch not found');
+    }
+    return this.summarizeBatch(batchId, jobs);
+  }
+
+  // Lowercased set of lemmas the given owner already has a pending USER job for
+  // or already owns as a USER word (any part of speech) — the lemmas a bulk
+  // import should skip. Two IN queries rather than per-lemma lookups.
+  private async lemmasAlreadyHandledForUser(
+    userId: string,
+    language: string,
+    lemmas: string[],
+  ): Promise<Set<string>> {
+    const [pendingJobs, ownedVocabs] = await Promise.all([
+      this.enrichmentJobRepo.find({
+        where: {
+          ownerUserId: userId,
+          language,
+          lemma: In(lemmas),
+          status: VocabEnrichmentJobStatus.PENDING,
+        },
+        select: { lemma: true },
+      }),
+      this.vocabRepo.find({
+        where: {
+          language,
+          lemma: In(lemmas),
+          source: VocabularySource.USER,
+          createdByUserId: userId,
+        },
+        select: { lemma: true },
+      }),
+    ]);
+    return new Set(
+      [...pendingJobs, ...ownedVocabs].map((r) => r.lemma.toLowerCase()),
+    );
+  }
+
   // ---- Bulk quick-create from a list/file ----
 
   /**
@@ -539,7 +702,14 @@ export class VocabulariesService {
     if (jobs.length === 0) {
       throw new NotFoundException('batch not found');
     }
+    return this.summarizeBatch(batchId, jobs);
+  }
 
+  // Rolls a batch's per-job statuses into the response summary.
+  private summarizeBatch(
+    batchId: string,
+    jobs: VocabEnrichmentJob[],
+  ): EnrichmentBatchResponseDto {
     let pending = 0;
     let completed = 0;
     let failed = 0;
