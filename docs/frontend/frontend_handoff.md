@@ -57,6 +57,8 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |
 | User — pronunciation scoring | `POST /v1/pronunciation/score`, `GET /v1/pronunciation/attempts` | user | [pronunciation_score.md](pronunciation_score.md) |
 | User — learn `pronunciation` question (acoustic scoring) | `POST /v1/pronunciation/score` → `POST /v1/me/learn/answer` | user | [learn_pronunciation_question.md](learn_pronunciation_question.md) |
+| User — activity heatmap (contribution calendar) _(planned)_ | `GET /v1/me/activity` | user | [me_activity_heatmap.md](me_activity_heatmap.md) |
+| Community — leaderboard (top learners) _(planned)_ | `GET /v1/leaderboard` | user | [community_leaderboard.md](community_leaderboard.md) |
 
 ---
 
