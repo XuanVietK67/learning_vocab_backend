@@ -29,6 +29,8 @@ import {
 } from '@/decks/dto/deck-response.dto';
 import { MyDecksQueryDto } from '@/decks/dto/my-decks-query.dto';
 import { UpdateDeckDto } from '@/decks/dto/update-deck.dto';
+import { BulkDeckImportDto } from '@/vocabularies/dto/bulk-deck-import.dto';
+import { BulkQuickCreateResponseDto } from '@/vocabularies/dto/bulk-quick-create.dto';
 
 @Controller({ path: 'decks', version: '1' })
 export class DecksController {
@@ -135,6 +137,19 @@ export class MeDecksController {
     @Body() dto: DeckMembershipDto,
   ): Promise<DeckMembershipSummaryDto> {
     return this.decksService.addVocabulariesToUserDeck(current.id, id, dto);
+  }
+
+  // Bulk-import: paste a list of lemmas; each is enriched into the caller's own
+  // word and appended to this deck by the worker. Returns 202 + the batch to
+  // poll via GET /v1/me/vocabularies/batches/:batchId.
+  @Post(':id/bulk-import')
+  @HttpCode(HttpStatus.ACCEPTED)
+  bulkImport(
+    @CurrentUser() current: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: BulkDeckImportDto,
+  ): Promise<BulkQuickCreateResponseDto> {
+    return this.decksService.bulkImportToDeck(current.id, id, dto);
   }
 
   @Delete(':id/vocabularies/:vocabularyId')

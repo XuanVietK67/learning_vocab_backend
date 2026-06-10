@@ -116,6 +116,203 @@ describe('VocabulariesService — quick-create & approve', () => {
     });
   });
 
+  describe('quickCreateUserVocabulary', () => {
+    it('creates a user-owned job (ownerUserId set) and enqueues it', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue(null);
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockResolvedValue({
+        id: JOB_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'pending',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.quickCreateUserVocabulary(USER_ID, {
+        lemma: '  run  ',
+      });
+
+      expect(enrichmentJobRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          language: 'en',
+          lemma: 'run',
+          ownerUserId: USER_ID,
+        }),
+      );
+      expect(enrichmentProducer.enqueue).toHaveBeenCalledWith(JOB_ID);
+      expect(res.status).toBe('pending');
+    });
+
+    it("reuses the caller's existing pending job without re-enqueueing", async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: USER_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'pending',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.quickCreateUserVocabulary(USER_ID, {
+        lemma: 'run',
+      });
+
+      expect(res.id).toBe(JOB_ID);
+      expect(enrichmentJobRepo.save).not.toHaveBeenCalled();
+      expect(enrichmentProducer.enqueue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUserEnrichmentJob', () => {
+    it("returns the caller's own job", async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: USER_ID,
+        language: 'en',
+        lemma: 'run',
+        status: 'completed',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.getUserEnrichmentJob(USER_ID, JOB_ID);
+      expect(res.id).toBe(JOB_ID);
+    });
+
+    it('404s for a job owned by someone else', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue({
+        id: JOB_ID,
+        ownerUserId: '99999999-9999-9999-9999-999999999999',
+        status: 'completed',
+        resultVocabularyIds: [],
+        error: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await expect(
+        service.getUserEnrichmentJob(USER_ID, JOB_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s when the job does not exist', async () => {
+      enrichmentJobRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.getUserEnrichmentJob(USER_ID, JOB_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('bulkQuickCreateUserVocabulary', () => {
+    const DECK_ID = '66666666-6666-6666-6666-666666666666';
+
+    it('creates one owner+deck-scoped job per new lemma and enqueues each', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([]); // no pending jobs
+      vocabRepo.find.mockResolvedValue([]); // owns none yet
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockResolvedValue([{ id: 'j1' }, { id: 'j2' }]);
+
+      const res = await service.bulkQuickCreateUserVocabulary(
+        USER_ID,
+        DECK_ID,
+        {
+          lemmas: ['resilient', 'tenacious'],
+        },
+      );
+
+      expect(enrichmentJobRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerUserId: USER_ID,
+          targetDeckId: DECK_ID,
+        }),
+      );
+      expect(enrichmentProducer.enqueue).toHaveBeenCalledTimes(2);
+      expect(res.accepted).toBe(2);
+      expect(res.skipped).toBe(0);
+    });
+
+    it('skips lemmas the user already has pending or owns', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([{ lemma: 'resilient' }]);
+      vocabRepo.find.mockResolvedValue([]);
+      enrichmentJobRepo.create.mockImplementation((x: object) => x);
+      enrichmentJobRepo.save.mockResolvedValue([{ id: 'j2' }]);
+
+      const res = await service.bulkQuickCreateUserVocabulary(
+        USER_ID,
+        DECK_ID,
+        {
+          lemmas: ['resilient', 'tenacious'],
+        },
+      );
+
+      expect(res.accepted).toBe(1);
+      expect(res.skipped).toBe(1);
+    });
+
+    it('returns batchId null and saves nothing when every lemma is skipped', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([{ lemma: 'resilient' }]);
+      vocabRepo.find.mockResolvedValue([]);
+
+      const res = await service.bulkQuickCreateUserVocabulary(
+        USER_ID,
+        DECK_ID,
+        {
+          lemmas: ['resilient'],
+        },
+      );
+
+      expect(res.batchId).toBeNull();
+      expect(res.accepted).toBe(0);
+      expect(enrichmentJobRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUserEnrichmentBatch', () => {
+    it("returns the caller's batch summary", async () => {
+      enrichmentJobRepo.find.mockResolvedValue([
+        {
+          ownerUserId: USER_ID,
+          status: 'completed',
+          resultVocabularyIds: ['v1'],
+        },
+        { ownerUserId: USER_ID, status: 'pending', resultVocabularyIds: [] },
+      ]);
+
+      const res = await service.getUserEnrichmentBatch(USER_ID, BATCH_ID);
+      expect(res.total).toBe(2);
+      expect(res.completed).toBe(1);
+      expect(res.pending).toBe(1);
+    });
+
+    it("404s for another user's batch", async () => {
+      enrichmentJobRepo.find.mockResolvedValue([
+        {
+          ownerUserId: 'someone-else',
+          status: 'completed',
+          resultVocabularyIds: [],
+        },
+      ]);
+      await expect(
+        service.getUserEnrichmentBatch(USER_ID, BATCH_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s for an empty/unknown batch', async () => {
+      enrichmentJobRepo.find.mockResolvedValue([]);
+      await expect(
+        service.getUserEnrichmentBatch(USER_ID, BATCH_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('approveVocabulary', () => {
     it('flips is_approved and enqueues audio + image for senses without media', async () => {
       const vocab = {
