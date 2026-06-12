@@ -1,0 +1,50 @@
+{
+  // This thesis uses fontspec/\setmainfont, which REQUIRES XeLaTeX (not pdfLaTeX).
+  // So XeLaTeX is the default build recipe; a pdfLaTeX recipe is kept as fallback.
+  "latex-workshop.latex.recipe.default": "first",
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (xelatex)",
+      "tools": ["xelatexmk"]
+    },
+    {
+      "name": "latexmk (pdflatex)",
+      "tools": ["pdflatexmk"]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "xelatexmk",
+      "command": "latexmk",
+      "args": [
+        "-xelatex",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-outdir=%OUTDIR%",
+        "%DOC%"
+      ],
+      "env": {}
+    },
+    {
+      "name": "pdflatexmk",
+      "command": "latexmk",
+      "args": [
+        "-pdf",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-outdir=%OUTDIR%",
+        "%DOC%"
+      ],
+      "env": {}
+    }
+  ],
+
+  // Build on save, show the PDF in a VS Code tab.
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab",
+
+  // Silences the "Please set your LaTeX formatter" prompt (latexindent ships with MiKTeX).
+  "latex-workshop.formatting.latex": "latexindent"
+}

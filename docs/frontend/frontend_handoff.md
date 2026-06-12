@@ -57,6 +57,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | User — learn vocabulary flow | `POST /v1/me/learn/session`, `POST /v1/me/learn/answer`, `/v1/me/progress/*`, `GET /v1/me/stats` | user | [learn_vocabulary_flow.md](learn_vocabulary_flow.md) |
 | User — learn session UI flow (screen-by-screen journey) | `GET /v1/me/stats`, `GET /v1/topics`, deck list APIs, `POST /v1/me/learn/{session,answer}` | user | [learn_session_ui_flow.md](learn_session_ui_flow.md) |
 | User — practice sentence scoring | `POST /v1/me/practice/attempts`, `GET /v1/me/practice/attempts/:id` | user | [practice_submit_sentence.md](practice_submit_sentence.md) |
+| Design — practice vocabulary (write a sentence & record audio) | (layout guide, cross-feature) | user | [practice_vocabulary_design.md](practice_vocabulary_design.md) |
 | User — pronunciation scoring | `POST /v1/pronunciation/score`, `GET /v1/pronunciation/attempts` | user | [pronunciation_score.md](pronunciation_score.md) |
 | User — learn `pronunciation` question (acoustic scoring) | `POST /v1/pronunciation/score` → `POST /v1/me/learn/answer` | user | [learn_pronunciation_question.md](learn_pronunciation_question.md) |
 | User — activity heatmap (contribution calendar) | `GET /v1/me/activity` | user | [me_activity_heatmap.md](me_activity_heatmap.md) |

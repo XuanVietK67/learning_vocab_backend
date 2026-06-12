@@ -1,0 +1,30 @@
+% !TeX program = xelatex
+% =====================================================================
+%  FILE XEM TRƯỚC CỤC BỘ cho Chương 1 — KHÔNG thuộc template Overleaf.
+%  Chỉ dùng để biên dịch/preview Chuong/Chuong1.tex trên máy.
+%
+%  Build (1 lệnh, tự chạy bibtex):
+%      latexmk -xelatex preview-ch1.tex
+%  Hoặc thủ công 4 lượt:
+%      xelatex preview-ch1
+%      bibtex  preview-ch1
+%      xelatex preview-ch1
+%      xelatex preview-ch1
+%  Dọn file phụ:  latexmk -c preview-ch1.tex
+% =====================================================================
+\documentclass[12pt,a4paper]{report}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2cm]{geometry}
+
+\begin{document}
+
+\include{Chuong/Chuong1}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
