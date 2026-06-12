@@ -1,0 +1,78 @@
+% !TeX program = xelatex
+% =====================================================================
+%  TRANG BÌA — ĐỒ ÁN TỐT NGHIỆP (hướng Ứng dụng)
+%  Đại học Bách khoa Hà Nội — Trường Công nghệ Thông tin và Truyền thông
+%
+%  Cách dùng:
+%   • Biên dịch ĐỘC LẬP bằng XeLaTeX để xem trước (Overleaf: Menu →
+%     Compiler → XeLaTeX), HOẶC
+%   • Chép phần bên trong môi trường {titlepage} vào "file tex cho
+%     trang bìa" của template Overleaf đã copy.
+%
+%  >>> CHỈ CẦN SỬA CÁC GIÁ TRỊ TRONG KHỐI "THÔNG TIN CẦN ĐIỀN" <<<
+%  (mọi dòng có chữ TODO bên dưới)
+% =====================================================================
+\documentclass[12pt,a4paper]{report}
+
+\usepackage{fontspec}              % cần XeLaTeX hoặc LuaLaTeX
+\setmainfont{Times New Roman}      % font có đầy đủ dấu tiếng Việt
+\usepackage{graphicx}
+\usepackage{geometry}
+\geometry{a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2cm}
+
+% --------------------- THÔNG TIN CẦN ĐIỀN ----------------------------
+\newcommand{\DeTai}{Xây dựng ứng dụng học từ vựng tiếng Anh} % TODO: tên đề tài
+\newcommand{\Nganh}{Khoa học máy tính}                     % TODO: ngành
+\newcommand{\SinhVien}{Phạm Xuân Việt}                       % TODO: họ và tên
+\newcommand{\MSSV}{20225116}                                 % TODO: mã số sinh viên
+\newcommand{\Lop}{Khoa học máy tính 04\,--\,K67}             % TODO: lớp
+\newcommand{\GVHD}{TS. Nguyễn Thị Kim Anh}                                % TODO: giảng viên hướng dẫn
+\newcommand{\ThangNam}{6/2026}                               % TODO: tháng/năm
+% --------------------------------------------------------------------
+
+\begin{document}
+\begin{titlepage}
+\centering
+
+{\large ĐẠI HỌC BÁCH KHOA HÀ NỘI}\\[3pt]
+{\large \textbf{TRƯỜNG CÔNG NGHỆ THÔNG TIN VÀ TRUYỀN THÔNG}}\\[6pt]
+\rule{\textwidth}{0.6pt}
+
+\vspace{1.3cm}
+
+% Logo: đặt file logo vào thư mục images/logo.png.
+% Nếu chưa có, một khung trống ghi "LOGO" sẽ hiện ra thay thế.
+\IfFileExists{./images/logo.png}
+  {\includegraphics[width=3.2cm]{images/logo.png}}
+  {\framebox[3.2cm]{\rule{0pt}{3.2cm}\,LOGO\,}}
+
+\vspace{1.4cm}
+
+{\Huge \textbf{ĐỒ ÁN TỐT NGHIỆP}}\\[12pt]
+{\large Ngành \Nganh}
+
+\vspace{1.1cm}
+
+{\large Đề tài:}\\[10pt]
+{\LARGE \textbf{\MakeUppercase{\DeTai}}}
+
+\vfill
+
+{\large
+\begin{flushleft}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{}ll@{}}
+Sinh viên thực hiện: & \textbf{\SinhVien} \\
+Mã số sinh viên:     & \MSSV \\
+Lớp:                 & \Lop \\
+Giảng viên hướng dẫn: & \textbf{\GVHD} \\
+\end{tabular}
+\end{flushleft}
+}
+
+\vspace{1.3cm}
+
+{\large \textbf{HÀ NỘI, \ThangNam}}
+
+\end{titlepage}
+\end{document}

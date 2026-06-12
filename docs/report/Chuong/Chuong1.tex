@@ -1,0 +1,299 @@
+% =====================================================================
+%  CHƯƠNG 1 — TỔNG QUAN ĐỀ TÀI
+%
+%  File chương theo cấu trúc template Overleaf (hướng Ứng dụng).
+%  Cách dùng: đặt file này trong thư mục Chuong/ của template và thêm
+%      \include{Chuong/Chuong1}
+%  vào main.tex (sau phần mở đầu, trước các chương sau).
+%
+%  Các nguồn trích dẫn (\cite) trong chương nằm trong references.bib.
+%  KHÔNG hardcode số chương/mục/bảng — luôn dùng \label + \ref / \cite.
+% =====================================================================
+
+\chapter{TỔNG QUAN ĐỀ TÀI}
+\label{chuong:tong-quan}
+
+Chương này trình bày bối cảnh và lý do hình thành đề tài. Trước hết,
+mục~\ref{sec:dat-van-de} đặt ra bài toán học từ vựng tiếng Anh và những
+khó khăn cốt lõi của người học. Tiếp theo, mục~\ref{sec:khao-sat-hien-trang}
+khảo sát hiện trạng các phương pháp học từ vựng đang được sử dụng, còn
+mục~\ref{sec:he-thong-lien-quan} phân tích một số hệ thống tiêu biểu trên
+thị trường. Trên cơ sở đó, mục~\ref{sec:phan-tich-nhu-cau} phân tích nhu
+cầu thực tế và mục~\ref{sec:muc-tieu} xác định mục tiêu mà hệ thống đề xuất
+hướng tới.
+
+% ---------------------------------------------------------------------
+\section{Đặt vấn đề}
+\label{sec:dat-van-de}
+
+Trong quá trình học một ngoại ngữ, từ vựng đóng vai trò nền tảng. Người
+học có thể giao tiếp ở mức cơ bản khi nắm vững từ vựng dù ngữ pháp chưa
+hoàn chỉnh, nhưng rất khó diễn đạt ý tưởng nếu vốn từ nghèo nàn. Đối với
+tiếng Anh — ngôn ngữ phổ biến nhất trong học thuật, công việc và Internet
+— việc tích lũy và ghi nhớ một vốn từ vựng đủ rộng là yêu cầu thiết yếu
+đối với học sinh, sinh viên và người đi làm tại Việt Nam.
+
+Tuy nhiên, ghi nhớ từ vựng lâu dài là một thách thức. Theo nghiên cứu kinh
+điển của Ebbinghaus về \textit{đường cong lãng quên} (forgetting curve),
+phần lớn thông tin mới sẽ bị quên đi nhanh chóng nếu không được ôn tập lại
+một cách có hệ thống \cite{ebbinghaus1913memory}. Các nghiên cứu về tâm lý
+học nhận thức sau này cũng chỉ ra rằng việc \textit{ôn tập ngắt quãng}
+(spaced repetition) — phân bố các lần ôn tập theo những khoảng thời gian
+tăng dần thay vì học dồn — giúp cải thiện đáng kể khả năng ghi nhớ dài hạn
+so với cách học nhồi nhét \cite{cepeda2006distributed}. Đây chính là cơ sở
+khoa học cho các thuật toán lập lịch ôn tập được ứng dụng trong nhiều phần
+mềm học tập hiện đại.
+
+Mặc dù vậy, cách học từ vựng phổ biến hiện nay của nhiều người Việt vẫn
+còn nhiều hạn chế:
+
+\begin{itemize}
+  \item \textbf{Học thụ động và rời rạc:} ghi từ ra sổ tay hoặc tra từ
+        điển một lần rồi không có cơ chế nhắc ôn tập, dẫn đến nhanh quên.
+  \item \textbf{Không cá nhân hóa:} mọi từ được ôn với tần suất như nhau,
+        không phân biệt từ người học đã thuộc với từ còn yếu, gây lãng phí
+        thời gian.
+  \item \textbf{Thiếu luyện tập chủ động:} người học chủ yếu \emph{nhận
+        biết} nghĩa của từ (passive) mà ít có cơ hội \emph{sử dụng} từ
+        trong câu hoặc luyện phát âm, trong khi đây mới là kỹ năng quyết
+        định khả năng vận dụng thực tế.
+  \item \textbf{Khó duy trì động lực:} không có công cụ theo dõi tiến độ,
+        chuỗi ngày học hay mục tiêu, khiến người học dễ bỏ cuộc giữa chừng.
+\end{itemize}
+
+Từ những vấn đề trên, đề tài hướng tới việc \textbf{xây dựng một hệ thống
+ứng dụng học từ vựng tiếng Anh} kết hợp giữa cơ chế ôn tập ngắt quãng có
+cơ sở khoa học, khả năng cá nhân hóa nội dung học, các hình thức luyện tập
+chủ động (viết câu, luyện phát âm có chấm điểm) và công cụ theo dõi tiến độ,
+nhằm giúp người học ghi nhớ từ vựng hiệu quả và bền vững hơn.
+
+% ---------------------------------------------------------------------
+\section{Khảo sát hiện trạng}
+\label{sec:khao-sat-hien-trang}
+
+Để hiểu rõ bài toán, đề tài khảo sát các phương pháp và công cụ học từ
+vựng đang được người học sử dụng phổ biến, cùng những ưu, nhược điểm của
+chúng.
+
+\subsection{Các phương pháp học từ vựng phổ biến}
+
+\begin{itemize}
+  \item \textbf{Sổ tay và giáo trình giấy:} người học chép từ mới kèm
+        nghĩa và ví dụ ra giấy. Cách làm này đơn giản, không phụ thuộc
+        thiết bị, nhưng không có cơ chế nhắc ôn tập, khó tra cứu và không
+        thống kê được tiến độ.
+  \item \textbf{Thẻ ghi nhớ giấy (flashcard):} viết từ ở một mặt và nghĩa
+        ở mặt còn lại để tự kiểm tra. Hiệu quả hơn sổ tay nhờ tính chủ
+        động, nhưng việc sắp xếp thứ tự ôn tập hoàn toàn thủ công và tốn
+        công tạo thẻ.
+  \item \textbf{Ứng dụng từ điển:} tra nghĩa, phiên âm và phát âm nhanh
+        chóng, nhưng bản chất là công cụ tra cứu tức thời, không được
+        thiết kế để hỗ trợ ghi nhớ lâu dài.
+  \item \textbf{Ứng dụng học ngoại ngữ trên di động:} cung cấp lộ trình
+        học, trò chơi hóa và nhắc nhở. Đây là hướng tiếp cận hiện đại
+        nhất và là đối tượng được phân tích kỹ ở mục~\ref{sec:he-thong-lien-quan}.
+\end{itemize}
+
+\subsection{Những hạn chế chung}
+
+Qua khảo sát, các phương pháp truyền thống và một số công cụ hiện có còn
+tồn tại những hạn chế chung sau:
+
+\begin{enumerate}
+  \item Phần lớn dựa trên việc \emph{lặp lại máy móc}, thiếu thuật toán
+        lập lịch ôn tập tối ưu theo mức độ ghi nhớ của từng từ.
+  \item Nội dung học thường \emph{cố định và không thể tùy biến}; người
+        học khó tự bổ sung những từ vựng gắn với nhu cầu riêng (chuyên
+        ngành, công việc, sở thích).
+  \item Việc tạo nội dung học (định nghĩa, ví dụ, phiên âm, âm thanh) tốn
+        nhiều \emph{công sức thủ công}, là rào cản lớn khi muốn mở rộng
+        kho từ vựng cá nhân.
+  \item Các kỹ năng \emph{sản sinh ngôn ngữ} như đặt câu và phát âm hiếm
+        khi được luyện tập kèm phản hồi định lượng để người học biết mình
+        đang ở đâu.
+  \item Thiếu sự gắn kết giữa \emph{theo dõi tiến độ} và \emph{động lực}:
+        người học không có chuỗi ngày học, biểu đồ hoạt động hay yếu tố
+        cộng đồng để duy trì thói quen.
+\end{enumerate}
+
+Những hạn chế này là cơ sở để đề tài xác định các chức năng cần xây dựng,
+được trình bày trong mục~\ref{sec:phan-tich-nhu-cau}.
+
+% ---------------------------------------------------------------------
+\section{Các hệ thống liên quan}
+\label{sec:he-thong-lien-quan}
+
+Trên thị trường hiện có nhiều ứng dụng hỗ trợ học từ vựng và ngoại ngữ.
+Phần này phân tích một số hệ thống tiêu biểu để rút ra ưu, nhược điểm và
+khoảng trống mà đề tài có thể khai thác.
+
+\subsection{Duolingo}
+
+Duolingo là một trong những nền tảng học ngoại ngữ miễn phí phổ biến nhất,
+nổi bật với cách tiếp cận \textit{trò chơi hóa} (gamification): lộ trình
+theo cấp độ, điểm kinh nghiệm, chuỗi ngày học và bảng xếp hạng để duy trì
+động lực \cite{vonahn2013duolingo}. Tuy nhiên, Duolingo tập trung vào các
+bài học có sẵn theo lộ trình cố định; người học khó tự thêm danh sách từ
+vựng riêng và việc đào sâu một từ cụ thể (nhiều nghĩa, ví dụ, ngữ cảnh)
+còn hạn chế.
+
+\subsection{Anki}
+
+Anki là phần mềm thẻ ghi nhớ mã nguồn mở, áp dụng thuật toán ôn tập ngắt
+quãng SM-2 có nguồn gốc từ dự án SuperMemo \cite{wozniak1990optimization,
+anki}. Điểm mạnh của Anki là cơ chế lập lịch ôn tập mạnh mẽ và khả năng
+tùy biến thẻ rất cao. Nhược điểm là giao diện và quy trình cấu hình tương
+đối phức tạp với người mới; toàn bộ nội dung thẻ phải tự tạo thủ công; và
+Anki không tích hợp sẵn cơ chế luyện viết câu hay chấm điểm phát âm.
+
+\subsection{Quizlet}
+
+Quizlet cho phép tạo các bộ thẻ từ vựng và học qua nhiều chế độ (thẻ ghi
+nhớ, trắc nghiệm, ghép cặp) cùng tính năng chia sẻ bộ thẻ trong cộng đồng
+\cite{quizlet}. Quizlet dễ sử dụng và có kho nội dung do người dùng đóng
+góp lớn, nhưng cơ chế ôn tập ngắt quãng không sâu bằng Anki và cũng thiếu
+các hình thức luyện tập chủ động có chấm điểm.
+
+\subsection{So sánh và khoảng trống}
+
+Bảng~\ref{tab:so-sanh-he-thong} so sánh các hệ thống trên với hệ thống đề
+xuất theo những tiêu chí cốt lõi rút ra từ mục~\ref{sec:khao-sat-hien-trang}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.1cm}|p{2.0cm}|p{1.7cm}|p{1.9cm}|p{2.3cm}|}
+    \hline
+    \textbf{Tiêu chí} & \textbf{Duolingo} & \textbf{Anki} & \textbf{Quizlet} & \textbf{Hệ thống đề xuất} \\
+    \hline
+    Ôn tập ngắt quãng (SRS)          & Hạn chế & Mạnh   & Trung bình & Mạnh \\
+    \hline
+    Tùy biến / tạo từ vựng cá nhân   & Không   & Có     & Có         & Có \\
+    \hline
+    Hỗ trợ sinh nội dung bằng AI     & Không   & Không  & Hạn chế    & Có \\
+    \hline
+    Luyện viết câu có phản hồi       & Không   & Không  & Không      & Có \\
+    \hline
+    Luyện phát âm có chấm điểm       & Hạn chế & Không  & Không      & Có \\
+    \hline
+    Theo dõi tiến độ \& gamification & Mạnh    & Cơ bản & Cơ bản     & Có \\
+    \hline
+  \end{tabular}
+  \caption{So sánh các hệ thống học từ vựng tiêu biểu với hệ thống đề xuất}
+  \label{tab:so-sanh-he-thong}
+\end{table}
+
+Như Bảng~\ref{tab:so-sanh-he-thong} cho thấy, mỗi hệ thống có thế mạnh
+riêng nhưng chưa hệ thống nào đồng thời đáp ứng tốt cả bốn yếu tố: kho từ
+vựng vừa biên tập sẵn vừa cho phép cá nhân hóa, cơ chế ôn tập ngắt quãng
+mạnh, hỗ trợ sinh nội dung tự động bằng AI, và tích hợp luyện viết câu cùng
+luyện phát âm có chấm điểm. Đây chính là khoảng trống mà đề tài hướng tới.
+
+% ---------------------------------------------------------------------
+\section{Phân tích nhu cầu thực tế}
+\label{sec:phan-tich-nhu-cau}
+
+Từ hiện trạng và phân tích các hệ thống liên quan, đề tài xác định các nhu
+cầu thực tế cần được hệ thống đáp ứng, chia thành nhu cầu chức năng và nhu
+cầu phi chức năng.
+
+\subsection{Đối tượng người dùng}
+
+Hệ thống phục vụ hai nhóm người dùng chính:
+
+\begin{itemize}
+  \item \textbf{Người học (user):} người dùng cuối, có nhu cầu học và ôn
+        tập từ vựng, tạo từ vựng và bộ thẻ cá nhân, luyện tập và theo dõi
+        tiến độ của bản thân.
+  \item \textbf{Quản trị viên (admin):} người biên tập và quản lý kho từ
+        vựng hệ thống (nội dung được kiểm duyệt, dùng chung cho mọi người
+        học), quản lý chủ đề và bộ thẻ mẫu.
+\end{itemize}
+
+\subsection{Nhu cầu chức năng}
+
+\begin{enumerate}
+  \item \textbf{Quản lý tài khoản và xác thực:} đăng ký, đăng nhập bằng
+        email/mật khẩu và qua nhà cung cấp bên thứ ba (Google, Apple,
+        GitHub); quản lý hồ sơ và thiết lập mục tiêu học tập.
+  \item \textbf{Quản lý từ vựng:} mô hình hóa từ vựng phong phú gồm nhiều
+        nghĩa, bản dịch, câu ví dụ, phiên âm, âm thanh và gắn chủ đề; cho
+        phép người học tự tạo từ vựng cá nhân bên cạnh kho hệ thống.
+  \item \textbf{Tổ chức học liệu:} nhóm từ vựng thành các bộ thẻ (deck)
+        và chủ đề; hỗ trợ chia sẻ, sao chép bộ thẻ trong cộng đồng.
+  \item \textbf{Học theo cơ chế ôn tập ngắt quãng:} lập lịch ôn tập tự
+        động theo mức độ ghi nhớ từng từ, với nhiều dạng câu hỏi luyện tập
+        khác nhau trong một phiên học.
+  \item \textbf{Luyện tập chủ động có phản hồi:} luyện đặt câu với từ vựng
+        và luyện phát âm, đều có cơ chế chấm điểm để người học nhận phản
+        hồi định lượng.
+  \item \textbf{Hỗ trợ tạo nội dung bằng AI:} sinh nhanh dữ liệu cho một
+        từ chỉ từ dạng nguyên thể, nhập hàng loạt và làm giàu dữ liệu từ
+        điển, sinh âm thanh phát âm tự động, nhằm giảm công sức tạo nội
+        dung thủ công.
+  \item \textbf{Theo dõi tiến độ và tạo động lực:} thống kê số từ theo
+        trạng thái học, chuỗi ngày học, biểu đồ hoạt động và bảng xếp hạng
+        cộng đồng.
+\end{enumerate}
+
+\subsection{Nhu cầu phi chức năng}
+
+\begin{itemize}
+  \item \textbf{Bảo mật:} bảo vệ tài khoản và dữ liệu người dùng bằng cơ
+        chế xác thực bằng token, phân quyền theo vai trò và kiểm soát truy
+        cập theo quyền sở hữu dữ liệu.
+  \item \textbf{Hiệu năng và khả năng mở rộng:} đáp ứng tốt khi số lượng
+        người dùng và lượng từ vựng tăng; các tác vụ nặng (sinh nội dung,
+        sinh âm thanh) được xử lý bất đồng bộ để không chặn luồng chính.
+  \item \textbf{Tính nhất quán dữ liệu:} đảm bảo toàn vẹn dữ liệu giữa từ
+        vựng, bộ thẻ và tiến độ học của người dùng.
+  \item \textbf{Khả năng bảo trì và mở rộng:} kiến trúc rõ ràng, API có
+        phiên bản hóa để dễ dàng phát triển thêm tính năng về sau.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\section{Mục tiêu của hệ thống}
+\label{sec:muc-tieu}
+
+\subsection{Mục tiêu tổng quát}
+
+Mục tiêu tổng quát của đề tài là \textbf{xây dựng hệ thống phía máy chủ
+(backend) cho ứng dụng học từ vựng tiếng Anh}, cung cấp đầy đủ các dịch vụ
+qua giao diện lập trình ứng dụng (API) để kết hợp giữa kho từ vựng được
+biên tập, khả năng cá nhân hóa, cơ chế ôn tập ngắt quãng có cơ sở khoa
+học, hỗ trợ sinh nội dung bằng AI và các hình thức luyện tập chủ động có
+chấm điểm, qua đó giúp người học ghi nhớ và vận dụng từ vựng hiệu quả hơn.
+
+\subsection{Mục tiêu cụ thể}
+
+\begin{enumerate}
+  \item Xây dựng phân hệ \textbf{tài khoản và xác thực} hỗ trợ nhiều
+        phương thức đăng nhập, phân quyền người dùng và quản trị viên.
+  \item Thiết kế \textbf{mô hình dữ liệu từ vựng} đầy đủ (nhiều nghĩa, bản
+        dịch, ví dụ, phiên âm, âm thanh, chủ đề) cho cả kho hệ thống và từ
+        vựng cá nhân.
+  \item Xây dựng phân hệ \textbf{bộ thẻ và chủ đề}, hỗ trợ chia sẻ và sao
+        chép trong cộng đồng.
+  \item Cài đặt \textbf{động cơ học theo ôn tập ngắt quãng} dựa trên thuật
+        toán SM-2 kết hợp các bước học (learning steps), với nhiều dạng
+        câu hỏi luyện tập trong một phiên học.
+  \item Xây dựng các phân hệ \textbf{luyện viết câu} và \textbf{luyện phát
+        âm} có cơ chế chấm điểm và phản hồi.
+  \item Tích hợp các tính năng \textbf{hỗ trợ bằng AI}: tạo nhanh và nhập
+        hàng loạt từ vựng, làm giàu dữ liệu từ điển và sinh âm thanh phát
+        âm tự động.
+  \item Xây dựng phân hệ \textbf{theo dõi tiến độ}: thống kê, chuỗi ngày
+        học, biểu đồ hoạt động và bảng xếp hạng.
+  \item Đảm bảo các \textbf{yêu cầu phi chức năng} về bảo mật, hiệu năng,
+        khả năng mở rộng và tính nhất quán dữ liệu.
+\end{enumerate}
+
+\subsection{Phạm vi đề tài}
+
+Đề tài tập trung vào việc thiết kế và hiện thực hóa \textbf{hệ thống phía
+máy chủ (backend)} cùng các API phục vụ toàn bộ nghiệp vụ nêu trên; phần
+giao diện người dùng (ứng dụng khách) được xem là bên tiêu thụ API và nằm
+ngoài trọng tâm trình bày của báo cáo. Các chương tiếp theo sẽ lần lượt
+trình bày cơ sở lý thuyết, phân tích và thiết kế hệ thống, cũng như quá
+trình hiện thực hóa và kiểm thử.
