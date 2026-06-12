@@ -1,0 +1,557 @@
+% =====================================================================
+%  CHƯƠNG 3 — CƠ SỞ LÝ THUYẾT VÀ CÔNG NGHỆ SỬ DỤNG
+%
+%  File chương theo cấu trúc template Overleaf (hướng Ứng dụng).
+%  Cách dùng: đặt file này trong thư mục Chuong/ của template và thêm
+%      \include{Chuong/Chuong3}
+%  vào main.tex (sau Chương 2).
+%
+%  GHI CHÚ VỀ HÌNH VẼ: dùng macro \figph{<tên-file>}{<tỉ-lệ-rộng>}{<chú-thích>}{<nhãn>}
+%  (đã khai báo ở Chương 2, khai báo lại bằng \providecommand để an toàn nếu
+%  biên dịch độc lập). Macro tự chèn ảnh thật nếu tệp tồn tại trong images/,
+%  ngược lại hiển thị khung giữ chỗ để báo cáo vẫn biên dịch được.
+%
+%  KHÔNG hardcode số chương/mục/bảng/hình/công thức — luôn dùng \label + \ref / \cite.
+% =====================================================================
+
+% --- Macro tiện ích (idempotent — không định nghĩa lại nếu đã có) ------
+\providecommand{\code}[1]{\texttt{\detokenize{#1}}} % in định danh snake_case an toàn
+\providecommand{\figph}[4]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{images/#1}%
+      {\includegraphics[width=#2\textwidth,height=0.82\textheight,keepaspectratio]{#1}}%
+      {\setlength{\fboxsep}{10pt}\fbox{\begin{minipage}[c][3.6cm][c]{#2\textwidth}\centering\itshape Sơ đồ minh hoạ --- chèn tệp ảnh \code{images/#1} vào thư mục \code{images/}.\end{minipage}}}%
+    \caption{#3}%
+    \label{#4}%
+  \end{figure}}
+
+\chapter{CƠ SỞ LÝ THUYẾT VÀ CÔNG NGHỆ SỬ DỤNG}
+\label{chuong:co-so-ly-thuyet}
+
+Chương~\ref{chuong:phan-tich-thiet-ke} đã trình bày kết quả phân tích và
+thiết kế hệ thống. Chương này hệ thống hoá những \textit{cơ sở lý thuyết}
+và \textit{công nghệ} làm nền tảng cho các quyết định thiết kế và hiện thực
+hoá đó, qua đó lý giải vì sao mỗi công nghệ được lựa chọn. Trước hết,
+mục~\ref{sec:co-so-ly-thuyet} trình bày các cơ sở lý thuyết cốt lõi: ôn tập
+ngắt quãng và thuật toán SM-2, khung trình độ CEFR, kiến trúc REST, ánh xạ
+đối tượng--quan hệ và mô hình ngôn ngữ lớn. Tiếp theo,
+mục~\ref{sec:tong-quan-cong-nghe} tổng quan ngăn xếp công nghệ và
+mục~\ref{sec:kien-truc-tong-quan} phân tích các kiểu kiến trúc được áp dụng.
+Các mục~\ref{sec:cong-nghe-csdl}--\ref{sec:cong-cu-phat-trien} đi sâu lần
+lượt vào công nghệ cơ sở dữ liệu, frontend, backend, cơ chế xác thực và
+phân quyền, công nghệ trí tuệ nhân tạo và bộ công cụ phát triển.
+
+% =====================================================================
+\section{Cơ sở lý thuyết}
+\label{sec:co-so-ly-thuyet}
+
+\subsection{Ôn tập ngắt quãng và đường cong lãng quên}
+\label{subsec:srs-theory}
+
+Cơ sở khoa học của động cơ học trong hệ thống là hiện tượng
+\textit{đường cong lãng quên} (forgetting curve) do Ebbinghaus phát hiện:
+khả năng ghi nhớ một thông tin mới suy giảm theo hàm mũ theo thời gian nếu
+không được củng cố \cite{ebbinghaus1913memory}. Một cách mô hình hoá đơn
+giản, mức ghi nhớ \( R \) còn lại sau khoảng thời gian \( t \) kể từ lần
+học gần nhất được biểu diễn qua công thức~\eqref{eq:forgetting}:
+
+\begin{equation}
+  \label{eq:forgetting}
+  R(t) = e^{-\,t/S},
+\end{equation}
+
+trong đó \( S \) là \textit{độ bền trí nhớ} (memory stability) --- càng ôn
+tập đúng lúc, \( S \) càng lớn và thông tin được giữ lâu hơn. Hệ quả thực
+tiễn là: thay vì học nhồi nhét, người học nên ôn lại mỗi từ tại những
+\textit{thời điểm đến hạn} được giãn dần. Các nghiên cứu về hiệu ứng giãn
+cách (spacing effect) khẳng định ôn tập ngắt quãng cải thiện rõ rệt khả
+năng ghi nhớ dài hạn so với học dồn \cite{cepeda2006distributed}. Đây là
+nền tảng lý thuyết cho \textit{hệ thống ôn tập ngắt quãng} (Spaced
+Repetition System --- SRS) mà hệ thống hiện thực hoá.
+
+\subsection{Thuật toán lập lịch ôn tập SM-2}
+\label{subsec:sm2-theory}
+
+Để quyết định \textit{khi nào} ôn lại mỗi từ, hệ thống áp dụng thuật toán
+\textbf{SM-2} có nguồn gốc từ dự án SuperMemo \cite{wozniak1990optimization}.
+Mỗi cặp (người dùng, từ) được mô tả bằng ba đại lượng: hệ số dễ nhớ
+\textit{easiness factor} \( EF \) (khởi tạo \( 2{,}5 \)), số lần ôn đúng
+liên tiếp \( n \) và khoảng cách ôn tập \( I \) (tính theo ngày). Sau mỗi
+lượt ôn, người học (ở đây là kết quả trả lời trong phiên) được quy về một
+\textit{điểm chất lượng} \( q \in \{0,1,\dots,5\} \).
+
+Hệ số \( EF \) được cập nhật theo công thức~\eqref{eq:sm2-ef}, có chặn dưới
+\( 1{,}3 \) để khoảng ôn tập không co lại quá nhanh:
+
+\begin{equation}
+  \label{eq:sm2-ef}
+  EF' = EF + \big(0{,}1 - (5-q)\,(0{,}08 + (5-q)\cdot 0{,}02)\big),
+  \qquad EF' \geq 1{,}3 .
+\end{equation}
+
+Khoảng cách ôn tập kế tiếp được tính theo công thức~\eqref{eq:sm2-interval}:
+
+\begin{equation}
+  \label{eq:sm2-interval}
+  I(n) =
+  \begin{cases}
+    1, & n = 1,\\[2pt]
+    6, & n = 2,\\[2pt]
+    \big\lceil I(n-1)\times EF' \big\rceil, & n > 2 .
+  \end{cases}
+\end{equation}
+
+Nếu người học trả lời sai (\( q < 3 \)), bộ đếm \( n \) được đặt lại về 0 và
+từ phải học lại từ đầu; ngược lại \( n \) tăng và khoảng ôn tập giãn dần
+theo \( EF' \). Trong hệ thống, SM-2 được \textbf{mở rộng bằng các bước học}
+(learning steps): một từ mới phải vượt qua một chuỗi câu hỏi từ dễ đến khó
+trong phiên trước khi được giao cho SM-2 lập lịch dài hạn; điểm chất lượng
+\( q \) được suy ra từ độ chính xác ở bước cuối của mỗi từ. Trạng thái thẻ
+nhờ đó chuyển dịch \code{new} \( \to \) \code{learning} \( \to \)
+\code{review} \( \to \) \code{mastered}, phù hợp với biểu đồ hoạt động đã
+trình bày ở Chương~\ref{chuong:phan-tich-thiet-ke}.
+
+\subsection{Khung tham chiếu trình độ ngôn ngữ CEFR}
+\label{subsec:cefr-theory}
+
+Hệ thống chuẩn hoá độ khó của từ vựng và trình độ người học theo
+\textbf{Khung tham chiếu trình độ ngôn ngữ chung châu Âu} (Common European
+Framework of Reference for Languages --- CEFR) do Hội đồng châu Âu ban hành
+\cite{coe2001cefr}. CEFR chia năng lực ngôn ngữ thành sáu bậc từ
+\( A1, A2 \) (sơ cấp), \( B1, B2 \) (trung cấp) đến \( C1, C2 \) (cao cấp).
+Mỗi từ trong kho được gắn một bậc CEFR và mỗi người học khai báo trình độ
+của mình; nhờ đó hệ thống lựa chọn từ và gợi ý bộ thẻ phù hợp với năng lực
+hiện tại, đồng thời mô hình ngôn ngữ chấm điểm bậc CEFR mà một câu luyện
+tập thể hiện.
+
+\subsection{Kiến trúc REST và dịch vụ web}
+\label{subsec:rest-theory}
+
+Giao diện lập trình ứng dụng (API) của hệ thống tuân theo phong cách kiến
+trúc \textbf{REST} (Representational State Transfer) do Fielding đề xuất
+\cite{fielding2000rest}. Các ràng buộc cốt lõi của REST mà hệ thống áp dụng
+gồm: mô hình \textit{client--server} tách bạch máy khách và máy chủ; tính
+\textit{phi trạng thái} (stateless) --- mỗi yêu cầu tự mang đủ thông tin xác
+thực (token), máy chủ không lưu trạng thái phiên; định danh tài nguyên bằng
+\textit{URI} và thao tác qua các phương thức HTTP chuẩn (GET, POST, PATCH,
+DELETE) với ngữ nghĩa thống nhất; và trao đổi dữ liệu dưới dạng
+\textbf{JSON}. Tính phi trạng thái là điều kiện để mở rộng tầng API theo
+chiều ngang (đáp ứng yêu cầu NFR-03 trong
+Bảng~\ref{tab:nfr}). API còn được \textit{phiên bản hoá theo URI}
+(tiền tố \code{/v1}) nhằm tiến hoá hợp đồng mà không phá vỡ máy khách cũ.
+
+\subsection{Ánh xạ đối tượng--quan hệ (ORM)}
+\label{subsec:orm-theory}
+
+Để thu hẹp khoảng cách giữa mô hình hướng đối tượng trong mã nguồn và mô
+hình quan hệ trong cơ sở dữ liệu, hệ thống dùng kỹ thuật \textbf{ánh xạ đối
+tượng--quan hệ} (Object--Relational Mapping --- ORM). Mỗi bảng được khai
+báo dưới dạng một lớp \textit{thực thể} (entity), mỗi dòng tương ứng một đối
+tượng và các quan hệ khoá ngoại được biểu diễn bằng liên kết giữa các thực
+thể. ORM giúp lập trình viên thao tác dữ liệu bằng mã có kiểu (typed) thay
+vì viết câu lệnh SQL thủ công, đồng thời quản lý tiến hoá lược đồ bằng cơ
+chế \textit{migration} có thể phiên bản hoá. Đánh đổi của ORM là một lớp
+trừu tượng phụ và nguy cơ truy vấn kém hiệu quả nếu lạm dụng; hệ thống khắc
+phục bằng cách đánh chỉ mục các truy vấn nóng và truy vấn tường minh khi cần.
+
+\subsection{Mô hình ngôn ngữ lớn và sinh nội dung}
+\label{subsec:llm-theory}
+
+Các chức năng hỗ trợ bằng AI (làm giàu dữ liệu từ điển, chấm điểm câu luyện
+tập) dựa trên \textbf{mô hình ngôn ngữ lớn} (Large Language Model --- LLM).
+LLM là mạng nơ-ron kiến trúc \textit{Transformer} được huấn luyện trên khối
+dữ liệu văn bản khổng lồ để dự đoán token kế tiếp, nhờ đó có khả năng sinh
+văn bản mạch lạc, dịch và đánh giá ngôn ngữ theo chỉ dẫn (prompt). Hệ thống
+sử dụng họ mô hình mở \textbf{Gemma} của Google DeepMind
+\cite{gemma2025technical}. Trong nghiệp vụ, LLM được giao vai trò có kiểm
+soát: sinh nghĩa, ví dụ, bản dịch theo định dạng yêu cầu và chấm điểm câu
+theo \textit{rubric}; kết quả do AI sinh ra đối với kho hệ thống luôn phải
+qua bước \textit{duyệt} của quản trị viên trước khi xuất bản, nhằm kiểm soát
+chất lượng và hạn chế lỗi "ảo giác" (hallucination) của mô hình.
+
+% =====================================================================
+\section{Tổng quan công nghệ sử dụng}
+\label{sec:tong-quan-cong-nghe}
+
+Trên cơ sở lý thuyết ở mục~\ref{sec:co-so-ly-thuyet}, hệ thống lựa chọn ngăn
+xếp công nghệ được tổ chức theo nhiều tầng. Bảng~\ref{tab:tech-overview}
+tóm tắt công nghệ chủ chốt của từng tầng cùng vai trò của nó;
+Hình~\ref{fig:tech-stack} minh hoạ ngăn xếp này một cách trực quan. Các mục
+tiếp theo phân tích chi tiết từng nhóm công nghệ.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{5.0cm}|p{6.4cm}|}
+    \hline
+    \textbf{Tầng} & \textbf{Công nghệ chính} & \textbf{Vai trò} \\
+    \hline
+    Frontend & Next.js, React, TypeScript, Tailwind CSS, shadcn/ui & Ứng dụng khách tiêu thụ API, dựng giao diện người dùng. \\
+    \hline
+    Backend & NestJS 11, TypeScript, TypeORM & Cung cấp API REST, chứa nghiệp vụ và truy cập dữ liệu. \\
+    \hline
+    Cơ sở dữ liệu & PostgreSQL & Lưu trữ dữ liệu quan hệ có ràng buộc toàn vẹn. \\
+    \hline
+    Hàng đợi \& nền & Redis, BullMQ & Hàng đợi công việc và worker xử lý bất đồng bộ. \\
+    \hline
+    Xác thực & JWT, Passport, bcrypt, OAuth/OIDC & Xác thực, phân quyền và bảo vệ tài khoản. \\
+    \hline
+    Trí tuệ nhân tạo & Gemma~3 (Google AI Studio), Edge TTS, vi dịch vụ chấm phát âm & Sinh nội dung, sinh âm thanh, chấm điểm luyện tập. \\
+    \hline
+    Hạ tầng phụ trợ & Cloudinary, SMTP, Docker & Lưu trữ media, gửi email, đóng gói triển khai. \\
+    \hline
+  \end{tabular}
+  \caption{Tổng quan ngăn xếp công nghệ của hệ thống}
+  \label{tab:tech-overview}
+\end{table}
+
+% --- PlantUML gợi ý cho Hình ngăn xếp công nghệ ----------------------
+% @startuml
+% rectangle "FRONTEND\nNext.js + React + TypeScript\nTailwind CSS + shadcn/ui" as FE
+% rectangle "BACKEND (API)\nNestJS 11 + TypeScript\nController - Service - Repository (TypeORM)" as BE
+% rectangle "XỬ LÝ NỀN\nWorker (BullMQ) + Redis" as WK
+% database "PostgreSQL" as DB
+% cloud "DỊCH VỤ AI / NGOÀI\nGemma 3, Edge TTS, Cloudinary,\nDV chấm phát âm, OAuth, SMTP" as EXT
+% FE --> BE : HTTPS / JSON (REST)
+% BE --> DB
+% BE --> WK : enqueue
+% WK --> DB
+% WK --> EXT
+% BE --> EXT
+% @enduml
+\figph{tech-stack.png}{0.8}{Ngăn xếp công nghệ của hệ thống theo tầng}{fig:tech-stack}
+
+% =====================================================================
+\section{Tổng quan kiến trúc hệ thống}
+\label{sec:kien-truc-tong-quan}
+
+Mục này điểm lại các \textit{kiểu kiến trúc} (architectural styles) làm nền
+cho thiết kế đã trình bày chi tiết ở mục kiến trúc của
+Chương~\ref{chuong:phan-tich-thiet-ke} (xem Hình~\ref{fig:kien-truc}).
+
+\begin{itemize}
+  \item \textbf{Monolith mô-đun hoá (modular monolith):} toàn bộ backend là
+        một tiến trình triển khai duy nhất nhưng được chia thành các mô-đun
+        nghiệp vụ tách bạch (xem Bảng~\ref{tab:modules}). So với kiến trúc
+        vi dịch vụ (microservices), cách này đơn giản hơn khi triển khai và
+        vận hành ở quy mô đồ án, đồng thời vẫn giữ ranh giới mô-đun rõ ràng
+        để có thể tách dịch vụ về sau.
+  \item \textbf{Kiến trúc phân tầng (layered):} trong mỗi mô-đun, mã nguồn
+        chia theo các tầng \textit{Controller} (tiếp nhận HTTP, kiểm tra
+        DTO) \( \to \) \textit{Service} (nghiệp vụ) \( \to \)
+        \textit{Repository} (truy cập dữ liệu qua ORM). Việc tách tầng giúp
+        kiểm thử và bảo trì độc lập từng mối quan tâm.
+  \item \textbf{Client--server phi trạng thái (REST):} máy khách
+        (Next.js) và máy chủ giao tiếp qua HTTP/JSON theo REST; máy chủ phi
+        trạng thái nên có thể nhân bản để mở rộng theo chiều ngang.
+  \item \textbf{Xử lý bất đồng bộ kiểu nhà sản xuất--người tiêu thụ
+        (producer--consumer):} tiến trình API đóng vai trò nhà sản xuất, đẩy
+        công việc nặng vào hàng đợi; tiến trình worker là người tiêu thụ,
+        xử lý nền. Mẫu này giữ cho luồng yêu cầu chính luôn nhanh và ổn định.
+\end{itemize}
+
+Sự kết hợp bốn kiểu kiến trúc trên cho phép hệ thống vừa đơn giản khi triển
+khai, vừa đáp ứng các yêu cầu phi chức năng về hiệu năng, khả năng mở rộng
+và khả năng bảo trì trong Bảng~\ref{tab:nfr}.
+
+% =====================================================================
+\section{Công nghệ cơ sở dữ liệu}
+\label{sec:cong-nghe-csdl}
+
+Hệ thống dùng hệ quản trị cơ sở dữ liệu quan hệ \textbf{PostgreSQL}
+\cite{postgresql2024}. PostgreSQL được chọn vì là mã nguồn mở, trưởng thành,
+tuân thủ chuẩn SQL và hỗ trợ tốt các đặc tính mà thiết kế dữ liệu
+(mục thiết kế CSDL của Chương~\ref{chuong:phan-tich-thiet-ke}) yêu cầu:
+
+\begin{itemize}
+  \item \textbf{Giao dịch ACID:} bảo đảm tính nguyên tử cho các thao tác
+        ghi nhiều bảng (ví dụ tạo phiên học, cập nhật tiến độ và ghi nhật
+        ký), đáp ứng yêu cầu độ tin cậy.
+  \item \textbf{Khoá chính \code{uuid}:} dùng kiểu định danh duy nhất toàn
+        cục cho mọi bảng, thuận lợi cho phân tán và tránh lộ số lượng bản ghi.
+  \item \textbf{Kiểu \code{timestamptz}:} lưu mốc thời gian kèm múi giờ,
+        bảo đảm nhất quán cho thống kê chuỗi ngày học và lịch ôn tập.
+  \item \textbf{Ràng buộc toàn vẹn:} khoá ngoại, ràng buộc duy nhất và quy
+        tắc xoá lan truyền (\code{CASCADE} / \code{SET NULL}) giữ dữ liệu
+        nhất quán giữa từ vựng, bộ thẻ và tiến độ.
+  \item \textbf{Chỉ mục:} đánh chỉ mục các cột truy vấn nóng (lemma, trạng
+        thái ôn tập, thời điểm đến hạn) để bảo đảm hiệu năng khi dữ liệu lớn.
+\end{itemize}
+
+Bên cạnh PostgreSQL, hệ thống dùng \textbf{Redis} làm kho khoá--giá trị
+trong bộ nhớ, đóng vai trò \textit{nơi lưu trữ hàng đợi} cho BullMQ
+\cite{redis2024}. Việc truy cập cơ sở dữ liệu từ phía backend được thực hiện
+qua \textbf{TypeORM} --- một thư viện ORM cho TypeScript/Node.js
+\cite{typeorm2024} --- sẽ được trình bày ở mục~\ref{sec:cong-nghe-backend}.
+Lược đồ cơ sở dữ liệu được quản lý bằng các \textit{migration} đặt trong thư
+mục mã nguồn và chạy qua công cụ dòng lệnh của TypeORM, giúp tiến hoá lược
+đồ một cách có kiểm soát và tái lập được giữa các môi trường.
+
+% =====================================================================
+\section{Công nghệ Frontend}
+\label{sec:cong-nghe-frontend}
+
+Ứng dụng khách (frontend) là một dự án độc lập, đóng vai trò bên tiêu thụ
+API REST của backend. Frontend được xây dựng bằng \textbf{Next.js} ---
+framework React hỗ trợ kết xuất phía máy chủ (Server-Side Rendering --- SSR)
+và sinh trang tĩnh (Static Site Generation --- SSG) \cite{nextjs2024} ---
+trên nền thư viện giao diện \textbf{React} \cite{react2024} và ngôn ngữ
+\textbf{TypeScript}. Việc dùng chung TypeScript ở cả frontend và backend
+giúp thống nhất kiểu dữ liệu của hợp đồng API giữa hai phía. Phần tạo kiểu
+giao diện dùng \textbf{Tailwind CSS} --- framework CSS theo hướng tiện ích
+(utility-first) \cite{tailwind2024} --- kết hợp bộ thành phần
+\textbf{shadcn/ui}. Bảng~\ref{tab:frontend-libs} liệt kê các thư viện
+frontend chính.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.2cm}|p{10.4cm}|}
+    \hline
+    \textbf{Công nghệ / thư viện} & \textbf{Vai trò} \\
+    \hline
+    Next.js, React, TypeScript & Khung ứng dụng, dựng giao diện theo thành phần, định tuyến và kết xuất trang. \\
+    \hline
+    Tailwind CSS, shadcn/ui & Hệ thống tạo kiểu tiện ích và bộ thành phần giao diện tái sử dụng. \\
+    \hline
+    \code{zod} & Khai báo và kiểm tra ràng buộc dữ liệu (biểu mẫu, phản hồi API) phía máy khách. \\
+    \hline
+    \code{lucide-react}, \code{sonner} & Bộ biểu tượng và thông báo nổi (toast) cho phản hồi thao tác. \\
+    \hline
+    \code{next-themes}, \code{input-otp} & Hỗ trợ chế độ sáng/tối và ô nhập mã OTP (xác minh email). \\
+    \hline
+  \end{tabular}
+  \caption{Các công nghệ và thư viện frontend chính}
+  \label{tab:frontend-libs}
+\end{table}
+
+Vì trọng tâm của báo cáo là hệ thống phía máy chủ (xem phạm vi đề tài ở
+Chương~\ref{chuong:tong-quan}), phần frontend chỉ được trình bày ở mức ngăn
+xếp công nghệ; frontend giao tiếp với backend hoàn toàn qua các API đã đặc
+tả, không truy cập trực tiếp cơ sở dữ liệu.
+
+% =====================================================================
+\section{Công nghệ Backend}
+\label{sec:cong-nghe-backend}
+
+Backend được xây dựng bằng \textbf{NestJS}, một framework Node.js cho
+TypeScript theo hướng mô-đun, dựa trên các nguyên lý \textit{tiêm phụ thuộc}
+(dependency injection) và lập trình hướng khía cạnh \cite{nestjs2024}.
+NestJS phù hợp với kiến trúc phân tầng đã nêu ở
+mục~\ref{sec:kien-truc-tong-quan}: mỗi mô-đun đóng gói controller, service
+và provider riêng; các \textit{guard}, \textit{pipe} và
+\textit{interceptor} xử lý những mối quan tâm xuyên suốt (xác thực, kiểm tra
+đầu vào, biến đổi phản hồi) một cách khai báo. Toàn bộ mã nguồn viết bằng
+\textbf{TypeScript} ở chế độ \textit{strict}, giúp phát hiện lỗi kiểu ngay
+khi biên dịch. Bảng~\ref{tab:backend-libs} liệt kê các thành phần backend
+chính.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.6cm}|p{10.0cm}|}
+    \hline
+    \textbf{Công nghệ / thư viện} & \textbf{Vai trò} \\
+    \hline
+    NestJS 11 & Framework backend: tổ chức mô-đun, định tuyến, tiêm phụ thuộc, phiên bản hoá API theo URI. \\
+    \hline
+    TypeORM & Ánh xạ đối tượng--quan hệ tới PostgreSQL; quản lý thực thể và migration. \\
+    \hline
+    \code{class-validator}, \code{class-transformer} & Kiểm tra ràng buộc DTO và biến đổi dữ liệu vào/ra qua \code{ValidationPipe} toàn cục (loại bỏ trường lạ). \\
+    \hline
+    BullMQ + Redis & Hàng đợi công việc và worker xử lý nền (làm giàu từ vựng, sinh âm thanh, chấm điểm luyện tập). \\
+    \hline
+    \code{@nestjs/throttler} & Giới hạn tần suất (rate limiting) cho các điểm cuối nhạy cảm như đăng nhập. \\
+    \hline
+    \code{nodemailer} & Gửi email (mã xác minh) qua SMTP. \\
+    \hline
+    \code{pdf-parse}, \code{xlsx} & Trích xuất văn bản từ tệp PDF và bảng tính phục vụ nhập từ vựng hàng loạt. \\
+    \hline
+  \end{tabular}
+  \caption{Các công nghệ và thư viện backend chính}
+  \label{tab:backend-libs}
+\end{table}
+
+Phần xử lý bất đồng bộ được hiện thực bằng \textbf{BullMQ} --- thư viện hàng
+đợi công việc chạy trên Redis \cite{bullmq2024}. Tiến trình API và tiến
+trình worker chia sẻ chung cơ sở dữ liệu và hàng đợi nhưng được khởi chạy
+độc lập (lệnh \code{start} và \code{start:worker}), phản ánh đúng mô hình
+producer--consumer ở mục~\ref{sec:kien-truc-tong-quan}.
+
+% =====================================================================
+\section{Cơ chế xác thực và phân quyền}
+\label{sec:xac-thuc-phan-quyen}
+
+Phân hệ tài khoản áp dụng nhiều lớp kỹ thuật bảo mật, đáp ứng yêu cầu
+NFR-01 trong Bảng~\ref{tab:nfr}.
+
+\subsection{Băm mật khẩu}
+\label{subsec:bcrypt}
+
+Mật khẩu người dùng không bao giờ lưu ở dạng văn bản thuần mà được băm bằng
+\textbf{bcrypt} --- hàm băm mật khẩu thích nghi, có \textit{muối} (salt) và
+hệ số chi phí điều chỉnh được để chống tấn công vét cạn
+\cite{provos1999bcrypt}. Khi đăng nhập, hệ thống so khớp mật khẩu nhập vào
+với bản băm đã lưu thay vì giải mã.
+
+\subsection{Xác thực bằng JSON Web Token}
+\label{subsec:jwt}
+
+Sau khi xác thực thành công, hệ thống cấp một cặp token theo chuẩn
+\textbf{JSON Web Token (JWT)} \cite{rfc7519}: một \textit{access token} sống
+ngắn để gọi API và một \textit{refresh token} sống dài để làm mới phiên.
+JWT là chuỗi tự chứa, được ký số nên máy chủ có thể xác minh tính toàn vẹn
+mà không cần tra cứu trạng thái phiên --- đúng tinh thần phi trạng thái của
+REST (mục~\ref{subsec:rest-theory}). Thư viện \textbf{Passport} (qua
+\code{passport-jwt}) đảm nhiệm việc trích và xác minh token trong mỗi yêu
+cầu. Để có thể \textit{thu hồi}, refresh token được lưu dưới dạng băm trong
+bảng \code{refresh_tokens} và bị vô hiệu khi người dùng đăng xuất.
+
+\subsection{Phân quyền theo vai trò và quyền sở hữu}
+\label{subsec:rbac}
+
+Việc cấp quyền dựa trên hai cơ chế bổ trợ:
+
+\begin{itemize}
+  \item \textbf{Theo vai trò (role-based):} mỗi tài khoản mang vai trò
+        \code{user} hoặc \code{admin}; một \textit{guard} kiểm tra vai trò
+        để chặn các thao tác quản trị đối với người dùng thường.
+  \item \textbf{Theo quyền sở hữu (ownership-based):} với tài nguyên cá
+        nhân (từ vựng riêng, bộ thẻ, tiến độ), hệ thống kiểm tra người gọi
+        có đúng là chủ sở hữu hay không trước khi cho phép truy cập.
+\end{itemize}
+
+\subsection{Đăng nhập qua nhà cung cấp bên thứ ba (OAuth/OIDC)}
+\label{subsec:oauth}
+
+Ngoài email/mật khẩu, hệ thống cho phép đăng nhập qua \textbf{Google},
+\textbf{Apple} và \textbf{GitHub} bằng giao thức \textbf{OAuth~2.0} và lớp
+nhận dạng \textbf{OpenID Connect} (OIDC) \cite{rfc6749}. Token danh tính do
+nhà cung cấp cấp được hệ thống xác minh, sau đó liên kết với một bản ghi
+trong bảng \code{user_identities}; nhờ vậy một người dùng có thể đăng nhập
+bằng nhiều phương thức mà vẫn chung một tài khoản.
+
+\subsection{Chấm điểm phiên học phi trạng thái bằng HMAC}
+\label{subsec:hmac}
+
+Một điểm đặc thù về bảo mật là cơ chế \textbf{chấm điểm phi trạng thái} cho
+phiên học. Thay vì lưu trạng thái phiên trên máy chủ, mỗi câu hỏi khi sinh
+ra được \textit{ký} bằng \textbf{HMAC} (Hash-based Message Authentication
+Code) \cite{rfc2104} dựa trên một khoá bí mật của máy chủ. Khi người học nộp
+đáp án, máy chủ xác minh lại chữ ký để bảo đảm câu hỏi không bị giả mạo hay
+hết hạn, rồi mới suy lại đáp án đúng và chấm điểm. Cách làm này vừa giữ tính
+phi trạng thái (thuận lợi cho mở rộng ngang) vừa chống gian lận.
+
+% =====================================================================
+\section{Công nghệ trí tuệ nhân tạo}
+\label{sec:cong-nghe-ai}
+
+Các chức năng thông minh của hệ thống dựa trên một số dịch vụ AI được tích
+hợp qua tầng worker xử lý nền. Bảng~\ref{tab:ai-services} tổng hợp các dịch
+vụ này.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.6cm}|p{4.0cm}|p{6.8cm}|}
+    \hline
+    \textbf{Dịch vụ} & \textbf{Loại} & \textbf{Vai trò trong hệ thống} \\
+    \hline
+    Gemma~3 (Google AI Studio) & Mô hình ngôn ngữ lớn (LLM) & Sinh nghĩa, ví dụ, bản dịch; chấm điểm câu luyện viết theo rubric kèm bậc CEFR. \\
+    \hline
+    Microsoft Edge TTS & Tổng hợp giọng nói (TTS) & Sinh âm thanh phát âm tự động cho từ vựng. \\
+    \hline
+    Vi dịch vụ chấm phát âm & Mô hình chấm điểm âm vị & Nhận bản ghi âm, trả điểm tổng và điểm từng phoneme. \\
+    \hline
+  \end{tabular}
+  \caption{Các dịch vụ trí tuệ nhân tạo được tích hợp}
+  \label{tab:ai-services}
+\end{table}
+
+\subsection{Sinh nội dung và chấm điểm bằng Gemma~3}
+\label{subsec:gemma}
+
+Hệ thống gọi mô hình \textbf{Gemma~3} qua nền tảng Google AI Studio
+\cite{gemma2025technical}. Mô hình được sử dụng cho hai nhóm tác vụ:
+(i)~\textit{làm giàu dữ liệu từ điển} --- từ một lemma, sinh các nghĩa, câu
+ví dụ và bản dịch theo định dạng có cấu trúc; và (ii)~\textit{chấm điểm câu
+luyện tập} --- đánh giá câu người học đặt theo thang điểm 0--100 kèm bậc
+CEFR và nhận xét. Mọi lời gọi LLM đều là tác vụ nặng nên được đẩy sang
+worker xử lý bất đồng bộ và bị giới hạn theo hạn mức ngày để bảo vệ khoá API
+dùng chung.
+
+\subsection{Tổng hợp giọng nói và chấm điểm phát âm}
+\label{subsec:tts-pron}
+
+Âm thanh phát âm của từ vựng được sinh tự động bằng \textbf{Microsoft Edge
+TTS} (qua thư viện \code{msedge-tts}) rồi tải lên kho media. Chức năng luyện
+phát âm được phục vụ bởi một \textbf{vi dịch vụ} riêng viết bằng Python
+(FastAPI): backend đóng vai trò proxy mỏng, chuyển tiếp bản ghi âm của người
+học tới vi dịch vụ để nhận điểm tổng và điểm từng âm vị, sau đó lưu lại lịch
+sử luyện tập. Việc tách phần chấm phát âm thành dịch vụ độc lập giúp cô lập
+các phụ thuộc nặng về xử lý tín hiệu/học máy khỏi tiến trình backend chính.
+
+% =====================================================================
+\section{Công cụ phát triển}
+\label{sec:cong-cu-phat-trien}
+
+Quá trình phát triển sử dụng bộ công cụ trong Bảng~\ref{tab:dev-tools} nhằm
+bảo đảm chất lượng mã nguồn, khả năng tái lập môi trường và năng suất làm
+việc.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.0cm}|p{10.6cm}|}
+    \hline
+    \textbf{Công cụ} & \textbf{Mục đích} \\
+    \hline
+    Git \& GitHub & Quản lý phiên bản mã nguồn và cộng tác qua pull request. \\
+    \hline
+    Docker \& Docker Compose & Đóng gói và khởi chạy nhất quán PostgreSQL, Redis, pgAdmin phục vụ phát triển và triển khai \cite{docker2024}. \\
+    \hline
+    NestJS CLI & Sinh khung mô-đun/controller/service và biên dịch, chạy ứng dụng. \\
+    \hline
+    TypeORM CLI & Sinh, chạy và hoàn tác migration của lược đồ cơ sở dữ liệu. \\
+    \hline
+    ESLint \& Prettier & Phân tích tĩnh và định dạng mã TypeScript theo quy ước thống nhất. \\
+    \hline
+    Jest \& Supertest & Kiểm thử đơn vị và kiểm thử tích hợp (end-to-end) cho API. \\
+    \hline
+    pgAdmin & Quản trị và truy vấn trực quan cơ sở dữ liệu PostgreSQL. \\
+    \hline
+    Overleaf (\LaTeX) & Biên soạn báo cáo đồ án theo mẫu của nhà trường. \\
+    \hline
+  \end{tabular}
+  \caption{Các công cụ phát triển sử dụng trong đề tài}
+  \label{tab:dev-tools}
+\end{table}
+
+Mã nguồn được quản lý bằng \textbf{Git} và lưu trên GitHub; mỗi tính năng
+hoặc sửa lỗi được phát triển trên một nhánh riêng rồi hợp nhất qua pull
+request. Môi trường phụ thuộc (PostgreSQL, Redis, pgAdmin) được mô tả bằng
+\textbf{Docker Compose} \cite{docker2024}, giúp tái lập nhanh và đồng nhất
+giữa các máy. Chất lượng mã được kiểm soát bằng kiểm tra kiểu của TypeScript,
+\textbf{ESLint} và \textbf{Prettier}; phần kiểm thử dùng \textbf{Jest} cho
+kiểm thử đơn vị và \textbf{Supertest} cho kiểm thử tích hợp các điểm cuối
+API. Cuối cùng, báo cáo đồ án được biên soạn bằng \textbf{\LaTeX} trên
+Overleaf theo đúng mẫu quy định.
+
+% =====================================================================
+\section{Kết chương}
+\label{sec:ket-chuong-3}
+
+Chương này đã trình bày các cơ sở lý thuyết --- ôn tập ngắt quãng và thuật
+toán SM-2, khung trình độ CEFR, kiến trúc REST, ánh xạ đối tượng--quan hệ và
+mô hình ngôn ngữ lớn --- cùng ngăn xếp công nghệ được lựa chọn cho từng tầng
+của hệ thống, từ cơ sở dữ liệu, frontend, backend, cơ chế xác thực và phân
+quyền, các dịch vụ trí tuệ nhân tạo đến bộ công cụ phát triển. Những lựa
+chọn này trực tiếp phục vụ các quyết định thiết kế ở
+Chương~\ref{chuong:phan-tich-thiet-ke} và là tiền đề cho quá trình hiện
+thực hoá và kiểm thử được trình bày ở chương tiếp theo.
