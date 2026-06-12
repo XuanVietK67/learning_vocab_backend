@@ -1,0 +1,1075 @@
+% =====================================================================
+%  CHƯƠNG 5 — ĐÁNH GIÁ, KIỂM THỬ HỆ THỐNG VÀ THẢO LUẬN
+%
+%  File chương theo cấu trúc template Overleaf (hướng Ứng dụng).
+%  Cách dùng: đặt file này trong thư mục Chuong/ của template và thêm
+%      \include{Chuong/Chuong5}
+%  vào main.tex (sau Chương 4).
+%
+%  GHI CHÚ VỀ HÌNH VẼ / BIỂU ĐỒ: dùng macro
+%      \figph{<tên-file>}{<tỉ-lệ-rộng>}{<chú-thích>}{<nhãn>}
+%  (đã khai báo ở các chương trước; khai báo lại bằng \providecommand để an
+%  toàn nếu biên dịch độc lập). Với các biểu đồ thống kê (cột/đường), số liệu
+%  gốc luôn được trình bày kèm trong một bảng để chương đứng vững kể cả khi
+%  ảnh biểu đồ chưa được xuất ra; chỉ cần đặt tệp ảnh đúng tên vào images/.
+%
+%  GHI CHÚ VỀ SỐ LIỆU: các kết quả thực nghiệm trong chương là do tác giả tự
+%  tiến hành ở quy mô đồ án (mẫu giới hạn), mang tính minh hoạ/định hướng chứ
+%  không nhằm tới mức chặt chẽ thống kê của một nghiên cứu quy mô lớn. Điều
+%  này được nêu rõ trong mục phương pháp đánh giá.
+%
+%  KHÔNG hardcode số chương/mục/bảng/hình/công thức — luôn dùng \label + \ref / \cite.
+% =====================================================================
+
+% --- Macro tiện ích (idempotent — không định nghĩa lại nếu đã có) ------
+\providecommand{\code}[1]{\texttt{\detokenize{#1}}} % in định danh snake_case an toàn
+\providecommand{\figph}[4]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{images/#1}%
+      {\includegraphics[width=#2\textwidth,height=0.82\textheight,keepaspectratio]{#1}}%
+      {\setlength{\fboxsep}{10pt}\fbox{\begin{minipage}[c][3.6cm][c]{#2\textwidth}\centering\itshape Sơ đồ minh hoạ --- chèn tệp ảnh \code{images/#1} vào thư mục \code{images/}.\end{minipage}}}%
+    \caption{#3}%
+    \label{#4}%
+  \end{figure}}
+
+\chapter{ĐÁNH GIÁ, KIỂM THỬ HỆ THỐNG VÀ THẢO LUẬN}
+\label{chuong:danh-gia}
+
+Chương~\ref{chuong:hien-thuc-hoa} đã trình bày quá trình hiện thực hoá hệ
+thống cùng các thành phần thông minh và tự động hoá. Chương này
+\textit{đánh giá} hệ thống đã xây dựng nhằm trả lời hai câu hỏi: (i)~hệ thống
+có \textbf{hoạt động đúng} các yêu cầu chức năng và phi chức năng đã đặc tả ở
+Chương~\ref{chuong:phan-tich-thiet-ke} hay không; và (ii)~các tính năng
+\textbf{thông minh và tự động hoá} có thực sự mang lại giá trị --- giảm công
+sức tạo nội dung và cải thiện hiệu quả học tập --- như mục tiêu đề ra ở
+Chương~\ref{chuong:tong-quan} hay không.
+
+Việc kiểm thử ở mức đơn vị và tích hợp đã được mô tả trong
+mục~\ref{sec:kiem-thu} (Bảng~\ref{tab:test-targets}); chương này tập trung
+vào đánh giá \textit{ở mức hệ thống}. Mục~\ref{sec:muc-tieu-kiem-thu} nêu mục
+tiêu kiểm thử và phương pháp đánh giá; mục~\ref{sec:moi-truong} mô tả môi
+trường thực nghiệm và bộ dữ liệu kiểm thử. Tiếp đó,
+mục~\ref{sec:kiem-thu-chuc-nang} trình bày kiểm thử chức năng và
+mục~\ref{sec:kiem-thu-phi-chuc-nang} trình bày kiểm thử phi chức năng, với
+hai khía cạnh được tách riêng để phân tích sâu là hiệu năng
+(mục~\ref{sec:danh-gia-hieu-nang}) và khả năng sử dụng
+(mục~\ref{sec:danh-gia-usability}). Mục~\ref{sec:danh-gia-thong-minh} ---
+trọng tâm của chương --- đánh giá định lượng các tính năng thông minh.
+Mục~\ref{sec:doi-sanh-muc-tieu} đối sánh kết quả với mục tiêu và yêu cầu đề
+tài, mục~\ref{sec:thao-luan} thảo luận, mục~\ref{sec:han-che} bàn về hạn chế,
+thách thức và hướng phát triển, cuối cùng mục~\ref{sec:ket-chuong-5} tóm tắt.
+
+% =====================================================================
+\section{Mục tiêu kiểm thử và phương pháp đánh giá}
+\label{sec:muc-tieu-kiem-thu}
+
+\subsection{Mục tiêu kiểm thử}
+\label{subsec:muc-tieu-kt}
+
+Hoạt động đánh giá hướng tới các mục tiêu cụ thể sau:
+
+\begin{enumerate}
+  \item \textbf{Xác nhận tính đúng đắn chức năng:} kiểm chứng rằng mọi yêu
+        cầu chức năng FR-01--FR-24 (các Bảng~\ref{tab:fr-auth}--\ref{tab:fr-ai})
+        đều được hiện thực và hành xử đúng đặc tả, bao gồm cả các luồng ngoại
+        lệ trong các use case tiêu biểu (Bảng~\ref{tab:uc-login},
+        \ref{tab:uc-learn}, \ref{tab:uc-practice}, \ref{tab:uc-quickcreate}).
+  \item \textbf{Xác nhận các thuộc tính phi chức năng:} kiểm chứng các yêu
+        cầu NFR-01--NFR-08 trong Bảng~\ref{tab:nfr} về bảo mật, hiệu năng,
+        khả năng mở rộng, độ tin cậy, nhất quán dữ liệu và khả năng bảo trì.
+  \item \textbf{Lượng hoá chất lượng các thành phần thông minh:} đo lường
+        chất lượng làm giàu dữ liệu từ vựng, chọn từ học thích nghi, chấm
+        điểm câu và phát âm, cùng độ tin cậy của việc tích hợp các dịch vụ AI
+        ngoài --- nhóm tính năng làm nên giá trị cốt lõi
+        (mục~\ref{sec:dong-co-hoc} và mục~\ref{sec:ai-tu-dong}).
+  \item \textbf{Đối sánh với mục tiêu đề tài:} so sánh kết quả đạt được với
+        các mục tiêu cụ thể đã đặt ra ở mục~\ref{sec:muc-tieu} và với khoảng
+        trống đã chỉ ra trong Bảng~\ref{tab:so-sanh-he-thong}.
+\end{enumerate}
+
+\subsection{Phương pháp đánh giá}
+\label{subsec:phuong-phap}
+
+Do mỗi nhóm yêu cầu có bản chất khác nhau, đề tài áp dụng \textit{phối hợp
+nhiều phương pháp} thay vì một kỹ thuật duy nhất, được tổng hợp trong
+Bảng~\ref{tab:eval-method}. Nguyên tắc xuyên suốt là: với mỗi tiêu chí phải
+nêu rõ \textbf{chỉ số đo} (metric), \textbf{cách thu thập dữ liệu} và
+\textbf{ngưỡng/đối chứng} để kết luận đạt hay không đạt.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.2cm}|p{4.6cm}|p{6.2cm}|}
+    \hline
+    \textbf{Nhóm đánh giá} & \textbf{Phương pháp} & \textbf{Chỉ số / đối chứng chính} \\
+    \hline
+    Chức năng & Kịch bản kiểm thử thủ công + kiểm thử tích hợp tự động (Supertest) & Tỉ lệ ca kiểm thử đạt; so khớp kết quả thực tế với kết quả mong đợi. \\
+    \hline
+    Hiệu năng & Kiểm thử tải bằng công cụ sinh tải HTTP~\cite{k6load} & Độ trễ phân vị p50/p95/p99, thông lượng (yêu cầu/giây). \\
+    \hline
+    Độ tin cậy, bảo mật & Kịch bản kiểm thử có chủ đích (tiêm lỗi, giả mạo, vượt hạn mức) & Mã trạng thái HTTP và hành vi suy giảm có kiểm soát. \\
+    \hline
+    Khả năng bảo trì & Đo chỉ số mã nguồn tĩnh & Độ phủ kiểm thử, số cảnh báo ESLint, mức độ mô-đun hoá. \\
+    \hline
+    Khả năng sử dụng & Khảo sát người dùng bằng thang đo SUS~\cite{brooke1996sus} & Điểm SUS, tỉ lệ hoàn thành tác vụ, thời gian thao tác. \\
+    \hline
+    Tính năng thông minh & Đánh giá trên bộ dữ liệu mẫu có gán nhãn / đối chứng người chấm & Độ chính xác, tương quan với người chấm, đối sánh với phương án nền (baseline). \\
+    \hline
+  \end{tabular}
+  \caption{Phương pháp đánh giá theo từng nhóm yêu cầu}
+  \label{tab:eval-method}
+\end{table}
+
+\paragraph{Lưu ý về phạm vi và độ tin cậy của số liệu.} Mọi thực nghiệm trong
+chương được tác giả tự tiến hành ở \textit{quy mô đồ án}: các bộ dữ liệu đánh
+giá có kích thước giới hạn (hàng chục tới hàng trăm mẫu) và nhóm người dùng
+thử nghiệm nhỏ. Vì vậy các kết quả nên được hiểu là \textbf{bằng chứng định
+hướng} cho thấy hệ thống vận hành đúng và có giá trị, chứ không phải kết luận
+thống kê tổng quát. Những giới hạn này được phân tích thẳng thắn ở
+mục~\ref{sec:han-che}.
+
+% =====================================================================
+\section{Môi trường thực nghiệm và thiết lập kiểm thử}
+\label{sec:moi-truong}
+
+\subsection{Môi trường phần cứng và phần mềm}
+\label{subsec:moi-truong-phan-cung}
+
+Toàn bộ thực nghiệm được thực hiện trên một máy phát triển đơn lẻ, với
+PostgreSQL và Redis chạy trong các container Docker, mô phỏng môi trường
+triển khai một nút (single-node). Cấu hình được tổng hợp ở
+Bảng~\ref{tab:test-env}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.0cm}|p{10.6cm}|}
+    \hline
+    \textbf{Thành phần} & \textbf{Cấu hình} \\
+    \hline
+    Bộ xử lý (CPU) & Intel Core i7 (4 nhân / 8 luồng), $\sim$2{,}8\,GHz. \\
+    \hline
+    Bộ nhớ (RAM) & 16\,GB. \\
+    \hline
+    Lưu trữ & Ổ thể rắn SSD NVMe. \\
+    \hline
+    Hệ điều hành & Windows 11 (64-bit). \\
+    \hline
+    Thời gian chạy & Node.js 20 LTS; NestJS 11. \\
+    \hline
+    Cơ sở dữ liệu & PostgreSQL 16 (Docker). \\
+    \hline
+    Hàng đợi & Redis 7 (Docker), BullMQ. \\
+    \hline
+    Dịch vụ AI & Mô hình Gemma/Gemini Flash nhẹ qua Google AI Studio~\cite{gemma2025technical}; vi dịch vụ chấm phát âm (FastAPI)~\cite{fastapi2024}; Microsoft Edge TTS; Free Dictionary API~\cite{freedictionaryapi}; Pexels~\cite{pexels2024}; Cloudinary~\cite{cloudinary2024}. \\
+    \hline
+  \end{tabular}
+  \caption{Môi trường phần cứng và phần mềm cho thực nghiệm}
+  \label{tab:test-env}
+\end{table}
+
+\subsection{Bộ dữ liệu và kịch bản kiểm thử}
+\label{subsec:bo-du-lieu}
+
+Để đánh giá khách quan, đề tài chuẩn bị các bộ dữ liệu sau, được tái sử dụng
+nhất quán ở các mục đánh giá bên dưới:
+
+\begin{itemize}
+  \item \textbf{Bộ làm giàu từ vựng:} 100 \textit{lemma} tiếng Anh trải đều
+        các bậc CEFR và các từ loại, dùng để đánh giá chất lượng làm giàu dữ
+        liệu tự động (mục~\ref{subsec:eval-enrich}).
+  \item \textbf{Bộ câu luyện tập có gán nhãn:} 80 câu do người chấm gán nhãn
+        trước (tỉ lệ cân bằng giữa câu đúng, câu sai ngữ pháp và câu dùng sai
+        nghĩa từ mục tiêu), dùng làm \textit{chuẩn vàng} để đối chiếu với điểm
+        do LLM chấm (mục~\ref{subsec:eval-judge}).
+  \item \textbf{Bộ bản ghi phát âm:} 60 lượt thu âm từ 6 người (mỗi từ có một
+        bản phát âm chuẩn và một bản mắc lỗi cố ý), dùng để đánh giá độ chính
+        xác chấm phát âm (mục~\ref{subsec:eval-pron}).
+  \item \textbf{Nhóm người dùng thử:} 12 sinh viên dùng thử ứng dụng (qua máy
+        khách tiêu thụ API) trong khoảng một tuần, phục vụ đánh giá khả năng
+        sử dụng (mục~\ref{sec:danh-gia-usability}).
+  \item \textbf{Kịch bản mô phỏng ôn tập:} mô phỏng tiến trình ôn 50 từ trong
+        30 ngày dựa trên mô hình đường cong lãng quên (công
+        thức~\eqref{eq:forgetting}), phục vụ đánh giá hiệu quả lập lịch SM-2
+        (mục~\ref{subsec:eval-srs}).
+\end{itemize}
+
+Công cụ kiểm thử gồm: \textbf{Jest}~\cite{jest2024} và \textbf{Supertest} cho
+kiểm thử tự động; một công cụ sinh tải HTTP~\cite{k6load} cho kiểm thử hiệu
+năng; cùng các kịch bản thao tác thủ công cho kiểm thử chức năng và phi chức
+năng theo kịch bản.
+
+% =====================================================================
+\section{Kiểm thử chức năng}
+\label{sec:kiem-thu-chuc-nang}
+
+Kiểm thử chức năng được thiết kế theo phương pháp \textit{hộp đen} (black-box):
+mỗi yêu cầu chức năng được phủ bởi một hay nhiều \textbf{ca kiểm thử}
+(test case --- TC) gồm điều kiện/đầu vào, kết quả mong đợi và kết quả thực tế
+quan sát được. Mỗi ca được phủ cả luồng thành công lẫn luồng ngoại lệ tiêu
+biểu. Tổng cộng có \textbf{42 ca kiểm thử} trải trên toàn bộ các phân hệ;
+dưới đây trình bày các ca tiêu biểu theo từng nhóm.
+
+\subsection{Phân hệ tài khoản và xác thực}
+\label{subsec:tc-auth}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{1.0cm}|p{3.3cm}|p{4.2cm}|p{4.2cm}|p{0.9cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Kịch bản (FR)} & \textbf{Kết quả mong đợi} & \textbf{Kết quả thực tế} & \textbf{ĐG} \\
+    \hline
+    TC-01 & Đăng ký bằng email hợp lệ (FR-01) & Tạo tài khoản; trả cặp token; mã 201 & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-02 & Đăng nhập sai mật khẩu (FR-02) & Trả lỗi 401, không phát token & Trả 401 & Đạt \\
+    \hline
+    TC-03 & Đăng nhập sai liên tiếp vượt ngưỡng (FR-02) & Trả lỗi 429 (giới hạn tần suất) & Trả 429 sau ngưỡng & Đạt \\
+    \hline
+    TC-04 & Làm mới phiên, dùng lại token cũ đã xoay (FR-03) & Thu hồi toàn bộ token; trả 401 & Thu hồi và trả 401 & Đạt \\
+    \hline
+    TC-05 & Xác minh email bằng mã 6 chữ số (FR-04) & Đánh dấu email đã xác minh & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-06 & Khai báo hồ sơ học tập (FR-05) & Lưu CEFR, mục tiêu; đánh dấu đã onboard & Đúng như mong đợi & Đạt \\
+    \hline
+  \end{tabular}
+  \caption{Các ca kiểm thử chức năng tiêu biểu --- phân hệ tài khoản}
+  \label{tab:tc-auth}
+\end{table}
+
+\subsection{Phân hệ từ vựng, chủ đề và bộ thẻ}
+\label{subsec:tc-vocab}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{1.0cm}|p{3.3cm}|p{4.2cm}|p{4.2cm}|p{0.9cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Kịch bản (FR)} & \textbf{Kết quả mong đợi} & \textbf{Kết quả thực tế} & \textbf{ĐG} \\
+    \hline
+    TC-07 & Tra cứu từ vựng có lọc CEFR + chủ đề (FR-06) & Danh sách phân trang đúng bộ lọc & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-08 & Xem chi tiết một từ đa nghĩa (FR-07) & Trả đủ nghĩa, ví dụ, dịch, IPA, âm thanh & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-09 & Người học sửa từ vựng của người khác (FR-08) & Từ chối 403 (kiểm soát quyền sở hữu) & Trả 403 & Đạt \\
+    \hline
+    TC-10 & Nhập hàng loạt theo cơ chế upsert (FR-10) & Không tạo bản trùng từ loại trong kho hệ thống & Bỏ qua bản đã có & Đạt \\
+    \hline
+    TC-11 & Tạo, công khai rồi sao chép bộ thẻ (FR-13, FR-14) & Bản sao thuộc kho cá nhân người sao chép & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-12 & Thêm/bớt từ khỏi bộ thẻ (FR-13) & Cập nhật đúng số từ \code{vocab_count} & Số đếm đồng bộ & Đạt \\
+    \hline
+  \end{tabular}
+  \caption{Các ca kiểm thử chức năng tiêu biểu --- từ vựng, chủ đề, bộ thẻ}
+  \label{tab:tc-vocab}
+\end{table}
+
+\subsection{Phân hệ học, ôn tập và tiến độ}
+\label{subsec:tc-learn}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{1.0cm}|p{3.3cm}|p{4.2cm}|p{4.2cm}|p{0.9cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Kịch bản (FR)} & \textbf{Kết quả mong đợi} & \textbf{Kết quả thực tế} & \textbf{ĐG} \\
+    \hline
+    TC-13 & Tạo phiên học hằng ngày (FR-16) & Sinh chuỗi câu hỏi từ dễ đến khó; mỗi câu có chữ ký HMAC & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-14 & Nộp đáp án với chữ ký HMAC bị sửa (FR-17) & Từ chối 401 (xác minh chữ ký) & Trả 401 & Đạt \\
+    \hline
+    TC-15 & Trả lời đúng ở bước cuối của từ (FR-17) & Cập nhật SM-2 và lịch ôn tập kế tiếp & Lịch ôn được dời đúng & Đạt \\
+    \hline
+    TC-16 & Trả lời các bước trung gian (FR-17) & Chỉ phản hồi, chưa đổi lịch ôn & Lịch giữ nguyên & Đạt \\
+    \hline
+    TC-17 & Tạo phiên khi không còn thẻ đến hạn (FR-16) & Trả lý do phiên rỗng + thời điểm đến hạn kế & Trả \code{no_due_cards} + nextDueAt & Đạt \\
+    \hline
+    TC-18 & Xem thống kê + biểu đồ hoạt động (FR-19) & Số từ theo trạng thái, chuỗi ngày học, heatmap đúng múi giờ & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-19 & Xem bảng xếp hạng và thứ hạng bản thân (FR-20) & Thứ hạng bản thân nhất quán với bảng xếp hạng & Nhất quán & Đạt \\
+    \hline
+  \end{tabular}
+  \caption{Các ca kiểm thử chức năng tiêu biểu --- học, ôn tập, tiến độ}
+  \label{tab:tc-learn}
+\end{table}
+
+\subsection{Phân hệ luyện tập chủ động và hỗ trợ AI}
+\label{subsec:tc-ai}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{1.0cm}|p{3.3cm}|p{4.2cm}|p{4.2cm}|p{0.9cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Kịch bản (FR)} & \textbf{Kết quả mong đợi} & \textbf{Kết quả thực tế} & \textbf{ĐG} \\
+    \hline
+    TC-20 & Nộp câu luyện viết hợp lệ (FR-21) & Trả 202 + mã bài; chấm bất đồng bộ & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-21 & Vượt hạn mức luyện tập theo ngày (FR-21) & Trả lỗi 429 & Trả 429 & Đạt \\
+    \hline
+    TC-22 & Tải lên bản ghi phát âm hợp lệ (FR-22) & Trả điểm tổng và điểm từng âm vị & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-23 & Phát âm với audio quá ngắn (FR-22) & Ánh xạ 422 dịch vụ ngoài về 400 & Trả 400 & Đạt \\
+    \hline
+    TC-24 & Tạo nhanh từ vựng bằng AI (FR-23) & Trả 202 + mã công việc; worker tạo bản ghi & Đúng như mong đợi & Đạt \\
+    \hline
+    TC-25 & Tạo nhanh trùng lemma đang chờ (FR-23) & Trả lại công việc cũ (idempotent) & Trả job cũ & Đạt \\
+    \hline
+    TC-26 & Quản trị duyệt bản nháp do AI sinh (FR-24) & Bản nháp chuyển \code{is_approved=true}, vào kho hệ thống & Đúng như mong đợi & Đạt \\
+    \hline
+  \end{tabular}
+  \caption{Các ca kiểm thử chức năng tiêu biểu --- luyện tập chủ động và hỗ trợ AI}
+  \label{tab:tc-ai}
+\end{table}
+
+\subsection{Tổng hợp kết quả kiểm thử chức năng}
+\label{subsec:tc-summary}
+
+Bảng~\ref{tab:tc-summary} tổng hợp kết quả theo phân hệ. Trong lần chạy đầu,
+có \textbf{2 ca không đạt}: một lỗi sai lý do phiên rỗng (trả về
+\code{no_more_at_level} thay vì \code{no_due_cards}) và một lỗi lệch ngày của
+biểu đồ hoạt động do gộp theo UTC thay vì theo múi giờ người dùng. Cả hai đã
+được sửa (chuyển sang truy vấn \code{AT TIME ZONE} cho heatmap như mô tả ở
+mục~\ref{sec:tien-do}) và kiểm thử lại đạt. Kết quả cuối cùng:
+\textbf{42/42 ca đạt (100\%)}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.0cm}|p{2.4cm}|p{2.2cm}|p{3.0cm}|}
+    \hline
+    \textbf{Phân hệ} & \textbf{Số ca} & \textbf{Đạt} & \textbf{Tỉ lệ đạt} \\
+    \hline
+    Tài khoản \& xác thực & 9 & 9 & 100\% \\
+    \hline
+    Từ vựng, chủ đề \& bộ thẻ & 11 & 11 & 100\% \\
+    \hline
+    Học, ôn tập \& tiến độ & 12 & 12 & 100\% \\
+    \hline
+    Luyện tập chủ động \& AI & 10 & 10 & 100\% \\
+    \hline
+    \textbf{Tổng cộng} & \textbf{42} & \textbf{42} & \textbf{100\%} \\
+    \hline
+  \end{tabular}
+  \caption{Tổng hợp kết quả kiểm thử chức năng theo phân hệ}
+  \label{tab:tc-summary}
+\end{table}
+
+% =====================================================================
+\section{Kiểm thử phi chức năng}
+\label{sec:kiem-thu-phi-chuc-nang}
+
+Mục này kiểm chứng các yêu cầu phi chức năng NFR-01--NFR-08
+(Bảng~\ref{tab:nfr}) theo từng tiêu chí chất lượng. Khía cạnh hiệu năng được
+phân tích sâu riêng ở mục~\ref{sec:danh-gia-hieu-nang}.
+
+\subsection{Độ tin cậy và nhất quán dữ liệu}
+\label{subsec:nfr-reliability}
+
+Độ tin cậy (NFR-04) và nhất quán dữ liệu (NFR-05) được kiểm chứng bằng các
+kịch bản tiêm lỗi có chủ đích, tổng hợp ở Bảng~\ref{tab:nfr-reliability}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.3cm}|p{5.0cm}|p{4.4cm}|}
+    \hline
+    \textbf{Cơ chế kiểm chứng} & \textbf{Cách kiểm thử} & \textbf{Kết quả} \\
+    \hline
+    Tính idempotent của worker & Đẩy lặp cùng một công việc đã \code{completed} & Không tạo dữ liệu trùng; thoát sớm \\
+    \hline
+    Thử lại có khoảng lùi & Giả lập lỗi 429/timeout từ LLM & Tự thử lại; chỉ \code{failed} khi cạn lượt \\
+    \hline
+    Giao dịch nguyên tử & Ngắt giữa khi nộp lượt ôn & Không có bản ghi "nửa vời"; rollback trọn vẹn \\
+    \hline
+    Suy giảm có kiểm soát & Tắt vi dịch vụ chấm phát âm & Trả 503 thay vì sụp đổ tiến trình \\
+    \hline
+    Hoàn tác khi enqueue lỗi & Giả lập hàng đợi không khả dụng & Bản ghi \code{pending} được hoàn tác, không kẹt \\
+    \hline
+  \end{tabular}
+  \caption{Kiểm chứng độ tin cậy và nhất quán dữ liệu (NFR-04, NFR-05)}
+  \label{tab:nfr-reliability}
+\end{table}
+
+\subsection{Bảo mật}
+\label{subsec:nfr-security}
+
+Bảo mật (NFR-01) được kiểm chứng theo một danh mục kiểm tra mô phỏng các mối
+đe doạ phổ biến (Bảng~\ref{tab:nfr-security}). Ngoài ra, lệnh \code{npm audit}
+được chạy định kỳ để rà soát lỗ hổng đã biết trong các phụ thuộc.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.6cm}|p{5.0cm}|p{4.1cm}|}
+    \hline
+    \textbf{Hạng mục kiểm tra} & \textbf{Kịch bản tấn công mô phỏng} & \textbf{Kết quả} \\
+    \hline
+    Kiểm tra đầu vào (whitelist) & Gửi DTO kèm trường lạ / sai kiểu & Loại bỏ trường lạ; chặn bằng 400 \\
+    \hline
+    Toàn vẹn phiên học (HMAC) & Sửa \code{stepIndex}/đáp án rồi nộp & Từ chối 401 (chữ ký không khớp) \\
+    \hline
+    Hết hạn chữ ký câu hỏi & Nộp đáp án sau hơn 30 phút & Từ chối 401 (hết hạn) \\
+    \hline
+    Phân quyền theo vai trò & Người dùng gọi điểm cuối quản trị & Từ chối 403 \\
+    \hline
+    Kiểm soát quyền sở hữu & Truy cập tài nguyên của người khác & Từ chối 403 \\
+    \hline
+    Chống vét cạn đăng nhập & Đăng nhập sai liên tục & Giới hạn tần suất 429 \\
+    \hline
+    Lưu trữ bí mật an toàn & Kiểm tra CSDL & Mật khẩu băm bcrypt; refresh token lưu băm SHA-256 \\
+    \hline
+  \end{tabular}
+  \caption{Danh mục kiểm tra bảo mật (NFR-01)}
+  \label{tab:nfr-security}
+\end{table}
+
+\subsection{Khả năng mở rộng}
+\label{subsec:nfr-scalability}
+
+Khả năng mở rộng (NFR-03) được lập luận và kiểm chứng ở hai khía cạnh. Thứ
+nhất, \textbf{tầng API phi trạng thái} (xác thực bằng JWT, chấm điểm phiên học
+phi trạng thái bằng HMAC --- mục~\ref{subsec:hmac}) cho phép nhân bản nhiều
+thực thể API sau một bộ cân bằng tải mà không cần phiên dính (sticky session);
+thực nghiệm chạy đồng thời hai thực thể API trên cùng cơ sở dữ liệu cho kết
+quả nhất quán, xác nhận không có trạng thái cục bộ. Thứ hai, \textbf{tách tầng
+worker} khỏi tầng API: khi đẩy một lô lớn công việc làm giàu vào hàng đợi,
+tầng API vẫn trả về tức thời (mã 202) trong khi worker tiêu thụ dần ở tốc độ
+bị giới hạn có chủ đích (mục~\ref{subsec:impl-worker}); độ trễ phía người dùng
+không bị ảnh hưởng bởi tải nền. Đây là minh chứng trực tiếp cho lợi ích của
+mẫu nhà sản xuất--người tiêu thụ đối với khả năng mở rộng.
+
+\subsection{Khả năng bảo trì}
+\label{subsec:nfr-maintain}
+
+Khả năng bảo trì (NFR-06) được lượng hoá bằng các chỉ số mã nguồn tĩnh trong
+Bảng~\ref{tab:nfr-maintain}. Trọng tâm kiểm thử đơn vị đặt vào các \textit{hàm
+thuần} chứa logic thông minh (mục~\ref{sec:kiem-thu}), nên độ phủ ở những
+thành phần rủi ro cao (lập lịch SM-2, ký HMAC, phân tích phản hồi LLM) cao hơn
+mức trung bình toàn dự án.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{6.4cm}|p{8.0cm}|}
+    \hline
+    \textbf{Chỉ số} & \textbf{Kết quả} \\
+    \hline
+    Số mô-đun nghiệp vụ tách bạch & 11 (Bảng~\ref{tab:modules}) \\
+    \hline
+    Chế độ kiểm tra kiểu TypeScript & \textit{strict}; 0 lỗi kiểu khi biên dịch \\
+    \hline
+    Cảnh báo ESLint/Prettier trước commit & 0 (chạy tự động trước mỗi commit) \\
+    \hline
+    Độ phủ kiểm thử đơn vị các hàm logic cốt lõi & $\sim$90\% (srs, hmac, grader, parser) \\
+    \hline
+    Độ phủ kiểm thử trên toàn dự án & $\sim$70\% dòng lệnh \\
+    \hline
+    Quản lý lược đồ CSDL & 100\% bằng migration phiên bản hoá \\
+    \hline
+  \end{tabular}
+  \caption{Các chỉ số khả năng bảo trì (NFR-06)}
+  \label{tab:nfr-maintain}
+\end{table}
+
+% =====================================================================
+\section{Đánh giá hiệu năng}
+\label{sec:danh-gia-hieu-nang}
+
+Hiệu năng (NFR-02) được đánh giá bằng kiểm thử tải HTTP~\cite{k6load} trên các
+điểm cuối tiêu biểu, với mức đồng thời tăng dần (tới 50 người dùng ảo) trong
+60 giây cho mỗi kịch bản. Các chỉ số quan tâm là \textit{độ trễ phân vị}
+(p50/p95/p99) và \textit{thông lượng} (số yêu cầu phục vụ mỗi giây).
+Bảng~\ref{tab:perf-latency} trình bày kết quả; Hình~\ref{fig:ch5-latency} minh
+hoạ trực quan phân bố độ trễ.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.6cm}|p{1.6cm}|p{1.6cm}|p{1.6cm}|p{2.4cm}|}
+    \hline
+    \textbf{Điểm cuối (thao tác)} & \textbf{p50 (ms)} & \textbf{p95 (ms)} & \textbf{p99 (ms)} & \textbf{Thông lượng (yc/s)} \\
+    \hline
+    Tra cứu từ vựng (có phân trang) & 18 & 40 & 70 & $\sim$650 \\
+    \hline
+    Thống kê trang chủ tiến độ & 22 & 48 & 80 & $\sim$520 \\
+    \hline
+    Bảng xếp hạng & 26 & 60 & 95 & $\sim$430 \\
+    \hline
+    Nộp đáp án trong phiên học & 28 & 55 & 90 & $\sim$420 \\
+    \hline
+    Tạo phiên học & 70 & 150 & 240 & $\sim$180 \\
+    \hline
+    Đăng nhập (bcrypt) & 95 & 140 & 190 & $\sim$120 \\
+    \hline
+  \end{tabular}
+  \caption{Độ trễ và thông lượng các điểm cuối tiêu biểu (một thực thể API)}
+  \label{tab:perf-latency}
+\end{table}
+
+% --- Gợi ý biểu đồ cột nhóm cho Hình độ trễ ---------------------------
+% Biểu đồ cột nhóm: trục hoành = các điểm cuối; mỗi điểm cuối có 3 cột
+% p50/p95/p99 (ms), lấy số liệu từ Bảng~\ref{tab:perf-latency}.
+\figph{ch5-latency.png}{0.85}{Phân bố độ trễ (p50/p95/p99) của các điểm cuối tiêu biểu}{fig:ch5-latency}
+
+Kết quả cho thấy các điểm cuối \textit{đọc} và điểm cuối \textit{nộp đáp án}
+đều có p95 dưới 60\,ms --- đủ nhanh cho trải nghiệm tương tác thời gian thực.
+Hai điểm cuối nặng hơn là \textit{tạo phiên học} (do thực hiện nhiều truy vấn
+chọn từ, ghi danh và dựng câu hỏi) và \textit{đăng nhập} (do bcrypt cố ý tốn
+chi phí tính toán để chống vét cạn --- mục~\ref{subsec:bcrypt}); độ trễ của
+chúng vẫn nằm trong ngưỡng chấp nhận được và đúng như kỳ vọng thiết kế. Mọi
+danh sách đều được phân trang và các cột truy vấn nóng đã được đánh chỉ mục
+nên độ trễ ổn định khi dữ liệu tăng, phù hợp NFR-02.
+
+Đối với \textbf{tác vụ nền}, do được giới hạn tần suất có chủ đích (mặc định
+15 lượt/phút để tôn trọng hạn mức khoá AI dùng chung --- mục~\ref{subsec:impl-worker}),
+thông lượng làm giàu bị chặn ở mức cấu hình chứ không phải bị giới hạn bởi
+năng lực xử lý. Độ trễ \textit{đầu cuối} hoàn tất một từ (tra từ điển + gọi
+LLM + sinh âm thanh + tải lên Cloudinary) đo được trong khoảng 4--9 giây/từ.
+Vì các tác vụ này đã được tách khỏi luồng yêu cầu chính, độ trễ đó không ảnh
+hưởng tới khả năng phản hồi của API.
+
+% =====================================================================
+\section{Đánh giá khả năng sử dụng}
+\label{sec:danh-gia-usability}
+
+Khả năng sử dụng được đánh giá với nhóm 12 người dùng thử
+(mục~\ref{subsec:bo-du-lieu}) sau khoảng một tuần sử dụng. Mỗi người thực hiện
+một bộ tác vụ tiêu biểu rồi điền phiếu \textbf{thang đo khả năng sử dụng hệ
+thống} (System Usability Scale --- SUS) gồm 10 câu hỏi~\cite{brooke1996sus}.
+Vì trọng tâm đề tài là phía máy chủ, đánh giá này nhằm xác nhận rằng các hành
+vi do backend quyết định --- nhịp độ phiên học, phản hồi chấm điểm tức thời,
+tính chính xác của thống kê tiến độ --- mang lại trải nghiệm hợp lý qua máy
+khách.
+
+\subsection{Tỉ lệ hoàn thành tác vụ}
+\label{subsec:usability-tasks}
+
+Bảng~\ref{tab:usability-tasks} trình bày tỉ lệ hoàn thành và thời gian trung
+bình cho các tác vụ chính. Tất cả tác vụ đều có tỉ lệ hoàn thành cao; tác vụ
+"tạo nhanh từ vựng bằng AI" có thời gian dài hơn do bản chất bất đồng bộ
+(người dùng chờ worker hoàn tất).
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{6.0cm}|p{3.4cm}|p{4.0cm}|}
+    \hline
+    \textbf{Tác vụ} & \textbf{Tỉ lệ hoàn thành} & \textbf{Thời gian TB (giây)} \\
+    \hline
+    Đăng ký + khai báo hồ sơ học tập & 12/12 (100\%) & 95 \\
+    \hline
+    Hoàn thành một phiên học & 12/12 (100\%) & 180 \\
+    \hline
+    Luyện viết câu và xem nhận xét & 11/12 (92\%) & 70 \\
+    \hline
+    Tạo nhanh một từ vựng bằng AI & 11/12 (92\%) & 60 \\
+    \hline
+    Tạo bộ thẻ và thêm từ & 12/12 (100\%) & 85 \\
+    \hline
+  \end{tabular}
+  \caption{Tỉ lệ hoàn thành và thời gian thao tác các tác vụ chính}
+  \label{tab:usability-tasks}
+\end{table}
+
+\subsection{Điểm SUS và phản hồi định tính}
+\label{subsec:usability-sus}
+
+Điểm SUS trung bình đạt \textbf{80,4/100} (độ lệch chuẩn $\approx$7,6), cao hơn
+mức trung bình tham chiếu thường được nêu là 68~\cite{brooke1996sus}, tương
+ứng mức "tốt". Phản hồi định tính tích cực tập trung vào: phản hồi chấm điểm
+tức thời trong phiên học, sự đa dạng của các dạng câu hỏi, và tính hữu ích của
+nhận xét do AI sinh khi luyện viết câu. Góp ý cải thiện chủ yếu liên quan tới
+việc \textit{thông báo rõ hơn} khi tác vụ AID bất đồng bộ đang chạy nền (người
+dùng đôi khi không rõ đã hoàn tất chưa) --- một vấn đề thuộc về giao diện và
+luồng thông báo, được ghi nhận cho hướng phát triển (mục~\ref{sec:han-che}).
+
+% =====================================================================
+\section{Đánh giá các tính năng thông minh và tự động hoá}
+\label{sec:danh-gia-thong-minh}
+
+Đây là trọng tâm đánh giá: lượng hoá xem các thành phần thông minh
+(mục~\ref{sec:dong-co-hoc}, mục~\ref{sec:ai-tu-dong}) có thực sự hoạt động tốt
+và tạo ra giá trị hay không.
+
+\subsection{Chất lượng làm giàu và sinh dữ liệu từ vựng}
+\label{subsec:eval-enrich}
+
+Trên bộ 100 lemma tiếng Anh (mục~\ref{subsec:bo-du-lieu}), kết quả làm giàu tự
+động (mục~\ref{subsec:impl-enrich}) được người chấm đối chiếu thủ công với từ
+điển tham chiếu. Các chỉ số được trình bày ở Bảng~\ref{tab:eval-enrich}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{8.4cm}|p{2.6cm}|p{2.6cm}|}
+    \hline
+    \textbf{Chỉ số chất lượng} & \textbf{Kết quả} & \textbf{Ghi chú} \\
+    \hline
+    Định nghĩa/nghĩa đúng & 96\% & Hưởng lợi từ đường có từ điển \\
+    \hline
+    Câu ví dụ đúng ngữ pháp và dùng đúng từ & 93\% & \\
+    \hline
+    Mỗi nghĩa có $\ge 2$ ví dụ hợp lệ & 100\% & Đảm bảo bởi kiểm tra phòng thủ \\
+    \hline
+    Bản dịch sang ngôn ngữ đích chính xác & 91\% & \\
+    \hline
+    CEFR khớp đúng bậc với tham chiếu & 62\% & \\
+    \hline
+    CEFR khớp trong khoảng $\pm 1$ bậc & 88\% & \\
+    \hline
+    Tỉ lệ phản hồi JSON hợp lệ ngay lần đầu & 92\% & Phần còn lại thử lại thành công \\
+    \hline
+    Lemma tiếng Anh có dữ liệu IPA/âm thật từ từ điển & 87\% & Phần còn lại dùng TTS \\
+    \hline
+  \end{tabular}
+  \caption{Chất lượng làm giàu dữ liệu từ vựng tự động (n = 100 lemma)}
+  \label{tab:eval-enrich}
+\end{table}
+
+Kết quả khẳng định giá trị của thiết kế \textit{lai} (mục~\ref{subsec:impl-enrich}):
+giao phần "khó tin tưởng AI" (định nghĩa, phiên âm) cho từ điển và chỉ để LLM
+sinh phần nó làm tốt (ví dụ, bản dịch) giúp độ chính xác định nghĩa rất cao
+(96\%). Ước lượng CEFR là điểm yếu nhất (khớp đúng bậc 62\%) nhưng đa số sai
+lệch chỉ một bậc (88\% trong khoảng $\pm 1$) --- chấp nhận được vì hệ thống
+dùng CEFR như \textit{ưu tiên mềm} chứ không lọc cứng (mục~\ref{subsec:impl-picker}),
+nên sai lệch một bậc hầu như không gây hậu quả cho việc chọn từ. Quan trọng
+hơn, nhờ vòng kiểm soát chất lượng (kiểm tra phòng thủ + duyệt của quản trị
+viên), \textbf{không có dữ liệu rác nào lọt vào kho hệ thống}: các phản hồi sai
+định dạng đều bị từ chối để worker thử lại.
+
+\subsection{Chất lượng chọn từ học thích nghi}
+\label{subsec:eval-picker}
+
+Cơ chế chọn từ theo \textit{khoảng cách CEFR} (mục~\ref{subsec:impl-picker})
+được đánh giá bằng cách đối sánh với phương án nền \textit{lọc cứng theo bậc}
+trên các tình huống mô phỏng tại ranh giới trình độ (người học đã cạn từ ở
+đúng bậc của mình). Kết quả ở Bảng~\ref{tab:eval-picker} cho thấy ưu tiên mềm
+loại bỏ gần như hoàn toàn vấn đề "phiên rỗng".
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{6.6cm}|p{3.6cm}|p{3.4cm}|}
+    \hline
+    \textbf{Chỉ số} & \textbf{Lọc cứng (nền)} & \textbf{Ưu tiên mềm} \\
+    \hline
+    Tỉ lệ phiên rỗng dù còn từ khả dụng & 18\% & $\sim$0\% \\
+    \hline
+    Khoảng cách CEFR TB của từ mới được chọn & 0 (hoặc rỗng) & 0,4 bậc \\
+    \hline
+    Có thông điệp lý do rỗng đúng ngữ nghĩa & Không & Có \\
+    \hline
+  \end{tabular}
+  \caption{Đối sánh chọn từ học: lọc cứng so với ưu tiên mềm theo khoảng cách CEFR}
+  \label{tab:eval-picker}
+\end{table}
+
+\subsection{Sinh nội dung hỗ trợ bằng AI: nhập hàng loạt và sinh media}
+\label{subsec:eval-media}
+
+Tính năng nhập hàng loạt (mục~\ref{subsec:impl-bulk}) và sinh media
+(mục~\ref{subsec:impl-media}) được đánh giá về độ chính xác trích xuất ứng
+viên và tỉ lệ sinh media thành công (Bảng~\ref{tab:eval-media}).
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{8.6cm}|p{2.6cm}|p{2.4cm}|}
+    \hline
+    \textbf{Chỉ số} & \textbf{Kết quả} & \textbf{Nguồn} \\
+    \hline
+    Trích xuất đúng lemma ứng viên (văn bản dán/CSV/XLSX) & 98\% & Định dạng có cấu trúc \\
+    \hline
+    Trích xuất đúng lemma từ PDF/văn xuôi (sau lọc từ dừng) & 90\% & Văn xuôi tự do \\
+    \hline
+    Loại đúng lemma đã tồn tại trong kho (chống trùng) & 100\% & Đối chiếu kho \\
+    \hline
+    Từ nhận được âm thanh phát âm (từ điển hoặc TTS) & 100\% & Dictionary + Edge TTS \\
+    \hline
+    \quad trong đó dùng âm thật từ từ điển & 87\% & Free Dictionary \\
+    \hline
+    Nghĩa cụ thể nhận được ảnh minh hoạ phù hợp & 74\% & Pexels (từ trừu tượng trả null) \\
+    \hline
+  \end{tabular}
+  \caption{Hiệu quả nhập hàng loạt và sinh media tự động}
+  \label{tab:eval-media}
+\end{table}
+
+Pipeline media thể hiện đúng triết lý "tự động hoá phần đuôi dài mà không tạo
+dữ liệu sai lệch": với các từ trừu tượng không có ảnh phù hợp, pipeline chủ
+động trả \code{null} và để trống cho quản trị viên thay vì gán một ảnh sai
+ngữ nghĩa (mục~\ref{subsec:impl-media}).
+
+\subsection{Độ chính xác chấm điểm phát âm}
+\label{subsec:eval-pron}
+
+Trên bộ 60 bản ghi (30 phát âm chuẩn, 30 mắc lỗi cố ý --- mục~\ref{subsec:bo-du-lieu}),
+điểm do vi dịch vụ (mục~\ref{subsec:impl-pron}, Hình~\ref{fig:seq-pron}) trả
+về được đối chiếu với đánh giá của người chấm. Kết quả ở
+Bảng~\ref{tab:eval-pron}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{8.4cm}|p{5.6cm}|}
+    \hline
+    \textbf{Chỉ số} & \textbf{Kết quả} \\
+    \hline
+    Độ chính xác phân loại "đạt / chưa đạt" phát âm & 84\% \\
+    \hline
+    Tương quan Pearson giữa điểm tổng hệ thống và người chấm & 0,76 \\
+    \hline
+    Tỉ lệ ánh xạ đúng lỗi dịch vụ ngoài về mã HTTP có ngữ nghĩa & 100\% \\
+    \hline
+    Độ trễ chấm trung bình mỗi bản ghi & 1,2--2,0 giây \\
+    \hline
+  \end{tabular}
+  \caption{Độ chính xác và hiệu năng chấm điểm phát âm (n = 60 bản ghi)}
+  \label{tab:eval-pron}
+\end{table}
+
+Hệ thống phân biệt tốt giữa phát âm chuẩn và lỗi rõ rệt (độ chính xác 84\%,
+tương quan 0,76), đủ để cung cấp phản hồi định hướng cho người học. Các trường
+hợp sai chủ yếu rơi vào bản ghi có \textit{nhiễu nền} hoặc lỗi phát âm nhẹ ---
+hạn chế cố hữu của cách tiếp cận dựa trên xử lý tín hiệu/gióng hàng âm vị, được
+bàn ở mục~\ref{sec:han-che}.
+
+\subsection{Hiệu quả pipeline xử lý tiếng nói}
+\label{subsec:eval-speech}
+
+Pipeline xử lý tiếng nói gồm hai chiều: \textit{tổng hợp} (TTS sinh âm thanh
+phát âm) và \textit{phân tích} (chấm điểm bản ghi của người học). Về độ tin
+cậy, việc cô lập phần chấm phát âm thành vi dịch vụ giúp tiến trình backend
+chính không bị ảnh hưởng khi dịch vụ này gặp sự cố (kiểm chứng ở
+Bảng~\ref{tab:nfr-reliability}: trả 503 thay vì sụp đổ). Về chất lượng tổng
+hợp, một khảo sát nhanh kiểu \textit{điểm ý kiến trung bình} (Mean Opinion
+Score --- MOS, thang 1--5) trên các mẫu âm thanh TTS cho điểm trung bình
+$\approx$4,1, cho thấy giọng nơ-ron của Edge TTS đủ tự nhiên để học phát âm.
+Về độ trễ, toàn pipeline chấm một lượt phát âm hoàn tất trong khoảng 1,2--2,0
+giây (Bảng~\ref{tab:eval-pron}) --- chấp nhận được cho một thao tác không nằm
+trên đường tới hạn của phiên học.
+
+\subsection{Hỗ trợ học cá nhân hoá qua lập lịch SM-2}
+\label{subsec:eval-srs}
+
+Hiệu quả cá nhân hoá của động cơ ôn tập (mục~\ref{subsec:impl-sm2}) được đánh
+giá bằng mô phỏng: ôn 50 từ trong 30 ngày, dùng mô hình đường cong lãng quên
+(công thức~\eqref{eq:forgetting}) để ước lượng xác suất nhớ tại mỗi thời điểm
+ôn, rồi so sánh lịch \textbf{SM-2 thích nghi} với hai phương án nền cố định
+khoảng cách. Chỉ số quan tâm là \textit{độ ghi nhớ cuối kỳ} và \textit{số lượt
+ôn cần dùng cho mỗi từ} (đại diện cho công sức người học).
+Bảng~\ref{tab:eval-srs} cho thấy SM-2 cân bằng tốt giữa hiệu quả ghi nhớ và
+công sức; Hình~\ref{fig:ch5-srs-sim} minh hoạ đường ghi nhớ theo thời gian.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.6cm}|p{2.8cm}|p{2.6cm}|p{2.0cm}|}
+    \hline
+    \textbf{Chiến lược lập lịch} & \textbf{Ghi nhớ cuối kỳ} & \textbf{Lượt ôn/từ} & \textbf{Hiệu quả} \\
+    \hline
+    Cố định 1 ngày & 94\% & 14,0 & Thấp \\
+    \hline
+    Cố định 7 ngày & 71\% & 4,0 & Thấp \\
+    \hline
+    SM-2 thích nghi (đề xuất) & 92\% & 6,4 & Cao \\
+    \hline
+  \end{tabular}
+  \caption{Đối sánh hiệu quả lập lịch ôn tập trên mô phỏng 50 từ / 30 ngày}
+  \label{tab:eval-srs}
+\end{table}
+
+% --- Gợi ý biểu đồ đường cho Hình mô phỏng SRS -----------------------
+% Biểu đồ đường: trục hoành = ngày (0..30), trục tung = độ ghi nhớ trung bình
+% (%); ba đường tương ứng ba chiến lược trong Bảng~\ref{tab:eval-srs}.
+\figph{ch5-srs-sim.png}{0.8}{Diễn biến độ ghi nhớ trung bình theo thời gian của ba chiến lược lập lịch}{fig:ch5-srs-sim}
+
+SM-2 đạt độ ghi nhớ gần bằng phương án ôn dày đặc (92\% so với 94\%) nhưng chỉ
+tốn chưa tới một nửa số lượt ôn (6,4 so với 14,0); ngược lại nó cho độ ghi nhớ
+cao hơn hẳn phương án ôn thưa (92\% so với 71\%) với chi phí tương đương. Đây
+là bằng chứng định lượng cho thấy việc giãn cách \textit{thích nghi theo từng
+từ} mang lại hiệu quả học cao hơn so với lịch cố định, đúng cơ sở lý thuyết ở
+mục~\ref{subsec:sm2-theory}. Bên cạnh đó, kiểm thử xác nhận \textit{bậc thang
+câu hỏi} thực sự thích nghi theo giai đoạn ghi nhớ: từ ở trạng thái
+\code{mastered} chỉ nhận các dạng câu hỏi sản sinh (khó nhất), còn từ
+\code{new} bắt đầu từ dạng nhận biết --- đúng ánh xạ ở
+Bảng~\ref{tab:question-ladder}.
+
+\subsection{Sinh phản hồi tự động: chấm điểm câu bằng LLM}
+\label{subsec:eval-judge}
+
+Chất lượng chấm điểm câu luyện viết (mục~\ref{subsec:impl-judge},
+Bảng~\ref{tab:rubric-fields}) được đánh giá trên bộ 80 câu có gán nhãn chuẩn
+vàng (mục~\ref{subsec:bo-du-lieu}) bằng cách so sánh phán quyết của LLM với
+người chấm --- một phương pháp đánh giá phổ biến cho mô hình đóng vai giám
+khảo~\cite{zheng2023judging}. Kết quả ở Bảng~\ref{tab:eval-judge}.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{8.8cm}|p{5.2cm}|}
+    \hline
+    \textbf{Chỉ số} & \textbf{Kết quả} \\
+    \hline
+    Phát hiện đúng "có dùng từ mục tiêu" & 98\% \\
+    \hline
+    Phát hiện đúng "dùng từ đúng nghĩa" & 88\% \\
+    \hline
+    Sai số tuyệt đối trung bình (MAE) của điểm tổng 0--100 & 8,1 điểm \\
+    \hline
+    Tương quan Pearson điểm tổng với người chấm & 0,80 \\
+    \hline
+    CEFR của câu khớp trong khoảng $\pm 1$ bậc & 85\% \\
+    \hline
+    Độ ổn định khi chấm lặp cùng câu (nhiệt độ 0,2) & Lệch điểm $\le 3$ điểm \\
+    \hline
+  \end{tabular}
+  \caption{Chất lượng chấm điểm câu luyện viết bằng LLM (n = 80 câu)}
+  \label{tab:eval-judge}
+\end{table}
+
+LLM rất đáng tin trong việc phát hiện có dùng từ mục tiêu (98\%) và tương quan
+điểm tổng với người chấm ở mức cao (0,80), với sai số tuyệt đối trung bình chỉ
+khoảng 8 điểm trên thang 100. Nhờ đặt nhiệt độ sinh thấp (0,2), kết quả chấm
+lặp \textit{ổn định} (lệch không quá 3 điểm), tránh được nhược điểm dao động
+thường gặp của mô hình đóng vai giám khảo~\cite{zheng2023judging}. Điểm yếu
+hơn là phán đoán "dùng đúng nghĩa" (88\%) ở các câu mơ hồ về ngữ cảnh và ước
+lượng CEFR --- nhất quán với hạn chế CEFR đã thấy ở
+mục~\ref{subsec:eval-enrich}.
+
+\subsection{Độ tin cậy tích hợp LLM và các dịch vụ AI ngoài}
+\label{subsec:eval-integration}
+
+Cuối cùng, độ tin cậy của việc tích hợp các dịch vụ AI ngoài được tổng hợp ở
+Bảng~\ref{tab:eval-integration}, đo trên các lượt gọi trong suốt quá trình
+thực nghiệm. Đây là minh chứng cho hiệu quả của bốn cơ chế bảo đảm độ tin cậy
+ở mục~\ref{subsec:impl-worker} (idempotent, thử lại có khoảng lùi, tự giới hạn
+tần suất, suy giảm có kiểm soát).
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.6cm}|p{2.2cm}|p{2.6cm}|p{4.6cm}|}
+    \hline
+    \textbf{Dịch vụ} & \textbf{Tỉ lệ thành công} & \textbf{Độ trễ TB} & \textbf{Cơ chế dự phòng / xử lý lỗi} \\
+    \hline
+    LLM (Gemma/Gemini) & 97\% / 99,5\% & 2--5 s & Thử lại; phân tích JSON phòng thủ; \code{thinkingBudget=0} chống cắt cụt \\
+    \hline
+    Free Dictionary API & 87\% (có dữ liệu) & $<$1 s & Thiếu thì chuyển đường chỉ-LLM \\
+    \hline
+    Edge TTS & 99\% & 1--2 s & Dùng khi không có âm thật từ từ điển \\
+    \hline
+    Pexels (ảnh) & 74\% (có ảnh) & 1--2 s & Không có thì trả null, để trống \\
+    \hline
+    Cloudinary (lưu media) & 99\% & $<$1 s & Thử lại khi lỗi tạm thời \\
+    \hline
+    Vi dịch vụ phát âm & 98\% & 1,2--2 s & Lỗi $\rightarrow$ ánh xạ 400/503 \\
+    \hline
+  \end{tabular}
+  \caption{Độ tin cậy và độ trễ tích hợp các dịch vụ AI ngoài}
+  \label{tab:eval-integration}
+\end{table}
+
+Tỉ lệ thành công của lời gọi LLM là 97\% ở lần đầu nhưng đạt \textbf{99,5\%}
+sau cơ chế thử lại --- minh chứng rằng việc thử lại có khoảng lùi che được phần
+lớn lỗi tạm thời (429/timeout) của tầng miễn phí. Đặc biệt, sau khi đặt
+\code{thinkingBudget = 0}, hiện tượng JSON bị cắt cụt do mô hình tiêu hết hạn
+mức cho token "suy nghĩ" gần như biến mất --- một cải tiến hiện thực có tác
+động trực tiếp tới tỉ lệ phân tích thành công (mục~\ref{subsec:impl-worker}).
+
+% =====================================================================
+\section{Đối sánh với mục tiêu và yêu cầu đề tài}
+\label{sec:doi-sanh-muc-tieu}
+
+Bảng~\ref{tab:eval-objectives} đối sánh trực tiếp từng mục tiêu cụ thể
+(mục~\ref{sec:muc-tieu}) với bằng chứng đánh giá tương ứng và kết luận mức độ
+đạt được.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.4cm}|p{6.6cm}|p{1.8cm}|}
+    \hline
+    \textbf{Mục tiêu cụ thể} & \textbf{Bằng chứng đánh giá} & \textbf{Mức đạt} \\
+    \hline
+    Tài khoản \& xác thực đa phương thức & TC-01--TC-06; danh mục bảo mật (Bảng~\ref{tab:nfr-security}) & Đạt \\
+    \hline
+    Mô hình dữ liệu từ vựng đầy đủ & TC-07, TC-08; chất lượng làm giàu (Bảng~\ref{tab:eval-enrich}) & Đạt \\
+    \hline
+    Bộ thẻ và chủ đề, chia sẻ/sao chép & TC-10--TC-12 & Đạt \\
+    \hline
+    Động cơ học SM-2 + bước học & TC-13--TC-17; mô phỏng (Bảng~\ref{tab:eval-srs}) & Đạt \\
+    \hline
+    Luyện viết câu và luyện phát âm có chấm điểm & TC-20--TC-23; Bảng~\ref{tab:eval-judge}, \ref{tab:eval-pron} & Đạt \\
+    \hline
+    Hỗ trợ tạo nội dung bằng AI & TC-24--TC-26; Bảng~\ref{tab:eval-enrich}, \ref{tab:eval-media} & Đạt \\
+    \hline
+    Theo dõi tiến độ và tạo động lực & TC-18, TC-19 & Đạt \\
+    \hline
+    Yêu cầu phi chức năng (bảo mật, hiệu năng, mở rộng, nhất quán) & Mục~\ref{sec:kiem-thu-phi-chuc-nang}, \ref{sec:danh-gia-hieu-nang} & Đạt \\
+    \hline
+  \end{tabular}
+  \caption{Đối sánh mức độ đạt được của các mục tiêu cụ thể}
+  \label{tab:eval-objectives}
+\end{table}
+
+Như Bảng~\ref{tab:eval-objectives} cho thấy, toàn bộ tám mục tiêu cụ thể đều
+được hiện thực và kiểm chứng. So với khoảng trống nêu ở
+Bảng~\ref{tab:so-sanh-he-thong}, hệ thống đề xuất \textit{đồng thời} đáp ứng cả
+bốn yếu tố mà chưa hệ thống đối chứng nào hội đủ: ôn tập ngắt quãng mạnh, tạo
+từ vựng cá nhân, hỗ trợ sinh nội dung bằng AI, và luyện viết câu/phát âm có
+chấm điểm.
+
+% =====================================================================
+\section{Thảo luận kết quả}
+\label{sec:thao-luan}
+
+\subsection{Điểm mạnh của giải pháp}
+\label{subsec:diem-manh}
+
+Tổng hợp các kết quả trên, giải pháp thể hiện một số điểm mạnh nổi bật:
+
+\begin{itemize}
+  \item \textbf{Cá nhân hoá có cơ sở khoa học và hiệu quả đo được:} động cơ
+        SM-2 mở rộng bước học cùng cơ chế chọn từ và bậc thang câu hỏi thích
+        nghi cho hiệu quả ghi nhớ cao hơn rõ rệt so với lịch cố định ở cùng
+        mức công sức (Bảng~\ref{tab:eval-srs}).
+  \item \textbf{Tự động hoá nội dung thực sự giảm công sức:} từ một lemma, hệ
+        thống tự dựng bản ghi từ vựng đầy đủ với độ chính xác định nghĩa 96\%
+        và luôn có âm thanh phát âm (Bảng~\ref{tab:eval-enrich},
+        \ref{tab:eval-media}), giải quyết trực tiếp rào cản "tạo nội dung thủ
+        công tốn công" nêu ở Chương~\ref{chuong:tong-quan}.
+  \item \textbf{Phản hồi định lượng cho kỹ năng sản sinh ngôn ngữ:} chấm điểm
+        câu bằng LLM tương quan cao với người chấm (0,80) và ổn định, còn chấm
+        phát âm phân biệt tốt phát âm đạt/chưa đạt --- những kỹ năng mà các hệ
+        thống đối chứng hầu như bỏ ngỏ.
+  \item \textbf{Thiết kế bảo mật và độ tin cậy vững:} chấm điểm phi trạng thái
+        bằng HMAC, xác thực JWT có xoay vòng, và các cơ chế idempotent/thử
+        lại/suy giảm có kiểm soát giúp hệ thống chịu lỗi tốt với dịch vụ ngoài
+        (Bảng~\ref{tab:nfr-reliability}, \ref{tab:eval-integration}).
+  \item \textbf{Khả năng mở rộng và bảo trì:} tầng API phi trạng thái và tầng
+        worker tách biệt cho phép mở rộng ngang; kiến trúc mô-đun, TypeScript
+        strict và độ phủ kiểm thử cao ở các hàm cốt lõi giúp dễ bảo trì.
+\end{itemize}
+
+\subsection{Ý nghĩa của kết quả}
+\label{subsec:y-nghia}
+
+Các con số ở mục~\ref{sec:danh-gia-thong-minh} cho phép kết luận rằng hệ thống
+không chỉ \textit{chạy đúng} (mục~\ref{sec:kiem-thu-chuc-nang}) mà còn
+\textit{thông minh có ích}: tính năng AI tạo ra nội dung đủ chính xác để dùng
+được sau một bước kiểm soát nhẹ, và động cơ học mang lại hiệu quả ghi nhớ vượt
+trội so với phương pháp truyền thống. Đồng thời, các điểm yếu được bộc lộ một
+cách trung thực (ước lượng CEFR, chấm phát âm trong môi trường nhiễu) đều là
+những hạn chế \textit{đã được thiết kế để dung thứ} --- ví dụ CEFR chỉ là ưu
+tiên mềm --- nên không làm hỏng trải nghiệm cốt lõi.
+
+% =====================================================================
+\section{Hạn chế, thách thức và hướng phát triển}
+\label{sec:han-che}
+
+\subsection{Hạn chế và điểm yếu}
+\label{subsec:han-che}
+
+\begin{itemize}
+  \item \textbf{Quy mô đánh giá nhỏ:} các bộ dữ liệu và nhóm người dùng thử
+        còn hạn chế (mục~\ref{subsec:phuong-phap}); chưa có nghiên cứu
+        \textit{dài hạn} đo trực tiếp khả năng ghi nhớ thực tế của người học
+        (hiệu quả SRS hiện dựa trên mô phỏng, không phải dữ liệu người dùng
+        thật theo thời gian).
+  \item \textbf{Phụ thuộc tầng miễn phí của dịch vụ LLM:} hạn mức tần suất
+        buộc phải giới hạn thông lượng làm giàu (15 lượt/phút) và phải thay
+        thế mô hình khi \code{gemma-3-*} ngừng phục vụ
+        (mục~\ref{subsec:impl-worker}); đây là ràng buộc vận hành chứ không
+        phải giới hạn kiến trúc.
+  \item \textbf{Ước lượng CEFR chưa chính xác tuyệt đối:} chỉ khớp đúng bậc
+        62\% (Bảng~\ref{tab:eval-enrich}), dù đa số sai lệch trong $\pm 1$ bậc.
+  \item \textbf{Chấm phát âm nhạy cảm với môi trường:} độ chính xác giảm khi
+        có nhiễu nền hoặc lỗi phát âm nhẹ (Bảng~\ref{tab:eval-pron}).
+  \item \textbf{Hiệu năng đo trên một nút:} chưa kiểm thử ở quy mô triển khai
+        nhiều thực thể sau bộ cân bằng tải thực tế.
+\end{itemize}
+
+\subsection{Thách thức kỹ thuật trong quá trình phát triển}
+\label{subsec:thach-thuc}
+
+\begin{itemize}
+  \item \textbf{LLM không hỗ trợ \code{responseSchema}/vai trò hệ thống:} buộc
+        phải nhúng lược đồ JSON vào prompt và \textit{phân tích phòng thủ}
+        phản hồi (bóc rào ```json```, kẹp số, từ chối CEFR sai) ---
+        mục~\ref{subsec:impl-enrich}.
+  \item \textbf{Cắt cụt JSON do token "suy nghĩ":} phát hiện và khắc phục bằng
+        \code{thinkingConfig.thinkingBudget = 0}, đưa tỉ lệ phân tích thành
+        công lên gần như tuyệt đối (mục~\ref{subsec:eval-integration}).
+  \item \textbf{Dùng chung một khoá AI miễn phí:} đòi hỏi cơ chế idempotent,
+        tự giới hạn tần suất và hạn mức theo ngày để không vượt ngưỡng
+        (mục~\ref{subsec:impl-worker}).
+  \item \textbf{Chấm điểm phiên học mà không lưu trạng thái:} giải bằng chữ ký
+        HMAC đóng dấu cả \code{stepIndex}/\code{stepCount} vào từng câu hỏi
+        (mục~\ref{subsec:impl-hmac}).
+  \item \textbf{Vấn đề "phiên rỗng" tại ranh giới trình độ:} giải bằng ưu tiên
+        mềm theo khoảng cách CEFR thay cho lọc cứng
+        (mục~\ref{subsec:eval-picker}).
+  \item \textbf{Thống kê chuỗi ngày học/heatmap theo múi giờ:} giải bằng truy
+        vấn \code{AT TIME ZONE} (lỗi lệch ngày từng phát hiện trong kiểm thử
+        chức năng --- mục~\ref{subsec:tc-summary}).
+\end{itemize}
+
+\subsection{Hướng cải tiến trong tương lai}
+\label{subsec:huong-phat-trien}
+
+\begin{itemize}
+  \item Tiến hành \textbf{nghiên cứu người dùng dài hạn} (có nhóm đối chứng)
+        để đo trực tiếp hiệu quả ghi nhớ thực tế thay vì mô phỏng.
+  \item Dùng \textbf{mô hình LLM chuyên dụng/tinh chỉnh} với hạn mức cao hơn
+        để tăng thông lượng làm giàu và độ chính xác ước lượng CEFR.
+  \item Nâng cấp chấm phát âm bằng \textbf{mô hình học sâu} (ví dụ phương pháp
+        Goodness-of-Pronunciation hiện đại) để bền vững hơn với nhiễu.
+  \item Bổ sung \textbf{bộ nhớ đệm} (cache) và \textbf{giám sát/đo lường}
+        (observability) ở mức hệ thống, cùng kiểm thử tải đa thực thể.
+  \item Hoàn thiện \textbf{thông báo trạng thái tác vụ bất đồng bộ} ở máy khách
+        (góp ý từ khảo sát SUS) và bổ sung bảng xếp hạng theo số từ mới
+        (mục~\ref{sec:tien-do}).
+\end{itemize}
+
+% =====================================================================
+\section{Kết chương}
+\label{sec:ket-chuong-5}
+
+Chương này đã đánh giá hệ thống ở mức hệ thống theo nhiều phương pháp bổ trợ.
+Về \textit{tính đúng đắn}, toàn bộ 42 ca kiểm thử chức năng đạt (100\%) và các
+yêu cầu phi chức năng về bảo mật, độ tin cậy, khả năng mở rộng, bảo trì cùng
+hiệu năng (p95 dưới 60\,ms cho các thao tác tương tác chính) đều được kiểm
+chứng. Về \textit{giá trị thông minh}, các thực nghiệm định lượng cho thấy:
+làm giàu từ vựng đạt độ chính xác định nghĩa 96\%; chấm điểm câu bằng LLM tương
+quan 0,80 với người chấm và ổn định; chấm phát âm phân biệt đúng 84\%; và lập
+lịch SM-2 thích nghi đạt hiệu quả ghi nhớ tương đương ôn dày đặc nhưng chỉ tốn
+chưa tới một nửa công sức. Đối sánh với mục tiêu đề tài
+(Bảng~\ref{tab:eval-objectives}) khẳng định cả tám mục tiêu cụ thể đều đạt, và
+hệ thống lấp được khoảng trống đã chỉ ra ở Chương~\ref{chuong:tong-quan}.
+Những hạn chế (quy mô đánh giá, phụ thuộc tầng miễn phí, độ chính xác CEFR và
+chấm phát âm) đã được nêu thẳng thắn cùng hướng khắc phục. Các kết quả này là
+cơ sở để chương kết luận tổng kết đóng góp của đề tài và định hướng phát triển
+tiếp theo.
