@@ -1,0 +1,19 @@
+@startsalt
+'  Phác thảo (wireframe) màn hình phiên học — render ra ui-learn.png
+'  Dựng lại: java -jar plantuml.jar -tpng -o "..\images" ui-learn.puml
+skinparam defaultFontName Arial
+{+
+  { Phiên học | Tiến độ: 3 / 15 }
+  ==
+  Chọn nghĩa đúng của từ:
+  { ephemeral  /  ɪˈfem.ər.əl }
+  [ Nghe phát âm ]
+  ==
+  () tồn tại lâu dài
+  (X) tồn tại trong thời gian rất ngắn
+  () liên quan đến nước
+  () thuộc về quá khứ
+  ==
+  [           Kiểm tra           ]
+}
+@endsalt

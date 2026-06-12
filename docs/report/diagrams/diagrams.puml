@@ -1,0 +1,448 @@
+' =====================================================================
+'  Nguồn PlantUML cho các sơ đồ Chương 2 (Phân tích & Thiết kế hệ thống)
+'
+'  Mỗi khối @startuml <tên> xuất ra một tệp PNG <tên>.png. Tên trùng với
+'  tên tệp mà macro \figph{...} trong Chuong2.tex mong đợi trong images/.
+'
+'  Dựng lại tất cả:
+'    java -jar plantuml.jar -Smetana -tpng -o "..\images" diagrams.puml
+'  (chạy trong thư mục docs/report/diagrams/). Cần Java; không cần Graphviz
+'  nhờ engine Smetana tích hợp.
+' =====================================================================
+
+' ---------------------------------------------------------------------
+@startuml usecase-tong-quat
+skinparam dpi 150
+skinparam defaultFontName Arial
+left to right direction
+skinparam packageStyle rectangle
+actor "Người học" as U
+actor "Quản trị viên" as A
+actor "Gemma 3 (LLM)" as G
+actor "DV chấm phát âm" as P
+actor "Nhà cung cấp OAuth" as O
+A --|> U
+rectangle "Hệ thống học từ vựng" {
+  usecase "Đăng ký / Đăng nhập" as UC1
+  usecase "Quản lý hồ sơ học tập" as UC2
+  usecase "Tra cứu từ vựng & chủ đề" as UC3
+  usecase "Quản lý từ vựng cá nhân" as UC4
+  usecase "Quản lý bộ thẻ" as UC5
+  usecase "Học theo phiên (SRS)" as UC6
+  usecase "Luyện viết câu" as UC7
+  usecase "Luyện phát âm" as UC8
+  usecase "Theo dõi tiến độ" as UC9
+  usecase "Bảng xếp hạng" as UC10
+  usecase "Quản trị từ vựng / chủ đề" as UC11
+  usecase "Tạo nhanh từ vựng bằng AI" as UC12
+  usecase "Duyệt nội dung AI" as UC13
+  usecase "Quản lý người dùng" as UC14
+}
+U --> UC1
+U --> UC2
+U --> UC3
+U --> UC4
+U --> UC5
+U --> UC6
+U --> UC7
+U --> UC8
+U --> UC9
+U --> UC10
+A --> UC11
+A --> UC12
+A --> UC13
+A --> UC14
+UC1 ..> O : <<include>>
+UC7 ..> G : <<include>>
+UC12 ..> G : <<include>>
+UC8 ..> P : <<include>>
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml activity-phien-hoc
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Phiên học theo cơ chế ôn tập ngắt quãng
+start
+:Người học chọn chế độ học\n(daily / topic / deck / review);
+:Chọn từ phù hợp + tự ghi danh từ mới;
+if (Có thẻ để học?) then (không)
+  :Trả về lý do phiên rỗng + nextDueAt;
+  stop
+else (có)
+endif
+:Mở rộng mỗi từ thành chuỗi câu hỏi\n(dễ -> khó, ký HMAC);
+repeat
+  :Hiển thị câu hỏi;
+  :Người học trả lời;
+  :Xác thực HMAC + chấm điểm;
+  if (Bước cuối của từ?) then (đúng)
+    :Quy đổi điểm SM-2;
+    :Cập nhật tiến độ + lịch ôn tập;
+    :Ghi nhật ký hoạt động;
+  else (chưa)
+    :Chỉ phản hồi, chưa cập nhật;
+  endif
+repeat while (Còn câu hỏi?) is (còn) not (hết)
+:Kết thúc phiên;
+stop
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml activity-tao-nhanh-ai
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Tạo nhanh từ vựng bằng AI
+|API|
+start
+:Nhận lemma + ngôn ngữ;
+if (Đã có job pending cùng lemma?) then (có)
+  :Trả về job cũ (202);
+  stop
+else (không)
+  :Tạo job trạng thái pending;
+  :Đẩy job vào hàng đợi BullMQ;
+  :Trả về 202 + jobId;
+endif
+|Worker|
+:Lấy job khỏi hàng đợi;
+:Tra từ điển + gọi Gemma 3\n(nghĩa, ví dụ, bản dịch);
+:Sinh âm thanh (TTS) + tải lên Cloudinary;
+:Tạo bản ghi từ vựng (1 / từ loại);
+:Cập nhật job = completed\n+ resultVocabularyIds;
+|API|
+:Người dùng thăm dò job lấy kết quả;
+stop
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml activity-luyen-viet
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Luyện viết câu chấm điểm bất đồng bộ
+|API|
+start
+:Nhận câu + từ mục tiêu + hình thức;
+if (Vượt hạn mức ngày?) then (có)
+  :Trả về 429;
+  stop
+else (không)
+endif
+:Tạo attempt = pending + enqueue;
+:Trả về 202 + attemptId;
+|Worker chấm điểm|
+:Lấy attempt khỏi hàng đợi\n(giới hạn tần suất);
+:Gọi Gemma 3 chấm theo rubric;
+:Lưu điểm 0-100 + CEFR + nhận xét;
+|API|
+:Người học thăm dò attempt lấy kết quả;
+stop
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml seq-dang-nhap
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Đăng nhập và cấp phát token
+actor "Người học" as U
+participant "AuthController" as C
+participant "AuthService" as S
+participant "TokenService" as T
+database "PostgreSQL" as DB
+U -> C : POST /v1/auth/login (email, password)
+C -> S : validate(email, password)
+S -> DB : SELECT user theo email
+DB --> S : user (password_hash)
+S -> S : bcrypt.compare(password, hash)
+alt Sai email / mật khẩu
+  S --> C : Unauthorized
+  C --> U : 401
+else Hợp lệ
+  S -> T : issueTokens(user)
+  T -> DB : INSERT refresh_token (token_hash)
+  T --> S : accessToken, refreshToken
+  S --> C : cặp token
+  C --> U : 200 { accessToken, refreshToken }
+end
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml seq-tra-loi
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Nộp đáp án và chấm điểm trong phiên học
+actor "Người học" as U
+participant "LearnController" as C
+participant "AnswerGrader" as G
+participant "SrsService" as S
+database "PostgreSQL" as DB
+U -> C : POST /v1/me/learn/answer (đáp án + chữ ký HMAC)
+C -> G : verify + grade(payload)
+G -> G : verifyHmac(nonce, issuedAtMs, signature)
+alt Chữ ký sai / hết hạn
+  G --> C : lỗi xác thực
+  C --> U : 401
+else Hợp lệ
+  G -> G : suy lại đáp án đúng + so khớp
+  alt Bước cuối của từ
+    G -> S : applySm2(quality)
+    S -> DB : UPDATE user_word_progress
+    S -> DB : INSERT learning_activity
+    S --> G : progress mới
+  else Bước trung gian
+    G -> G : chỉ chấm để phản hồi
+  end
+  G --> C : { correct, correctAnswer, quality, progress, requeue }
+  C --> U : 200 kết quả
+end
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml seq-phat-am
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Chấm điểm phát âm qua vi dịch vụ
+actor "Người học" as U
+participant "PronController" as C
+participant "PronService" as S
+participant "DV chấm phát âm (FastAPI)" as M
+database "PostgreSQL" as DB
+U -> C : POST /v1/pronunciation/score (audio + word)
+C -> S : score(audio, word)
+S -> M : POST /score (audio)
+alt Dịch vụ không khả dụng
+  M --> S : lỗi kết nối
+  S --> C : 503
+  C --> U : 503
+else Thành công
+  M --> S : điểm tổng + điểm từng phoneme
+  S -> DB : INSERT pronunciation_attempt
+  S --> C : kết quả
+  C --> U : 200 { overallScore, phonemes[] }
+end
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml kien-truc-tong-the
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Kiến trúc tổng thể hệ thống
+left to right direction
+node "Máy khách\n(Web / Di động)" as Client
+package "Backend (NestJS)" {
+  node "Tiến trình API\nController -> Service -> Repository\nJWT/Roles Guard, ValidationPipe\nURI versioning /v1" as API
+  node "Tiến trình Worker (BullMQ)\nlàm giàu từ vựng, sinh âm thanh,\nchấm điểm luyện tập" as Worker
+}
+database "PostgreSQL" as PG
+queue "Redis (BullMQ)" as Redis
+cloud "Gemma 3\n(Google AI Studio)" as Gemma
+cloud "DV chấm phát âm\n(FastAPI)" as Pron
+cloud "Cloudinary\n(media)" as CDN
+cloud "Edge TTS" as TTS
+cloud "OAuth\nGoogle/Apple/GitHub" as OAuth
+cloud "SMTP Email" as Mail
+Client --> API : HTTPS / JSON
+API --> PG
+API --> Redis : enqueue
+Worker --> Redis : dequeue
+Worker --> PG
+API --> OAuth
+API --> Mail
+API --> Pron
+Worker --> Gemma
+Worker --> TTS
+Worker --> CDN
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml erd
+skinparam dpi 150
+skinparam defaultFontName Arial
+hide circle
+skinparam shadowing false
+
+entity users {
+  * id : uuid <<PK>>
+  --
+  email : varchar <<unique>>
+  password_hash : varchar
+  role : enum
+  is_onboarded : boolean
+  target_language : varchar
+  proficiency_level : enum
+}
+entity user_identities {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider : enum
+  provider_user_id : varchar
+}
+entity refresh_tokens {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  token_hash : varchar
+  expires_at : timestamptz
+}
+entity email_verification_codes {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  code_hash : varchar
+  expires_at : timestamptz
+}
+entity vocabularies {
+  * id : uuid <<PK>>
+  --
+  language : varchar
+  lemma : varchar
+  part_of_speech : enum
+  cefr_level : enum
+  source : enum
+  visibility : enum
+  is_approved : boolean
+  created_by_user_id : uuid <<FK>>
+}
+entity vocabulary_senses {
+  * id : uuid <<PK>>
+  --
+  vocabulary_id : uuid <<FK>>
+  sense_order : smallint
+  gloss : varchar
+  definition : text
+}
+entity vocabulary_translations {
+  * id : uuid <<PK>>
+  --
+  sense_id : uuid <<FK>>
+  language : varchar
+  translation : varchar
+}
+entity vocabulary_examples {
+  * id : uuid <<PK>>
+  --
+  sense_id : uuid <<FK>>
+  sentence : text
+}
+entity topics {
+  * id : uuid <<PK>>
+  --
+  slug : varchar <<unique>>
+  name : varchar
+}
+entity vocabulary_topics {
+  * vocabulary_id : uuid <<PK,FK>>
+  * topic_id : uuid <<PK,FK>>
+}
+entity decks {
+  * id : uuid <<PK>>
+  --
+  name : varchar
+  language : varchar
+  owner_id : uuid <<FK>>
+  visibility : enum
+  vocab_count : int
+}
+entity deck_vocabularies {
+  * deck_id : uuid <<PK,FK>>
+  * vocabulary_id : uuid <<PK,FK>>
+  --
+  position : int
+}
+entity user_word_progress {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  vocabulary_id : uuid <<FK>>
+  status : enum
+  ease_factor : numeric
+  interval_days : int
+  next_review_at : timestamptz
+}
+entity learning_activity {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  vocabulary_id : uuid <<FK>>
+  reviewed_at : timestamptz
+  quality : smallint
+  was_new : boolean
+}
+entity vocab_enrichment_jobs {
+  * id : uuid <<PK>>
+  --
+  language : varchar
+  lemma : varchar
+  status : enum
+  batch_id : uuid
+  owner_user_id : uuid <<FK>>
+}
+entity production_attempts {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  vocabulary_id : uuid <<FK>>
+  modality : enum
+  status : enum
+  score : int
+}
+entity pronunciation_attempts {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  vocabulary_id : uuid <<FK>>
+  word : varchar
+  overall_score : smallint
+}
+
+users ||--o{ user_identities
+users ||--o{ refresh_tokens
+users ||--o{ email_verification_codes
+users ||--o{ user_word_progress
+users ||--o{ learning_activity
+users ||--o{ production_attempts
+users ||--o{ pronunciation_attempts
+users |o--o{ decks
+users |o--o{ vocabularies
+users |o--o{ vocab_enrichment_jobs
+vocabularies ||--o{ vocabulary_senses
+vocabulary_senses ||--o{ vocabulary_translations
+vocabulary_senses ||--o{ vocabulary_examples
+vocabularies ||--o{ vocabulary_topics
+topics ||--o{ vocabulary_topics
+decks ||--o{ deck_vocabularies
+vocabularies ||--o{ deck_vocabularies
+vocabularies ||--o{ user_word_progress
+vocabularies |o--o{ learning_activity
+vocabularies ||--o{ production_attempts
+vocabularies |o--o{ pronunciation_attempts
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml ui-sitemap
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Bản đồ điều hướng ứng dụng
+left to right direction
+skinparam rectangle {
+  BackgroundColor #F7F7F7
+}
+rectangle "Đăng nhập / Đăng ký" as login
+rectangle "Khai báo hồ sơ học tập" as onboard
+rectangle "Trang chủ (Dashboard)" as home
+rectangle "Phiên học (SRS)" as learn
+rectangle "Khám phá từ vựng & bộ thẻ" as explore
+rectangle "Luyện viết câu" as practice
+rectangle "Luyện phát âm" as pron
+rectangle "Bảng xếp hạng" as board
+rectangle "Hồ sơ cá nhân" as profile
+login --> onboard
+onboard --> home
+home --> learn
+home --> explore
+home --> practice
+home --> pron
+home --> board
+home --> profile
+@enduml
