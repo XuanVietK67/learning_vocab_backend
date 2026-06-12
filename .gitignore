@@ -78,3 +78,6 @@ docs/report/**/*.bbl
 docs/report/**/*.blg
 docs/report/**/*.bcf
 docs/report/**/*.run.xml
+
+# LaTeX export/transfer bundle (regenerated, not a source)
+docs/report/*.zip

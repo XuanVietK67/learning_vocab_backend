@@ -1,0 +1,22 @@
+@startsalt
+'  Phác thảo (wireframe) màn hình trang chủ — render ra ui-home.png
+'  Dựng lại: java -jar plantuml.jar -tpng -o "..\images" ui-home.puml
+skinparam defaultFontName Arial
+{+
+  { Trang chủ | Hồ sơ cá nhân }
+  ==
+  Xin chào, Việt
+  Chuỗi ngày học: 12
+  ==
+  { Từ mới: 8 | Đang học: 23 }
+  { Ôn tập: 45 | Thành thạo: 120 }
+  ==
+  Thẻ đến hạn hôm nay: 15
+  [        Bắt đầu học        ]
+  ==
+  Hoạt động 7 ngày qua
+  { T2 | T3 | T4 | T5 | T6 | T7 | CN }
+  ==
+  { [Khám phá] | [Luyện viết] | [Phát âm] | [Xếp hạng] }
+}
+@endsalt

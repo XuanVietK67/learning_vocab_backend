@@ -1,0 +1,1337 @@
+% =====================================================================
+%  CHƯƠNG 2 — PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
+%
+%  File chương theo cấu trúc template Overleaf (hướng Ứng dụng).
+%  Cách dùng: đặt file này trong thư mục Chuong/ của template và thêm
+%      \include{Chuong/Chuong2}
+%  vào main.tex (sau Chương 1).
+%
+%  GHI CHÚ VỀ HÌNH VẼ (sơ đồ UML, kiến trúc, ERD, giao diện):
+%  Các hình trong chương dùng macro \figph{<tên-file>}{<tỉ-lệ-rộng>}{<chú-thích>}{<nhãn>}.
+%  Macro tự động:  - chèn ảnh thật nếu tệp tồn tại trong thư mục images/;
+%                  - nếu chưa có ảnh, hiển thị một khung giữ chỗ có nhãn để
+%                    báo cáo vẫn biên dịch được. Khi đã vẽ sơ đồ (PlantUML /
+%                    draw.io / StarUML) và export ra PNG/PDF, chỉ cần đặt tệp
+%                    đúng tên vào images/ là hình thật thay thế khung giữ chỗ.
+%  Mã nguồn PlantUML gợi ý cho từng sơ đồ được để ngay trên mỗi hình dưới
+%  dạng chú thích (comment) để tiện dựng lại.
+%
+%  KHÔNG hardcode số chương/mục/bảng/hình — luôn dùng \label + \ref / \cite.
+% =====================================================================
+
+% --- Macro tiện ích cho chương (chỉ khai báo 1 lần) -------------------
+\providecommand{\code}[1]{\texttt{\detokenize{#1}}} % in định danh snake_case an toàn (giữ dấu _)
+\providecommand{\figph}[4]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{images/#1}%
+      {\includegraphics[width=#2\textwidth,height=0.82\textheight,keepaspectratio]{#1}}%
+      {\setlength{\fboxsep}{10pt}\fbox{\begin{minipage}[c][3.6cm][c]{#2\textwidth}\centering\itshape Sơ đồ minh hoạ --- chèn tệp ảnh \code{images/#1} vào thư mục \code{images/}.\end{minipage}}}%
+    \caption{#3}%
+    \label{#4}%
+  \end{figure}}
+
+\chapter{PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG}
+\label{chuong:phan-tich-thiet-ke}
+
+Trên cơ sở bài toán và mục tiêu đã xác định ở Chương~\ref{chuong:tong-quan},
+chương này tiến hành phân tích và thiết kế chi tiết hệ thống phía máy chủ
+(backend) của ứng dụng học từ vựng. Trước hết,
+mục~\ref{sec:phan-tich-chuc-nang} và mục~\ref{sec:yeu-cau-phi-chuc-nang}
+phân tích lần lượt các yêu cầu chức năng và phi chức năng. Tiếp đó,
+mục~\ref{sec:use-case} xây dựng biểu đồ use case và đặc tả các use case
+tiêu biểu; mục~\ref{sec:bieu-do-hoat-dong} và mục~\ref{sec:bieu-do-tuan-tu}
+mô tả động học của hệ thống qua biểu đồ hoạt động và biểu đồ tuần tự. Phần
+thiết kế gồm: kiến trúc tổng thể (mục~\ref{sec:kien-truc}), thiết kế cơ sở
+dữ liệu (mục~\ref{sec:thiet-ke-csdl}), thiết kế giao diện lập trình ứng dụng
+API (mục~\ref{sec:thiet-ke-api}) và thiết kế giao diện người dùng
+(mục~\ref{sec:thiet-ke-giao-dien}). Cuối cùng, mục~\ref{sec:ket-chuong-2}
+tóm tắt kết quả của chương.
+
+% =====================================================================
+\section{Phân tích yêu cầu chức năng}
+\label{sec:phan-tich-chuc-nang}
+
+\subsection{Tác nhân của hệ thống}
+\label{subsec:tac-nhan}
+
+Qua phân tích nghiệp vụ ở Chương~\ref{chuong:tong-quan}, hệ thống có hai
+\textit{tác nhân chính} (người sử dụng trực tiếp) và một số \textit{tác nhân
+phụ} (hệ thống ngoài tham gia vào nghiệp vụ). Bảng~\ref{tab:tac-nhan} liệt
+kê các tác nhân này.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.2cm}|p{2.4cm}|p{9.0cm}|}
+    \hline
+    \textbf{Tác nhân} & \textbf{Loại} & \textbf{Mô tả} \\
+    \hline
+    Người học (User) & Chính & Người dùng cuối: học và ôn tập từ vựng, tạo từ vựng và bộ thẻ cá nhân, luyện viết câu, luyện phát âm, theo dõi tiến độ và tham gia bảng xếp hạng. \\
+    \hline
+    Quản trị viên (Admin) & Chính & Biên tập và quản lý kho từ vựng hệ thống, chủ đề, bộ thẻ mẫu; duyệt nội dung do AI sinh ra; quản lý tài khoản người dùng. \\
+    \hline
+    Dịch vụ AI sinh ngôn ngữ (Gemma~3) & Phụ & Mô hình ngôn ngữ lớn (LLM) trên Google AI Studio: làm giàu dữ liệu từ điển, sinh bản dịch và chấm điểm câu luyện tập. \\
+    \hline
+    Dịch vụ chấm phát âm & Phụ & Vi dịch vụ (microservice) chấm điểm âm vị, trả về điểm từng phoneme cho bản ghi âm của người học. \\
+    \hline
+    Nhà cung cấp đăng nhập (Google, Apple, GitHub) & Phụ & Xác thực danh tính người dùng qua giao thức OAuth/OpenID Connect. \\
+    \hline
+    Dịch vụ hạ tầng (Email, lưu trữ media, TTS) & Phụ & Gửi email xác minh, lưu trữ hình ảnh/âm thanh và sinh âm thanh phát âm tự động. \\
+    \hline
+  \end{tabular}
+  \caption{Các tác nhân của hệ thống}
+  \label{tab:tac-nhan}
+\end{table}
+
+\subsection{Danh sách yêu cầu chức năng}
+\label{subsec:danh-sach-chuc-nang}
+
+Các yêu cầu chức năng được nhóm theo phân hệ nghiệp vụ và mã hoá để tiện
+truy vết tới các use case, biểu đồ và API ở các mục sau. Mỗi yêu cầu được
+gán mã dạng \textbf{FR-\textit{x}}.
+
+\subsubsection{Phân hệ tài khoản và xác thực}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.7cm}|p{3.4cm}|p{9.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Chức năng} & \textbf{Mô tả} \\
+    \hline
+    FR-01 & Đăng ký tài khoản & Tạo tài khoản bằng email và mật khẩu; trả về cặp token truy cập và làm mới. \\
+    \hline
+    FR-02 & Đăng nhập & Đăng nhập bằng email/mật khẩu (có giới hạn tần suất) hoặc qua nhà cung cấp bên thứ ba (Google, Apple, GitHub). \\
+    \hline
+    FR-03 & Quản lý phiên đăng nhập & Làm mới token truy cập từ token làm mới; đăng xuất (thu hồi token làm mới). \\
+    \hline
+    FR-04 & Xác minh email & Gửi mã xác minh 6 chữ số tới email và xác nhận mã để đánh dấu email đã xác minh. \\
+    \hline
+    FR-05 & Thiết lập hồ sơ học tập & Khai báo ngôn ngữ mẹ đẻ, ngôn ngữ đích, trình độ (CEFR), mục tiêu phút/ngày và số từ/tuần; bật/tắt việc tham gia bảng xếp hạng. \\
+    \hline
+  \end{tabular}
+  \caption{Yêu cầu chức năng phân hệ tài khoản và xác thực}
+  \label{tab:fr-auth}
+\end{table}
+
+\subsubsection{Phân hệ từ vựng và chủ đề}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.7cm}|p{3.4cm}|p{9.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Chức năng} & \textbf{Mô tả} \\
+    \hline
+    FR-06 & Tra cứu từ vựng hệ thống & Tìm kiếm, lọc (theo ngôn ngữ, trình độ CEFR, chủ đề, tiền tố lemma) và phân trang kho từ vựng đã được duyệt. \\
+    \hline
+    FR-07 & Xem chi tiết từ vựng & Xem một từ với đầy đủ các nghĩa, bản dịch, câu ví dụ, phiên âm, âm thanh và chủ đề. \\
+    \hline
+    FR-08 & Quản lý từ vựng cá nhân & Người học tự tạo, sửa, xoá từ vựng riêng (riêng tư); tạo nhanh từ một lemma để hệ thống tự làm giàu dữ liệu. \\
+    \hline
+    FR-09 & Duyệt chủ đề & Xem danh sách và chi tiết các chủ đề dùng để gắn nhãn từ vựng. \\
+    \hline
+    FR-10 & Quản trị từ vựng hệ thống & Quản trị viên tạo/sửa/xoá từ vựng, nghĩa, bản dịch, ví dụ và liên kết chủ đề; nhập hàng loạt theo cơ chế upsert; duyệt bản nháp. \\
+    \hline
+    FR-11 & Quản trị chủ đề & Quản trị viên tạo/sửa/xoá chủ đề trong hệ thống phân loại. \\
+    \hline
+  \end{tabular}
+  \caption{Yêu cầu chức năng phân hệ từ vựng và chủ đề}
+  \label{tab:fr-vocab}
+\end{table}
+
+\subsubsection{Phân hệ bộ thẻ}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.7cm}|p{3.4cm}|p{9.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Chức năng} & \textbf{Mô tả} \\
+    \hline
+    FR-12 & Duyệt bộ thẻ & Xem các bộ thẻ do hệ thống biên tập và các bộ thẻ công khai của cộng đồng; nhận gợi ý bộ thẻ theo hồ sơ học tập. \\
+    \hline
+    FR-13 & Quản lý bộ thẻ cá nhân & Tạo, sửa, xoá bộ thẻ riêng; thêm/bớt từ vào bộ thẻ; nhập hàng loạt từ danh sách lemma. \\
+    \hline
+    FR-14 & Sao chép \& chia sẻ bộ thẻ & Sao chép một bộ thẻ mẫu hoặc công khai về kho cá nhân; công khai bộ thẻ của mình cho cộng đồng. \\
+    \hline
+  \end{tabular}
+  \caption{Yêu cầu chức năng phân hệ bộ thẻ}
+  \label{tab:fr-deck}
+\end{table}
+
+\subsubsection{Phân hệ học, ôn tập và theo dõi tiến độ}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.7cm}|p{3.4cm}|p{9.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Chức năng} & \textbf{Mô tả} \\
+    \hline
+    FR-15 & Ghi danh từ vào hàng đợi học & Thêm từ (theo danh sách hoặc theo bộ thẻ) vào hàng đợi học của người dùng (idempotent). \\
+    \hline
+    FR-16 & Tạo phiên học & Sinh một phiên học theo chế độ (hằng ngày, theo chủ đề, theo bộ thẻ, ôn tập); mỗi từ được mở rộng thành một chuỗi câu hỏi từ dễ đến khó tuỳ giai đoạn ghi nhớ. \\
+    \hline
+    FR-17 & Trả lời và chấm điểm & Nộp đáp án cho từng câu hỏi; hệ thống xác thực, chấm điểm và cập nhật lịch ôn tập theo thuật toán SM-2 mở rộng bước học. \\
+    \hline
+    FR-18 & Lấy thẻ đến hạn & Truy xuất các thẻ đã đến hạn ôn tập, sắp theo thời gian đến hạn. \\
+    \hline
+    FR-19 & Thống kê tiến độ & Xem thống kê trang chủ (số từ theo trạng thái, chuỗi ngày học, số thẻ đến hạn) và biểu đồ hoạt động theo ngày (heatmap). \\
+    \hline
+    FR-20 & Bảng xếp hạng cộng đồng & Xem xếp hạng người học theo số từ đã thành thạo (hoặc số từ mới) cùng thứ hạng của bản thân. \\
+    \hline
+  \end{tabular}
+  \caption{Yêu cầu chức năng phân hệ học, ôn tập và theo dõi tiến độ}
+  \label{tab:fr-learn}
+\end{table}
+
+\subsubsection{Phân hệ luyện tập chủ động và hỗ trợ AI}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.7cm}|p{3.4cm}|p{9.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Chức năng} & \textbf{Mô tả} \\
+    \hline
+    FR-21 & Luyện viết/nói câu & Người học đặt một câu chứa từ mục tiêu; mô hình LLM chấm điểm bất đồng bộ theo thang điểm 0--100 kèm trình độ CEFR mà câu thể hiện và nhận xét. \\
+    \hline
+    FR-22 & Luyện phát âm & Người học tải lên bản ghi âm; dịch vụ chấm điểm trả về điểm tổng và điểm từng âm vị; lưu lại lịch sử luyện tập. \\
+    \hline
+    FR-23 & Tạo nhanh từ vựng bằng AI & Từ một lemma, hệ thống tự sinh dữ liệu từ điển (nghĩa, ví dụ, bản dịch) và âm thanh; hỗ trợ trích xuất và nhập hàng loạt từ tệp văn bản. \\
+    \hline
+    FR-24 & Duyệt nội dung AI & Quản trị viên xem, chỉnh sửa và phê duyệt các bản nháp do AI sinh trước khi xuất bản vào kho hệ thống. \\
+    \hline
+  \end{tabular}
+  \caption{Yêu cầu chức năng phân hệ luyện tập chủ động và hỗ trợ AI}
+  \label{tab:fr-ai}
+\end{table}
+
+% =====================================================================
+\section{Phân tích yêu cầu phi chức năng}
+\label{sec:yeu-cau-phi-chuc-nang}
+
+Bên cạnh yêu cầu chức năng, hệ thống cần thoả mãn các yêu cầu phi chức năng
+nhằm bảo đảm chất lượng vận hành. Bảng~\ref{tab:nfr} tổng hợp các yêu cầu
+này theo từng tiêu chí chất lượng.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{1.5cm}|p{3.0cm}|p{10.0cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Tiêu chí} & \textbf{Yêu cầu} \\
+    \hline
+    NFR-01 & Bảo mật & Mật khẩu băm bằng bcrypt; xác thực bằng JWT (cặp token truy cập + làm mới), token làm mới lưu dưới dạng băm và có thể thu hồi; phân quyền theo vai trò và kiểm soát truy cập theo quyền sở hữu dữ liệu; giới hạn tần suất đăng nhập; ký HMAC cho từng câu hỏi trong phiên học để chấm điểm phi trạng thái an toàn; kiểm tra đầu vào nghiêm ngặt (loại bỏ trường lạ). \\
+    \hline
+    NFR-02 & Hiệu năng & Mọi danh sách đều phân trang; các truy vấn nóng được đánh chỉ mục; các tác vụ nặng (sinh nội dung, sinh âm thanh, chấm điểm LLM) được đẩy sang hàng đợi xử lý bất đồng bộ để không chặn luồng yêu cầu chính. \\
+    \hline
+    NFR-03 & Khả năng mở rộng & Tầng API phi trạng thái (xác thực bằng token) cho phép mở rộng theo chiều ngang; tách riêng tầng worker xử lý nền; API được phiên bản hoá theo URI để tiến hoá không phá vỡ máy khách. \\
+    \hline
+    NFR-04 & Độ tin cậy \& sẵn sàng & Các thao tác ghi nhiều bảng chạy trong giao dịch (transaction) để bảo đảm tính nguyên tử; công việc nền có tính idempotent và cơ chế thăm dò (polling); suy giảm có kiểm soát khi dịch vụ ngoài không khả dụng (trả về mã 503); có hạn mức sử dụng theo ngày cho tài nguyên dùng chung. \\
+    \hline
+    NFR-05 & Nhất quán dữ liệu & Ràng buộc khoá ngoại, ràng buộc duy nhất và quy tắc xoá lan truyền (cascade/set null) bảo đảm toàn vẹn giữa từ vựng, bộ thẻ và tiến độ học. \\
+    \hline
+    NFR-06 & Khả năng bảo trì & Kiến trúc mô-đun rõ ràng theo NestJS; mã nguồn TypeScript chế độ strict; lược đồ CSDL quản lý bằng migration; hợp đồng API được tài liệu hoá tập trung. \\
+    \hline
+    NFR-07 & Tính khả dụng API & Tuân thủ quy ước REST nhất quán; dạng phân trang và dạng lỗi thống nhất; trả về mã trạng thái HTTP đúng ngữ nghĩa giúp máy khách xử lý dễ dàng. \\
+    \hline
+    NFR-08 & Tính khả chuyển & Đóng gói bằng Docker; cấu hình qua biến môi trường; giao tiếp qua HTTP/JSON chuẩn nên phục vụ được nhiều loại máy khách (web, di động). \\
+    \hline
+  \end{tabular}
+  \caption{Các yêu cầu phi chức năng của hệ thống}
+  \label{tab:nfr}
+\end{table}
+
+% =====================================================================
+\section{Biểu đồ use case và đặc tả}
+\label{sec:use-case}
+
+\subsection{Biểu đồ use case tổng quát}
+\label{subsec:usecase-tong-quat}
+
+Hình~\ref{fig:usecase-tong-quat} trình bày biểu đồ use case tổng quát của
+hệ thống. Người học tương tác với các gói use case: \textit{Tài khoản},
+\textit{Từ vựng \& bộ thẻ}, \textit{Học \& ôn tập}, \textit{Luyện tập},
+\textit{Tiến độ \& cộng đồng}. Quản trị viên kế thừa người học và bổ sung
+các gói \textit{Quản trị nội dung} (từ vựng, chủ đề, duyệt nội dung AI) và
+\textit{Quản trị người dùng}. Các tác nhân phụ (Gemma~3, dịch vụ chấm phát
+âm, nhà cung cấp đăng nhập) tham gia gián tiếp vào một số use case.
+
+% --- PlantUML gợi ý cho Hình use case tổng quát ----------------------
+% @startuml
+% left to right direction
+% actor "Người học" as U
+% actor "Quản trị viên" as A
+% actor "Gemma 3 (LLM)" as G
+% actor "DV chấm phát âm" as P
+% A --|> U
+% rectangle "Hệ thống học từ vựng" {
+%   usecase "Đăng ký / Đăng nhập" as UC1
+%   usecase "Quản lý hồ sơ học tập" as UC2
+%   usecase "Tra cứu từ vựng" as UC3
+%   usecase "Quản lý từ vựng cá nhân" as UC4
+%   usecase "Quản lý bộ thẻ" as UC5
+%   usecase "Học theo phiên (SRS)" as UC6
+%   usecase "Luyện viết câu" as UC7
+%   usecase "Luyện phát âm" as UC8
+%   usecase "Theo dõi tiến độ" as UC9
+%   usecase "Bảng xếp hạng" as UC10
+%   usecase "Quản trị từ vựng / chủ đề" as UC11
+%   usecase "Tạo nhanh từ vựng bằng AI" as UC12
+%   usecase "Quản lý người dùng" as UC13
+% }
+% U --> UC1
+% U --> UC2
+% U --> UC3
+% U --> UC4
+% U --> UC5
+% U --> UC6
+% U --> UC7
+% U --> UC8
+% U --> UC9
+% U --> UC10
+% A --> UC11
+% A --> UC12
+% A --> UC13
+% UC7 ..> G : <<include>>
+% UC12 ..> G : <<include>>
+% UC8 ..> P : <<include>>
+% @enduml
+\figph{usecase-tong-quat.png}{0.95}{Biểu đồ use case tổng quát của hệ thống}{fig:usecase-tong-quat}
+
+\subsection{Đặc tả use case tiêu biểu}
+\label{subsec:dac-ta-usecase}
+
+Do số lượng use case lớn, phần này chỉ đặc tả chi tiết bốn use case tiêu
+biểu, đại diện cho các luồng nghiệp vụ cốt lõi: đăng nhập (FR-02), học theo
+phiên ôn tập ngắt quãng (FR-16, FR-17), luyện viết câu (FR-21) và tạo nhanh
+từ vựng bằng AI (FR-23). Các use case còn lại có cấu trúc tương tự.
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{11.4cm}|}
+    \hline
+    \textbf{Mã use case} & UC-LOGIN \\ \hline
+    \textbf{Tên} & Đăng nhập bằng email và mật khẩu \\ \hline
+    \textbf{Tác nhân} & Người học \\ \hline
+    \textbf{Mô tả} & Người dùng xác thực danh tính để nhận token truy cập hệ thống. \\ \hline
+    \textbf{Tiền điều kiện} & Tài khoản đã được đăng ký và đang hoạt động. \\ \hline
+    \textbf{Hậu điều kiện} & Người dùng nhận được cặp token truy cập và làm mới hợp lệ. \\ \hline
+    \textbf{Luồng chính} &
+      1.~Người dùng gửi email và mật khẩu. \newline
+      2.~Hệ thống kiểm tra giới hạn tần suất đăng nhập. \newline
+      3.~Hệ thống tìm tài khoản theo email và so khớp mật khẩu băm. \newline
+      4.~Hệ thống phát hành token truy cập (JWT) và token làm mới, lưu băm token làm mới. \newline
+      5.~Hệ thống trả về cặp token cho người dùng. \\ \hline
+    \textbf{Luồng ngoại lệ} &
+      2a.~Vượt quá giới hạn tần suất $\rightarrow$ trả về lỗi 429. \newline
+      3a.~Email không tồn tại hoặc mật khẩu sai $\rightarrow$ trả về lỗi 401. \\ \hline
+  \end{tabular}
+  \caption{Đặc tả use case Đăng nhập}
+  \label{tab:uc-login}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{11.4cm}|}
+    \hline
+    \textbf{Mã use case} & UC-LEARN \\ \hline
+    \textbf{Tên} & Học theo phiên ôn tập ngắt quãng \\ \hline
+    \textbf{Tác nhân} & Người học \\ \hline
+    \textbf{Mô tả} & Người học thực hiện một phiên học gồm nhiều câu hỏi; hệ thống chọn thẻ phù hợp, chấm điểm và cập nhật lịch ôn tập. \\ \hline
+    \textbf{Tiền điều kiện} & Người học đã đăng nhập; với chế độ hằng ngày/theo chủ đề cần đã hoàn tất khai báo hồ sơ học tập. \\ \hline
+    \textbf{Hậu điều kiện} & Tiến độ của các từ trong phiên được cập nhật; lịch ôn tập kế tiếp được tính lại. \\ \hline
+    \textbf{Luồng chính} &
+      1.~Người học chọn chế độ học (hằng ngày, theo chủ đề, theo bộ thẻ hoặc ôn tập). \newline
+      2.~Hệ thống chọn các từ phù hợp, tự ghi danh các từ mới (nếu có). \newline
+      3.~Mỗi từ được mở rộng thành chuỗi câu hỏi từ dễ đến khó theo giai đoạn ghi nhớ; mỗi câu hỏi được ký HMAC. \newline
+      4.~Người học trả lời lần lượt từng câu hỏi. \newline
+      5.~Hệ thống xác thực chữ ký, suy lại đáp án đúng và chấm điểm. \newline
+      6.~Ở bước cuối của mỗi từ, hệ thống quy đổi sang điểm chất lượng SM-2 và cập nhật tiến độ, lịch ôn tập, bộ đếm và nhật ký hoạt động. \\ \hline
+    \textbf{Luồng thay thế} &
+      2a.~Không còn thẻ đến hạn hoặc chưa ghi danh từ nào $\rightarrow$ trả về lý do phiên rỗng và thời điểm đến hạn kế tiếp. \newline
+      6a.~Thẻ cần học lại trong khoảng thời gian ngắn $\rightarrow$ đưa lại vào hàng đợi của phiên (requeue). \\ \hline
+    \textbf{Luồng ngoại lệ} &
+      5a.~Chữ ký HMAC sai hoặc hết hạn $\rightarrow$ trả về lỗi 401. \\ \hline
+  \end{tabular}
+  \caption{Đặc tả use case Học theo phiên ôn tập ngắt quãng}
+  \label{tab:uc-learn}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{11.4cm}|}
+    \hline
+    \textbf{Mã use case} & UC-PRACTICE \\ \hline
+    \textbf{Tên} & Luyện viết câu có chấm điểm \\ \hline
+    \textbf{Tác nhân} & Người học, Gemma~3 (LLM) \\ \hline
+    \textbf{Mô tả} & Người học đặt câu với từ mục tiêu; mô hình LLM chấm điểm bất đồng bộ. \\ \hline
+    \textbf{Tiền điều kiện} & Người học đã đăng nhập; chưa vượt hạn mức luyện tập theo ngày. \\ \hline
+    \textbf{Hậu điều kiện} & Bài luyện được chấm điểm và lưu lại cùng nhận xét. \\ \hline
+    \textbf{Luồng chính} &
+      1.~Người học gửi câu (1--280 ký tự) kèm hình thức viết hoặc nói. \newline
+      2.~Hệ thống tạo bản ghi trạng thái "đang chờ", đưa vào hàng đợi và trả về mã 202 ngay lập tức. \newline
+      3.~Worker chấm điểm gọi Gemma~3 để chấm theo rubric, nhận điểm 0--100 và trình độ CEFR của câu. \newline
+      4.~Hệ thống lưu kết quả; người học thăm dò để lấy điểm và nhận xét. \\ \hline
+    \textbf{Luồng ngoại lệ} &
+      1a.~Từ vựng không tồn tại $\rightarrow$ lỗi 404. \newline
+      1b.~Vượt hạn mức theo ngày $\rightarrow$ lỗi 429. \newline
+      2a.~Hàng đợi không khả dụng $\rightarrow$ lỗi 503. \\ \hline
+  \end{tabular}
+  \caption{Đặc tả use case Luyện viết câu có chấm điểm}
+  \label{tab:uc-practice}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{11.4cm}|}
+    \hline
+    \textbf{Mã use case} & UC-QUICKCREATE \\ \hline
+    \textbf{Tên} & Tạo nhanh từ vựng bằng AI \\ \hline
+    \textbf{Tác nhân} & Quản trị viên (hoặc Người học cho từ cá nhân), Gemma~3 \\ \hline
+    \textbf{Mô tả} & Từ một lemma, hệ thống tự sinh dữ liệu từ điển và âm thanh cho từ vựng. \\ \hline
+    \textbf{Tiền điều kiện} & Tác nhân đã đăng nhập với quyền phù hợp. \\ \hline
+    \textbf{Hậu điều kiện} & Một hoặc nhiều bản ghi từ vựng (một cho mỗi từ loại) được tạo; với quản trị là bản nháp chờ duyệt, với người học là từ cá nhân được tự duyệt. \\ \hline
+    \textbf{Luồng chính} &
+      1.~Tác nhân gửi lemma (kèm ngôn ngữ, ngôn ngữ dịch tuỳ chọn). \newline
+      2.~Hệ thống tạo công việc làm giàu trạng thái "đang chờ" và trả về mã 202 kèm mã công việc. \newline
+      3.~Worker tra từ điển và gọi Gemma~3 để sinh nghĩa, ví dụ, bản dịch; sinh âm thanh phát âm. \newline
+      4.~Worker tạo các bản ghi từ vựng và cập nhật kết quả công việc. \newline
+      5.~Tác nhân thăm dò công việc để lấy danh sách từ vựng đã tạo. \\ \hline
+    \textbf{Luồng thay thế} &
+      2a.~Đã tồn tại công việc đang chờ cho cùng lemma $\rightarrow$ trả về công việc cũ (idempotent). \\ \hline
+  \end{tabular}
+  \caption{Đặc tả use case Tạo nhanh từ vựng bằng AI}
+  \label{tab:uc-quickcreate}
+\end{table}
+
+% =====================================================================
+\section{Biểu đồ hoạt động}
+\label{sec:bieu-do-hoat-dong}
+
+Phần này mô tả luồng xử lý của ba nghiệp vụ phức tạp nhất bằng biểu đồ hoạt
+động (activity diagram).
+
+\subsection{Hoạt động một phiên học theo ôn tập ngắt quãng}
+\label{subsec:activity-srs}
+
+Hình~\ref{fig:activity-srs} mô tả vòng đời một phiên học. Sau khi chọn chế
+độ, hệ thống chọn từ và sinh chuỗi câu hỏi; người học trả lời lần lượt; chỉ
+ở \textit{bước cuối} của mỗi từ mới cập nhật tiến độ theo SM-2 (các bước
+trước chỉ chấm để phản hồi). Trạng thái thẻ chuyển dịch \code{new} $\rightarrow$
+\code{learning} $\rightarrow$ \code{review} $\rightarrow$ \code{mastered}
+theo kết quả ôn tập.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% start
+% :Người học chọn chế độ học;
+% :Chọn từ phù hợp + tự ghi danh từ mới;
+% if (Có thẻ để học?) then (không)
+%   :Trả về lý do phiên rỗng + nextDueAt;
+%   stop
+% else (có)
+% endif
+% :Mở rộng mỗi từ thành chuỗi câu hỏi (ký HMAC);
+% repeat
+%   :Hiển thị câu hỏi;
+%   :Người học trả lời;
+%   :Xác thực HMAC + chấm điểm;
+%   if (Bước cuối của từ?) then (đúng)
+%     :Quy đổi điểm SM-2, cập nhật tiến độ + lịch ôn tập;
+%     :Ghi nhật ký hoạt động;
+%   else (chưa)
+%     :Chỉ phản hồi, chưa cập nhật;
+%   endif
+% repeat while (Còn câu hỏi?) is (còn)
+% ->hết;
+% :Kết thúc phiên;
+% stop
+% @enduml
+\figph{activity-phien-hoc.png}{0.62}{Biểu đồ hoạt động của một phiên học ôn tập ngắt quãng}{fig:activity-srs}
+
+\subsection{Hoạt động tạo nhanh từ vựng bằng AI}
+\label{subsec:activity-ai}
+
+Hình~\ref{fig:activity-ai} mô tả luồng bất đồng bộ của chức năng tạo nhanh
+từ vựng: API chỉ tạo công việc và trả về ngay, còn việc làm giàu dữ liệu
+nặng do worker đảm nhiệm.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% |API|
+% start
+% :Nhận lemma + ngôn ngữ;
+% if (Đã có job pending cùng lemma?) then (có)
+%   :Trả về job cũ (202);
+%   stop
+% else (không)
+%   :Tạo job trạng thái pending;
+%   :Đẩy job vào hàng đợi BullMQ;
+%   :Trả về 202 + jobId;
+% endif
+% |Worker|
+% :Lấy job khỏi hàng đợi;
+% :Tra từ điển + gọi Gemma 3 (nghĩa, ví dụ, bản dịch);
+% :Sinh âm thanh phát âm (TTS) + tải lên kho media;
+% :Tạo bản ghi từ vựng (1 / từ loại);
+% :Cập nhật job = completed + resultVocabularyIds;
+% |API|
+% :Người dùng thăm dò job lấy kết quả;
+% stop
+% @enduml
+\figph{activity-tao-nhanh-ai.png}{0.7}{Biểu đồ hoạt động của chức năng tạo nhanh từ vựng bằng AI}{fig:activity-ai}
+
+\subsection{Hoạt động luyện viết câu chấm điểm bất đồng bộ}
+\label{subsec:activity-practice}
+
+Hình~\ref{fig:activity-practice} mô tả luồng luyện viết câu: tương tự tạo
+nhanh từ vựng, việc chấm điểm bằng LLM được tách khỏi luồng yêu cầu chính
+và bị giới hạn tần suất để bảo vệ khoá dùng chung.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% |API|
+% start
+% :Nhận câu + từ mục tiêu + hình thức;
+% if (Vượt hạn mức ngày?) then (có)
+%   :Trả về 429;
+%   stop
+% else (không)
+%   :Tạo attempt = pending + enqueue;
+%   :Trả về 202 + attemptId;
+% endif
+% |Worker chấm điểm|
+% :Lấy attempt khỏi hàng đợi (giới hạn tần suất);
+% :Gọi Gemma 3 chấm theo rubric;
+% :Lưu điểm 0-100 + CEFR + nhận xét;
+% |API|
+% :Người học thăm dò attempt lấy kết quả;
+% stop
+% @enduml
+\figph{activity-luyen-viet.png}{0.62}{Biểu đồ hoạt động của chức năng luyện viết câu chấm điểm bất đồng bộ}{fig:activity-practice}
+
+% =====================================================================
+\section{Biểu đồ tuần tự}
+\label{sec:bieu-do-tuan-tu}
+
+Biểu đồ tuần tự (sequence diagram) làm rõ trình tự trao đổi thông điệp giữa
+các thành phần cho ba kịch bản quan trọng.
+
+\subsection{Đăng nhập và cấp phát token}
+\label{subsec:seq-login}
+
+Hình~\ref{fig:seq-login} mô tả trình tự xác thực: bộ điều khiển (controller)
+nhận yêu cầu, dịch vụ xác thực kiểm tra mật khẩu băm, sau đó dịch vụ token
+phát hành cặp JWT và lưu băm token làm mới vào cơ sở dữ liệu.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% actor "Người học" as U
+% participant "AuthController" as C
+% participant "AuthService" as S
+% participant "TokenService" as T
+% database "PostgreSQL" as DB
+% U -> C : POST /v1/auth/login (email, password)
+% C -> S : validate(email, password)
+% S -> DB : SELECT user theo email
+% DB --> S : user (password_hash)
+% S -> S : bcrypt.compare(password, hash)
+% S -> T : issueTokens(user)
+% T -> DB : INSERT refresh_token (token_hash)
+% T --> S : accessToken, refreshToken
+% S --> C : cặp token
+% C --> U : 200 { accessToken, refreshToken }
+% @enduml
+\figph{seq-dang-nhap.png}{0.92}{Biểu đồ tuần tự đăng nhập và cấp phát token}{fig:seq-login}
+
+\subsection{Nộp đáp án trong phiên học}
+\label{subsec:seq-answer}
+
+Hình~\ref{fig:seq-answer} mô tả trình tự chấm điểm một câu trả lời. Điểm mấu
+chốt là việc chấm điểm \textit{phi trạng thái}: máy chủ không lưu phiên mà
+xác thực chữ ký HMAC do chính nó ký khi tạo câu hỏi, suy lại đáp án đúng,
+rồi chỉ cập nhật tiến độ ở bước cuối của mỗi từ.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% actor "Người học" as U
+% participant "LearnController" as C
+% participant "AnswerGrader" as G
+% participant "SrsService" as S
+% database "PostgreSQL" as DB
+% U -> C : POST /v1/me/learn/answer (đáp án + chữ ký HMAC)
+% C -> G : verify + grade(payload)
+% G -> G : verifyHmac(nonce, issuedAtMs, signature)
+% alt Chữ ký sai/hết hạn
+%   G --> C : lỗi xác thực
+%   C --> U : 401
+% else Hợp lệ
+%   G -> G : suy lại đáp án đúng + so khớp
+%   alt Bước cuối của từ
+%     G -> S : applySm2(quality)
+%     S -> DB : UPDATE user_word_progress
+%     S -> DB : INSERT learning_activity
+%     S --> G : progress mới
+%   else Bước trung gian
+%     G -> G : chỉ chấm để phản hồi
+%   end
+%   G --> C : { correct, correctAnswer, quality, progress, requeue }
+%   C --> U : 200 kết quả
+% end
+% @enduml
+\figph{seq-tra-loi.png}{0.95}{Biểu đồ tuần tự nộp đáp án và chấm điểm trong phiên học}{fig:seq-answer}
+
+\subsection{Chấm điểm phát âm qua vi dịch vụ}
+\label{subsec:seq-pron}
+
+Hình~\ref{fig:seq-pron} mô tả trình tự luyện phát âm: backend đóng vai trò
+proxy mỏng, chuyển tiếp tệp âm thanh tới vi dịch vụ chấm điểm âm vị viết
+bằng Python rồi lưu lại kết quả.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% actor "Người học" as U
+% participant "PronController" as C
+% participant "PronService" as S
+% participant "DV chấm phát âm (FastAPI)" as M
+% database "PostgreSQL" as DB
+% U -> C : POST /v1/pronunciation/score (audio + word)
+% C -> S : score(audio, word)
+% S -> M : POST /score (audio)
+% alt Dịch vụ không khả dụng
+%   M --> S : lỗi kết nối
+%   S --> C : 503
+%   C --> U : 503
+% else Thành công
+%   M --> S : điểm tổng + điểm từng phoneme
+%   S -> DB : INSERT pronunciation_attempt
+%   S --> C : kết quả
+%   C --> U : 200 { overallScore, phonemes[] }
+% end
+% @enduml
+\figph{seq-phat-am.png}{0.95}{Biểu đồ tuần tự chấm điểm phát âm qua vi dịch vụ}{fig:seq-pron}
+
+% =====================================================================
+\section{Kiến trúc tổng thể hệ thống}
+\label{sec:kien-truc}
+
+\subsection{Mô hình kiến trúc}
+\label{subsec:mo-hinh-kien-truc}
+
+Hệ thống được tổ chức theo kiến trúc \textbf{monolith mô-đun hoá}
+(modular monolith) trên nền NestJS, kết hợp một \textbf{tầng xử lý nền bất
+đồng bộ} và một số \textbf{dịch vụ ngoài} chuyên biệt. Cách tổ chức này giữ
+cho hệ thống đơn giản khi triển khai nhưng vẫn tách bạch trách nhiệm rõ
+ràng và sẵn sàng tách thành các dịch vụ độc lập về sau. Hình~\ref{fig:kien-truc}
+minh hoạ kiến trúc tổng thể.
+
+Trong mỗi mô-đun, mã nguồn được phân tầng theo mẫu phổ biến của NestJS:
+\textit{Controller} (tiếp nhận HTTP, kiểm tra DTO) $\rightarrow$
+\textit{Service} (nghiệp vụ) $\rightarrow$ \textit{Repository} (TypeORM) $\rightarrow$
+\textbf{PostgreSQL}. Các thành phần xuyên suốt gồm: \textit{Guard} xác thực
+JWT và phân quyền theo vai trò, \textit{ValidationPipe} toàn cục, và cơ chế
+phiên bản hoá API theo URI.
+
+% --- PlantUML gợi ý ---------------------------------------------------
+% @startuml
+% left to right direction
+% node "Máy khách (Web / Di động)" as Client
+% node "NestJS API\n(Controller -> Service -> Repository)\nJWT Guard, RolesGuard, ValidationPipe\nURI versioning /v1" as API
+% node "Worker (BullMQ)\nlàm giàu từ vựng, sinh âm thanh,\nchấm điểm luyện tập" as Worker
+% database "PostgreSQL" as PG
+% queue "Redis (BullMQ)" as Redis
+% cloud "Gemma 3 (Google AI Studio)" as Gemma
+% cloud "DV chấm phát âm (FastAPI)" as Pron
+% cloud "Cloudinary (media)" as CDN
+% cloud "Edge TTS" as TTS
+% cloud "OAuth: Google/Apple/GitHub" as OAuth
+% cloud "SMTP Email" as Mail
+% Client --> API : HTTPS / JSON
+% API --> PG
+% API --> Redis : enqueue
+% Worker --> Redis : dequeue
+% Worker --> PG
+% API --> OAuth
+% API --> Mail
+% Worker --> Gemma
+% Worker --> TTS
+% Worker --> CDN
+% API --> Pron
+% @enduml
+\figph{kien-truc-tong-the.png}{0.95}{Kiến trúc tổng thể của hệ thống}{fig:kien-truc}
+
+\subsection{Phân rã thành phần}
+\label{subsec:phan-ra-thanh-phan}
+
+Hệ thống gồm các mô-đun nghiệp vụ được trình bày trong
+Bảng~\ref{tab:modules}. Mỗi mô-đun tự đóng gói controller, service và các
+thực thể của mình.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{2.7cm}|p{8.6cm}|p{2.8cm}|}
+    \hline
+    \textbf{Mô-đun} & \textbf{Trách nhiệm chính} & \textbf{Thực thể chính} \\
+    \hline
+    \code{auth} & Đăng ký, đăng nhập (email/mật khẩu, OAuth), làm mới và thu hồi token, xác minh email. & refresh\_tokens, email\_verification\_codes \\
+    \hline
+    \code{users} & Hồ sơ người dùng, khai báo học tập, danh tính liên kết, quản trị tài khoản. & users, user\_identities \\
+    \hline
+    \code{vocabularies} & Kho từ vựng hệ thống và cá nhân; nghĩa, bản dịch, ví dụ; tạo nhanh và làm giàu bằng AI. & vocabularies, vocabulary\_senses, vocabulary\_translations, vocabulary\_examples, vocab\_enrichment\_jobs \\
+    \hline
+    \code{topics} & Hệ thống phân loại chủ đề và liên kết từ vựng--chủ đề. & topics, vocabulary\_topics \\
+    \hline
+    \code{decks} & Bộ thẻ hệ thống, cá nhân và công khai; thành viên bộ thẻ. & decks, deck\_vocabularies \\
+    \hline
+    \code{progress} & Trạng thái ôn tập ngắt quãng theo từng từ, thuật toán SM-2, thống kê và nhật ký hoạt động. & user\_word\_progress, learning\_activity \\
+    \hline
+    \code{learn} & Sinh phiên học theo ngữ cảnh, mở rộng câu hỏi, chấm điểm phi trạng thái có ký HMAC. & (dùng lại progress) \\
+    \hline
+    \code{practice} & Luyện viết/nói câu, chấm điểm bất đồng bộ bằng LLM. & production\_attempts \\
+    \hline
+    \code{pronunciation} & Proxy chấm điểm phát âm tới vi dịch vụ, lưu lịch sử. & pronunciation\_attempts \\
+    \hline
+    \code{leaderboard} & Xếp hạng người học theo số từ thành thạo / số từ mới. & (dùng lại progress) \\
+    \hline
+    \code{mailer} & Gửi email (mã xác minh) qua SMTP. & --- \\
+    \hline
+  \end{tabular}
+  \caption{Phân rã các mô-đun của hệ thống}
+  \label{tab:modules}
+\end{table}
+
+\subsection{Mô hình xử lý và các dịch vụ ngoài}
+\label{subsec:xu-ly-dich-vu-ngoai}
+
+Hệ thống chạy hai tiến trình chia sẻ chung cơ sở dữ liệu và hàng đợi:
+
+\begin{itemize}
+  \item \textbf{Tiến trình API:} phục vụ các yêu cầu HTTP đồng bộ. Khi gặp
+        tác vụ nặng, nó chỉ tạo bản ghi công việc và đẩy vào hàng đợi
+        \textbf{Redis/BullMQ} rồi trả về ngay (mã 202).
+  \item \textbf{Tiến trình Worker:} tiêu thụ hàng đợi để thực hiện các tác
+        vụ nền: làm giàu dữ liệu từ điển, sinh âm thanh, chấm điểm luyện
+        tập. Việc này giúp luồng yêu cầu chính luôn nhanh và ổn định (đáp
+        ứng NFR-02).
+\end{itemize}
+
+Các dịch vụ ngoài được tích hợp gồm: \textbf{Gemma~3} trên Google AI Studio
+(sinh nội dung và chấm điểm câu); \textbf{vi dịch vụ chấm phát âm} (FastAPI,
+chấm điểm âm vị); \textbf{Cloudinary} (lưu trữ hình ảnh và âm thanh);
+\textbf{Microsoft Edge TTS} (sinh âm thanh phát âm); các nhà cung cấp
+\textbf{OAuth} (Google, Apple, GitHub); và dịch vụ \textbf{SMTP} gửi email.
+Khi một dịch vụ ngoài không khả dụng, hệ thống suy giảm có kiểm soát bằng mã
+lỗi 503 thay vì sụp đổ (đáp ứng NFR-04).
+
+% =====================================================================
+\section{Thiết kế cơ sở dữ liệu}
+\label{sec:thiet-ke-csdl}
+
+Cơ sở dữ liệu sử dụng \textbf{PostgreSQL}. Mọi bảng dùng khoá chính kiểu
+\code{uuid}, tên cột theo quy ước \code{snake_case} và kiểu \code{timestamptz}
+cho các mốc thời gian, bảo đảm nhất quán múi giờ.
+
+\subsection{Sơ đồ thực thể liên kết}
+\label{subsec:erd}
+
+Hình~\ref{fig:erd} trình bày sơ đồ thực thể liên kết (ERD) thể hiện các bảng
+và quan hệ chính. Trục trung tâm là thực thể \code{vocabularies}, được tham
+chiếu bởi tiến độ học, bộ thẻ, bài luyện tập và nhật ký hoạt động.
+
+% --- PlantUML gợi ý (ERD) --------------------------------------------
+% @startuml
+% entity users
+% entity user_identities
+% entity refresh_tokens
+% entity email_verification_codes
+% entity vocabularies
+% entity vocabulary_senses
+% entity vocabulary_translations
+% entity vocabulary_examples
+% entity topics
+% entity vocabulary_topics
+% entity decks
+% entity deck_vocabularies
+% entity user_word_progress
+% entity learning_activity
+% entity vocab_enrichment_jobs
+% entity production_attempts
+% entity pronunciation_attempts
+% users ||--o{ user_identities
+% users ||--o{ refresh_tokens
+% users ||--o{ email_verification_codes
+% users ||--o{ user_word_progress
+% users ||--o{ decks
+% users ||--o{ learning_activity
+% users ||--o{ production_attempts
+% users ||--o{ pronunciation_attempts
+% vocabularies ||--o{ vocabulary_senses
+% vocabulary_senses ||--o{ vocabulary_translations
+% vocabulary_senses ||--o{ vocabulary_examples
+% vocabularies ||--o{ vocabulary_topics
+% topics ||--o{ vocabulary_topics
+% decks ||--o{ deck_vocabularies
+% vocabularies ||--o{ deck_vocabularies
+% vocabularies ||--o{ user_word_progress
+% @enduml
+\figph{erd.png}{0.98}{Sơ đồ thực thể liên kết (ERD) của cơ sở dữ liệu}{fig:erd}
+
+\subsection{Danh sách các bảng}
+\label{subsec:danh-sach-bang}
+
+Bảng~\ref{tab:db-overview} liệt kê toàn bộ các bảng và mục đích của chúng.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{4.0cm}|p{10.6cm}|}
+    \hline
+    \textbf{Bảng} & \textbf{Mục đích} \\
+    \hline
+    users & Tài khoản người dùng và hồ sơ học tập. \\
+    \hline
+    user\_identities & Danh tính liên kết với nhà cung cấp OAuth (Google/Apple/GitHub). \\
+    \hline
+    refresh\_tokens & Token làm mới (lưu băm), phục vụ thu hồi và xoay vòng phiên. \\
+    \hline
+    email\_verification\_codes & Mã xác minh email 6 chữ số (lưu băm) và trạng thái sử dụng. \\
+    \hline
+    vocabularies & Từ vựng (hệ thống và cá nhân) cùng siêu dữ liệu (lemma, từ loại, CEFR, âm thanh\ldots). \\
+    \hline
+    vocabulary\_senses & Các nghĩa của một từ (định nghĩa, ví dụ minh hoạ ảnh, đồng/trái nghĩa). \\
+    \hline
+    vocabulary\_translations & Bản dịch của một nghĩa sang ngôn ngữ đích. \\
+    \hline
+    vocabulary\_examples & Câu ví dụ minh hoạ một nghĩa. \\
+    \hline
+    topics & Hệ thống phân loại chủ đề. \\
+    \hline
+    vocabulary\_topics & Bảng nối nhiều--nhiều giữa từ vựng và chủ đề. \\
+    \hline
+    decks & Bộ thẻ học (hệ thống, cá nhân hoặc công khai). \\
+    \hline
+    deck\_vocabularies & Bảng nối có thứ tự giữa bộ thẻ và từ vựng. \\
+    \hline
+    user\_word\_progress & Trạng thái ôn tập ngắt quãng theo từng cặp (người dùng, từ). \\
+    \hline
+    learning\_activity & Nhật ký chỉ-thêm các lượt ôn tập (heatmap, chuỗi ngày học, bảng xếp hạng). \\
+    \hline
+    vocab\_enrichment\_jobs & Công việc làm giàu từ vựng bằng AI (tạo nhanh, nhập hàng loạt). \\
+    \hline
+    production\_attempts & Bài luyện viết/nói câu và kết quả chấm điểm LLM. \\
+    \hline
+    pronunciation\_attempts & Lượt chấm điểm phát âm và điểm từng âm vị. \\
+    \hline
+  \end{tabular}
+  \caption{Danh sách các bảng trong cơ sở dữ liệu}
+  \label{tab:db-overview}
+\end{table}
+
+\subsection{Mô tả chi tiết các bảng chính}
+\label{subsec:mo-ta-bang}
+
+Phần này mô tả cấu trúc cột của các bảng cốt lõi. Các bảng phụ trợ (token,
+mã xác minh, công việc làm giàu, các bảng nối) có cấu trúc tương tự và được
+mô tả ngắn gọn ở cuối mục.
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    email & varchar(255), unique & Địa chỉ email đăng nhập. \\
+    \hline
+    password\_hash & varchar(255), null & Mật khẩu băm (null nếu chỉ đăng nhập OAuth). \\
+    \hline
+    username & varchar(30), null & Tên hiển thị. \\
+    \hline
+    avatar\_url & varchar(512), null & Ảnh đại diện. \\
+    \hline
+    role & enum & Vai trò: \code{user} / \code{admin}. \\
+    \hline
+    is\_email\_verified & boolean & Email đã xác minh hay chưa. \\
+    \hline
+    is\_active & boolean & Tài khoản còn hoạt động hay không. \\
+    \hline
+    is\_onboarded & boolean & Đã hoàn tất khai báo hồ sơ học tập. \\
+    \hline
+    native\_language & varchar(8), null & Ngôn ngữ mẹ đẻ. \\
+    \hline
+    target\_language & varchar(8), null & Ngôn ngữ đích. \\
+    \hline
+    proficiency\_level & enum, null & Trình độ CEFR (A1--C2). \\
+    \hline
+    daily\_goal\_minutes & smallint, null & Mục tiêu số phút học mỗi ngày. \\
+    \hline
+    weekly\_vocab\_goal & smallint, null & Mục tiêu số từ mỗi tuần. \\
+    \hline
+    leaderboard\_opt\_out & boolean & Ẩn khỏi bảng xếp hạng công khai. \\
+    \hline
+    created\_at / updated\_at & timestamptz & Thời điểm tạo / cập nhật. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \code{users}}
+  \label{tab:db-users}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    language & varchar(8) & Mã ngôn ngữ của từ (vd. \code{en}). \\
+    \hline
+    lemma & varchar(128) & Dạng nguyên thể của từ. \\
+    \hline
+    part\_of\_speech & enum & Từ loại (noun, verb, adjective\ldots). \\
+    \hline
+    ipa & varchar(128), null & Phiên âm quốc tế. \\
+    \hline
+    cefr\_level & enum, null & Trình độ CEFR của từ. \\
+    \hline
+    frequency\_rank & int, null & Thứ hạng tần suất xuất hiện. \\
+    \hline
+    audio\_url & varchar(512), null & Liên kết âm thanh phát âm. \\
+    \hline
+    source & enum & Nguồn gốc: \code{system} / \code{user}. \\
+    \hline
+    created\_by\_user\_id & uuid (FK), null & Người tạo (với từ cá nhân); \code{SET NULL} khi xoá người dùng. \\
+    \hline
+    visibility & enum & Phạm vi: \code{system} / \code{private} / \code{public}. \\
+    \hline
+    is\_approved & boolean & Đã duyệt xuất bản hay còn là bản nháp. \\
+    \hline
+    enrichment\_status & enum, null & Trạng thái làm giàu dữ liệu bằng AI. \\
+    \hline
+    enriched\_at & timestamptz, null & Thời điểm làm giàu xong. \\
+    \hline
+    created\_at / updated\_at & timestamptz & Thời điểm tạo / cập nhật. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \code{vocabularies}}
+  \label{tab:db-vocabularies}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    vocabulary\_id & uuid (FK) & Từ vựng chứa nghĩa này (\code{CASCADE} khi xoá từ). \\
+    \hline
+    sense\_order & smallint & Thứ tự nghĩa trong từ (duy nhất theo từ). \\
+    \hline
+    gloss & varchar(128), null & Diễn giải ngắn của nghĩa. \\
+    \hline
+    definition & text, null & Định nghĩa đầy đủ. \\
+    \hline
+    image\_url & varchar(512), null & Ảnh minh hoạ cho nghĩa. \\
+    \hline
+    synonyms & text[] & Danh sách từ đồng nghĩa (hiển thị). \\
+    \hline
+    antonyms & text[] & Danh sách từ trái nghĩa (hiển thị). \\
+    \hline
+    created\_at / updated\_at & timestamptz & Thời điểm tạo / cập nhật. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \texttt{vocabulary\_senses}}
+  \label{tab:db-senses}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    user\_id & uuid (FK) & Người học (\code{CASCADE} khi xoá người dùng). \\
+    \hline
+    vocabulary\_id & uuid (FK) & Từ đang theo dõi (\code{CASCADE} khi xoá từ). \\
+    \hline
+    status & enum & Trạng thái: \code{new} / \code{learning} / \code{review} / \code{mastered}. \\
+    \hline
+    repetitions & int & Số lần ôn đúng liên tiếp. \\
+    \hline
+    ease\_factor & numeric(4,2) & Hệ số dễ của SM-2 (mặc định 2.5). \\
+    \hline
+    interval\_days & int & Khoảng cách ôn (ngày) khi đã tốt nghiệp bước học. \\
+    \hline
+    learning\_step\_index & smallint, null & Vị trí trong các bước học phút (null = đã tốt nghiệp). \\
+    \hline
+    next\_review\_at & timestamptz & Thời điểm đến hạn ôn kế tiếp. \\
+    \hline
+    last\_reviewed\_at & timestamptz, null & Lần ôn gần nhất. \\
+    \hline
+    correct\_count / incorrect\_count & int & Bộ đếm đúng / sai. \\
+    \hline
+    created\_at / updated\_at & timestamptz & Thời điểm tạo / cập nhật. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \texttt{user\_word\_progress}}
+  \label{tab:db-progress}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    name & varchar(128) & Tên bộ thẻ. \\
+    \hline
+    description & text, null & Mô tả. \\
+    \hline
+    language & varchar(8) & Ngôn ngữ. \\
+    \hline
+    cefr\_level & enum, null & Trình độ CEFR gợi ý. \\
+    \hline
+    owner\_id & uuid (FK), null & Chủ sở hữu (null = bộ thẻ hệ thống). \\
+    \hline
+    visibility & enum & \code{system} / \code{private} / \code{public}. \\
+    \hline
+    vocab\_count & int & Số từ trong bộ thẻ (denormalized). \\
+    \hline
+    created\_at / updated\_at & timestamptz & Thời điểm tạo / cập nhật. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \code{decks}}
+  \label{tab:db-decks}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{|p{3.7cm}|p{3.1cm}|p{7.6cm}|}
+    \hline
+    \textbf{Cột} & \textbf{Kiểu} & \textbf{Mô tả} \\
+    \hline
+    id & uuid (PK) & Khoá chính. \\
+    \hline
+    user\_id & uuid (FK) & Người học. \\
+    \hline
+    vocabulary\_id & uuid (FK), null & Từ được ôn (\code{SET NULL} để giữ lịch sử khi xoá từ). \\
+    \hline
+    reviewed\_at & timestamptz & Thời điểm ôn (khoá gom theo ngày). \\
+    \hline
+    quality & smallint & Điểm chất lượng SM-2 (0--5). \\
+    \hline
+    is\_correct & boolean & Lượt ôn đúng hay sai. \\
+    \hline
+    was\_new & boolean & Có phải lượt ôn đầu tiên của từ. \\
+    \hline
+    became\_mastered & boolean & Lượt ôn này có đưa từ sang trạng thái thành thạo. \\
+    \hline
+    created\_at & timestamptz & Thời điểm tạo bản ghi. \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc bảng \texttt{learning\_activity}}
+  \label{tab:db-activity}
+\end{table}
+
+Các bảng còn lại được tóm tắt như sau:
+
+\begin{itemize}
+  \item \code{vocabulary_translations}: \code{id}, \code{sense_id} (FK),
+        \code{language}, \code{translation}, \code{note}, \code{source};
+        ràng buộc duy nhất theo (\code{sense_id}, \code{language},
+        \code{translation}).
+  \item \code{vocabulary_examples}: \code{id}, \code{sense_id} (FK),
+        \code{sentence}, \code{translation}, \code{source}.
+  \item \code{topics}: \code{id}, \code{slug} (duy nhất), \code{name},
+        \code{description}, \code{icon_url}.
+  \item \code{vocabulary_topics} và \code{deck_vocabularies}: các bảng nối
+        nhiều--nhiều với khoá chính tổ hợp; bảng nối bộ thẻ có thêm cột
+        \code{position} để giữ thứ tự từ.
+  \item \code{user_identities}: liên kết tài khoản với nhà cung cấp OAuth,
+        duy nhất theo (\code{provider}, \code{provider_user_id}).
+  \item \code{refresh_tokens}, \code{email_verification_codes}: lưu băm
+        token/mã, thời điểm hết hạn và trạng thái thu hồi/sử dụng.
+  \item \code{vocab_enrichment_jobs}: hàng đợi công việc làm giàu bằng AI,
+        gồm \code{status}, \code{result_vocabulary_ids}, \code{batch_id},
+        \code{owner_user_id} và \code{target_deck_id}.
+  \item \code{production_attempts}, \code{pronunciation_attempts}: lưu bài
+        luyện tập cùng điểm số, rubric/điểm âm vị và trạng thái chấm.
+\end{itemize}
+
+% =====================================================================
+\section{Thiết kế API}
+\label{sec:thiet-ke-api}
+
+\subsection{Quy ước thiết kế}
+\label{subsec:quy-uoc-api}
+
+API được thiết kế theo phong cách \textbf{REST}~\cite{fielding2000rest},
+với các quy ước thống nhất nhằm bảo đảm tính khả dụng và dễ tiến hoá
+(NFR-07):
+
+\begin{itemize}
+  \item \textbf{Phiên bản hoá theo URI:} mọi tài nguyên nằm dưới tiền tố
+        \code{/v1}, cho phép thêm phiên bản mới mà không phá vỡ máy khách cũ.
+  \item \textbf{Định dạng JSON} cho mọi thân yêu cầu và phản hồi.
+  \item \textbf{Xác thực Bearer JWT:} các endpoint cần xác thực yêu cầu
+        tiêu đề \code{Authorization: Bearer <accessToken>}; các endpoint quản
+        trị thêm điều kiện vai trò \code{admin}.
+  \item \textbf{Kiểm tra đầu vào toàn cục} bằng \code{ValidationPipe}
+        (whitelist + forbidNonWhitelisted + transform): trường lạ bị loại bỏ.
+  \item \textbf{Phân trang thống nhất:} các danh sách trả về dạng
+        \code{{ data, page, limit, total }}.
+  \item \textbf{Bất đồng bộ qua 202 + thăm dò:} các tác vụ nặng trả về mã
+        \code{202} kèm mã công việc để máy khách thăm dò kết quả.
+\end{itemize}
+
+\subsection{Tổ chức tài nguyên}
+\label{subsec:to-chuc-tai-nguyen}
+
+Bảng~\ref{tab:api-groups} tổng hợp các nhóm tài nguyên chính. Hệ thống hiện
+cung cấp khoảng 60 endpoint; danh sách đầy đủ được quản lý trong tài liệu
+hợp đồng API của dự án.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.6cm}|p{4.6cm}|p{2.2cm}|p{3.4cm}|}
+    \hline
+    \textbf{Nhóm} & \textbf{Đường dẫn gốc} & \textbf{Xác thực} & \textbf{Nội dung} \\
+    \hline
+    Xác thực & \code{/v1/auth} & Hỗn hợp & Đăng ký, đăng nhập, token, OAuth, xác minh email. \\
+    \hline
+    Người dùng & \code{/v1/users} & JWT & Hồ sơ và khai báo học tập. \\
+    \hline
+    Từ vựng & \code{/v1/vocabularies}, \code{/v1/me/vocabularies} & none / JWT & Tra cứu kho hệ thống và quản lý từ cá nhân. \\
+    \hline
+    Chủ đề & \code{/v1/topics} & none & Duyệt chủ đề. \\
+    \hline
+    Bộ thẻ & \code{/v1/decks}, \code{/v1/me/decks} & none / JWT & Bộ thẻ hệ thống, công khai và cá nhân. \\
+    \hline
+    Học & \code{/v1/me/learn} & JWT & Tạo phiên học và chấm điểm câu trả lời. \\
+    \hline
+    Tiến độ & \code{/v1/me/progress}, \code{/v1/me/stats} & JWT & Ghi danh, thẻ đến hạn, ôn tập, thống kê. \\
+    \hline
+    Luyện viết & \code{/v1/me/practice} & JWT & Nộp và lấy kết quả chấm câu. \\
+    \hline
+    Phát âm & \code{/v1/pronunciation} & JWT & Chấm điểm và lịch sử phát âm. \\
+    \hline
+    Bảng xếp hạng & \code{/v1/leaderboard} & JWT & Xếp hạng cộng đồng. \\
+    \hline
+    Quản trị & \code{/v1/admin/*} & JWT (admin) & Quản trị từ vựng, chủ đề, người dùng, duyệt AI. \\
+    \hline
+  \end{tabular}
+  \caption{Các nhóm tài nguyên API}
+  \label{tab:api-groups}
+\end{table}
+
+\subsection{Một số endpoint tiêu biểu}
+\label{subsec:endpoint-tieu-bieu}
+
+Để minh hoạ phong cách thiết kế, phần này trình bày chi tiết hai endpoint
+cốt lõi của luồng học.
+
+\textbf{Tạo phiên học --- \code{POST /v1/me/learn/session}.} Máy khách chọn
+chế độ học; máy chủ chọn từ, mở rộng câu hỏi và trả về danh sách mục đã ký
+HMAC:
+
+\begin{verbatim}
+// Request
+{ "mode": "daily", "limit": 15, "translationLang": "vi" }
+
+// Response 200
+{
+  "sessionId": "...", "mode": "daily", "enrolledNewlyCount": 5,
+  "emptyReason": null, "nextDueAt": null,
+  "items": [ { "vocabularyId": "...", "type": "cloze_mcq",
+               "groupId": "...", "stepIndex": 0, "stepCount": 3,
+               "nonce": "...", "issuedAtMs": 0, "signature": "..." } ]
+}
+\end{verbatim}
+
+\textbf{Nộp đáp án --- \code{POST /v1/me/learn/answer}.} Máy khách gửi lại
+đáp án kèm chữ ký; máy chủ xác thực, chấm điểm và (ở bước cuối) cập nhật
+tiến độ:
+
+\begin{verbatim}
+// Request
+{ "vocabularyId": "...", "type": "cloze_mcq",
+  "stepIndex": 2, "stepCount": 3, "userAnswer": "...",
+  "latencyMs": 1840, "nonce": "...", "issuedAtMs": 0,
+  "signature": "..." }
+
+// Response 200
+{ "correct": true, "correctAnswer": "...", "quality": 5,
+  "progress": { "status": "review", "nextReviewAt": "..." },
+  "requeue": null }
+\end{verbatim}
+
+Bảng~\ref{tab:api-codes} liệt kê các mã trạng thái HTTP được dùng thống nhất
+trên toàn API.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{2.0cm}|p{12.4cm}|}
+    \hline
+    \textbf{Mã} & \textbf{Ý nghĩa} \\
+    \hline
+    200 / 201 & Thành công / tạo mới thành công. \\
+    \hline
+    202 & Đã tiếp nhận; tác vụ xử lý nền, máy khách thăm dò kết quả. \\
+    \hline
+    204 & Thành công, không có nội dung trả về (vd. xoá). \\
+    \hline
+    400 & Dữ liệu đầu vào không hợp lệ. \\
+    \hline
+    401 & Chưa xác thực hoặc token/chữ ký không hợp lệ. \\
+    \hline
+    403 & Không đủ quyền (sai vai trò hoặc không sở hữu tài nguyên). \\
+    \hline
+    404 & Không tìm thấy tài nguyên. \\
+    \hline
+    409 & Xung đột (vi phạm ràng buộc duy nhất). \\
+    \hline
+    429 & Vượt giới hạn tần suất / hạn mức theo ngày. \\
+    \hline
+    503 & Dịch vụ ngoài hoặc hàng đợi không khả dụng. \\
+    \hline
+  \end{tabular}
+  \caption{Quy ước mã trạng thái HTTP}
+  \label{tab:api-codes}
+\end{table}
+
+% =====================================================================
+\section{Thiết kế giao diện người dùng}
+\label{sec:thiet-ke-giao-dien}
+
+Như đã nêu ở phạm vi đề tài (mục~\ref{sec:muc-tieu}), trọng tâm của báo cáo
+là hệ thống phía máy chủ; giao diện người dùng được xem là bên tiêu thụ API.
+Tuy vậy, để làm rõ ngữ cảnh sử dụng, phần này phác thảo các màn hình chính
+mà API được thiết kế để phục vụ, cùng bản đồ điều hướng và ánh xạ màn hình
+--- API.
+
+\subsection{Bản đồ điều hướng}
+\label{subsec:sitemap}
+
+Hình~\ref{fig:ui-sitemap} mô tả cấu trúc điều hướng của ứng dụng khách: từ
+màn hình đăng nhập, người dùng mới đi qua luồng khai báo hồ sơ rồi tới trang
+chủ; từ trang chủ có thể truy cập các nhánh học, khám phá từ vựng/bộ thẻ,
+luyện tập và cộng đồng.
+
+% --- PlantUML gợi ý (sitemap) ----------------------------------------
+% @startuml
+% (*) --> "Đăng nhập / Đăng ký"
+% --> "Khai báo hồ sơ học tập"
+% --> "Trang chủ (Dashboard)"
+% "Trang chủ (Dashboard)" --> "Phiên học (SRS)"
+% "Trang chủ (Dashboard)" --> "Khám phá từ vựng & bộ thẻ"
+% "Trang chủ (Dashboard)" --> "Luyện viết câu"
+% "Trang chủ (Dashboard)" --> "Luyện phát âm"
+% "Trang chủ (Dashboard)" --> "Bảng xếp hạng"
+% "Trang chủ (Dashboard)" --> "Hồ sơ cá nhân"
+% @enduml
+\figph{ui-sitemap.png}{0.9}{Bản đồ điều hướng của ứng dụng khách}{fig:ui-sitemap}
+
+\subsection{Phác thảo các màn hình chính}
+\label{subsec:wireframe}
+
+Hình~\ref{fig:ui-home} và Hình~\ref{fig:ui-learn} phác thảo hai màn hình
+tiêu biểu: trang chủ (hiển thị thống kê, chuỗi ngày học, biểu đồ hoạt động
+và số thẻ đến hạn) và màn hình phiên học (hiển thị từng câu hỏi cùng các
+phương án trả lời).
+
+\figph{ui-home.png}{0.55}{Phác thảo màn hình trang chủ}{fig:ui-home}
+
+\figph{ui-learn.png}{0.55}{Phác thảo màn hình phiên học}{fig:ui-learn}
+
+\subsection{Ánh xạ màn hình --- API}
+\label{subsec:anh-xa-man-hinh}
+
+Bảng~\ref{tab:ui-api} liên kết mỗi màn hình với các endpoint API tương ứng,
+cho thấy thiết kế backend bám sát nhu cầu giao diện.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.6cm}|p{11.0cm}|}
+    \hline
+    \textbf{Màn hình} & \textbf{API sử dụng} \\
+    \hline
+    Đăng nhập / Đăng ký & \code{/v1/auth/login}, \code{/v1/auth/register}, \code{/v1/auth/google|apple|github} \\
+    \hline
+    Khai báo hồ sơ & \code{PATCH /v1/users/:id} \\
+    \hline
+    Trang chủ & \code{/v1/me/stats}, \code{/v1/me/activity}, \code{/v1/me/decks/suggested} \\
+    \hline
+    Khám phá từ vựng & \code{/v1/vocabularies}, \code{/v1/topics}, \code{/v1/decks} \\
+    \hline
+    Phiên học & \code{POST /v1/me/learn/session}, \code{POST /v1/me/learn/answer} \\
+    \hline
+    Luyện viết câu & \code{POST /v1/me/practice/attempts}, \code{GET /v1/me/practice/attempts/:id} \\
+    \hline
+    Luyện phát âm & \code{POST /v1/pronunciation/score}, \code{GET /v1/pronunciation/attempts} \\
+    \hline
+    Bảng xếp hạng & \code{GET /v1/leaderboard} \\
+    \hline
+  \end{tabular}
+  \caption{Ánh xạ giữa màn hình giao diện và API}
+  \label{tab:ui-api}
+\end{table}
+
+% =====================================================================
+\section{Kết chương}
+\label{sec:ket-chuong-2}
+
+Chương này đã phân tích đầy đủ yêu cầu chức năng (24 nhóm chức năng) và phi
+chức năng (8 tiêu chí) của hệ thống, mô hình hoá nghiệp vụ bằng biểu đồ use
+case cùng các đặc tả, và làm rõ động học qua các biểu đồ hoạt động và tuần
+tự. Về thiết kế, chương đã đề xuất kiến trúc monolith mô-đun hoá kết hợp
+tầng xử lý nền bất đồng bộ, thiết kế cơ sở dữ liệu gồm 17 bảng quanh thực thể
+từ vựng, bộ API REST có phiên bản hoá và phác thảo giao diện người dùng bám
+sát API. Đây là cơ sở để chương tiếp theo trình bày quá trình hiện thực hoá
+và kiểm thử hệ thống.
