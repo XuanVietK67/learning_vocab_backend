@@ -1,0 +1,750 @@
+% =====================================================================
+%  CHƯƠNG 4 — HIỆN THỰC HOÁ HỆ THỐNG VÀ CÁC TÍNH NĂNG THÔNG MINH
+%
+%  File chương theo cấu trúc template Overleaf (hướng Ứng dụng).
+%  Cách dùng: đặt file này trong thư mục Chuong/ của template và thêm
+%      \include{Chuong/Chuong4}
+%  vào main.tex (sau Chương 3).
+%
+%  GHI CHÚ VỀ HÌNH VẼ: dùng macro \figph{<tên-file>}{<tỉ-lệ-rộng>}{<chú-thích>}{<nhãn>}
+%  (đã khai báo ở các chương trước; khai báo lại bằng \providecommand để an
+%  toàn nếu biên dịch độc lập). Mã nguồn (code) trình bày bằng môi trường
+%  verbatim như các chương trước.
+%
+%  KHÔNG hardcode số chương/mục/bảng/hình/công thức — luôn dùng \label + \ref / \cite.
+% =====================================================================
+
+% --- Macro tiện ích (idempotent — không định nghĩa lại nếu đã có) ------
+\providecommand{\code}[1]{\texttt{\detokenize{#1}}} % in định danh snake_case an toàn
+\providecommand{\figph}[4]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{images/#1}%
+      {\includegraphics[width=#2\textwidth,height=0.82\textheight,keepaspectratio]{#1}}%
+      {\setlength{\fboxsep}{10pt}\fbox{\begin{minipage}[c][3.6cm][c]{#2\textwidth}\centering\itshape Sơ đồ minh hoạ --- chèn tệp ảnh \code{images/#1} vào thư mục \code{images/}.\end{minipage}}}%
+    \caption{#3}%
+    \label{#4}%
+  \end{figure}}
+
+\chapter{HIỆN THỰC HOÁ HỆ THỐNG VÀ CÁC TÍNH NĂNG THÔNG MINH}
+\label{chuong:hien-thuc-hoa}
+
+Hai chương trước đã trình bày kết quả phân tích, thiết kế
+(Chương~\ref{chuong:phan-tich-thiet-ke}) và cơ sở lý thuyết, công nghệ
+(Chương~\ref{chuong:co-so-ly-thuyet}). Chương này trình bày cách các thiết
+kế đó được \textit{hiện thực hoá} thành mã nguồn chạy được, với trọng tâm là
+các \textbf{thành phần thông minh và tự động hoá} làm nên giá trị cốt lõi của
+hệ thống: động cơ học theo ôn tập ngắt quãng, cơ chế sinh câu hỏi và chấm
+điểm thích nghi, các tính năng làm giàu nội dung và chấm điểm dựa trên trí
+tuệ nhân tạo, cùng hạ tầng xử lý nền bất đồng bộ liên kết chúng lại.
+
+Mục~\ref{sec:tong-quan-hien-thuc} mô tả tổ chức mã nguồn và các mối quan tâm
+xuyên suốt. Mục~\ref{sec:hien-thuc-du-lieu} và
+mục~\ref{sec:hien-thuc-auth} trình bày ngắn gọn hiện thực hoá tầng dữ liệu và
+phân hệ xác thực. Trọng tâm của chương nằm ở
+mục~\ref{sec:dong-co-hoc} (động cơ học thông minh) và
+mục~\ref{sec:ai-tu-dong} (các tính năng AI và tự động hoá nội dung). Cuối
+cùng, mục~\ref{sec:tien-do} trình bày phân hệ theo dõi tiến độ tự động,
+mục~\ref{sec:kiem-thu} trình bày chiến lược kiểm thử và
+mục~\ref{sec:ket-chuong-4} tóm tắt chương.
+
+% =====================================================================
+\section{Tổng quan quá trình hiện thực hoá}
+\label{sec:tong-quan-hien-thuc}
+
+Hệ thống được hiện thực hoá đúng theo ngăn xếp công nghệ đã chọn ở
+Chương~\ref{chuong:co-so-ly-thuyet}: backend viết bằng \textbf{NestJS~11}
+trên \textbf{TypeScript} (chế độ \textit{strict}), truy cập
+\textbf{PostgreSQL} qua \textbf{TypeORM}, và dùng \textbf{Redis/BullMQ} cho
+xử lý nền. Toàn bộ mã nguồn được biên dịch bằng trình biên dịch của NestJS và
+khởi chạy dưới \textbf{hai tiến trình} chia sẻ chung cơ sở dữ liệu và hàng
+đợi, đúng mô hình nhà sản xuất--người tiêu thụ đã nêu ở
+mục~\ref{sec:kien-truc} của Chương~\ref{chuong:phan-tich-thiet-ke}:
+
+\begin{itemize}
+  \item \textbf{Tiến trình API} (\code{npm run start}): phục vụ các yêu cầu
+        HTTP đồng bộ; với tác vụ nặng nó chỉ tạo bản ghi công việc rồi đẩy
+        vào hàng đợi và trả về ngay.
+  \item \textbf{Tiến trình Worker} (\code{npm run start:worker}): tiêu thụ
+        hàng đợi để thực thi các tác vụ nền (làm giàu từ vựng, sinh âm thanh,
+        chấm điểm luyện tập).
+\end{itemize}
+
+Mọi tham số vận hành (chuỗi kết nối CSDL, khoá bí mật, khoá API của dịch vụ
+AI, hạn mức tần suất\ldots) đều được nạp từ \textbf{biến môi trường} qua
+\code{@nestjs/config}, đáp ứng yêu cầu tính khả chuyển NFR-08 trong
+Bảng~\ref{tab:nfr}: cùng một ảnh mã nguồn chạy được ở nhiều môi trường mà
+không cần sửa code.
+
+\subsection{Tổ chức mã nguồn theo mô-đun}
+\label{subsec:to-chuc-ma-nguon}
+
+Mỗi mô-đun nghiệp vụ ở Bảng~\ref{tab:modules} (Chương~\ref{chuong:phan-tich-thiet-ke})
+được hiện thực thành một thư mục dưới \code{src/} tự đóng gói controller,
+service, entity và DTO của mình. Bảng~\ref{tab:source-layout} ánh xạ các
+mô-đun trọng yếu tới những tệp hiện thực then chốt --- là cơ sở để các mục
+sau tham chiếu trực tiếp.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{2.6cm}|p{4.4cm}|p{6.6cm}|}
+    \hline
+    \textbf{Mô-đun} & \textbf{Thư mục mã nguồn} & \textbf{Tệp hiện thực then chốt} \\
+    \hline
+    \code{auth} & \code{src/auth} & \code{token.service.ts} (cấp/xoay token), \code{jwt.strategy.ts}, các \code{guards/}, \code{services/} (Google/Apple/GitHub). \\
+    \hline
+    \code{learn} & \code{src/learn} & \code{learn.service.ts}, \code{vocab-picker.service.ts}, \code{question-builder.service.ts}, \code{distractor.service.ts}, \code{answer-grader.service.ts}, \code{hmac-signer.service.ts}, \code{question-bands.ts}. \\
+    \hline
+    \code{progress} & \code{src/progress} & \code{srs.ts} (thuật toán SM-2), \code{progress.service.ts} (lập lịch, thống kê, chuỗi ngày học). \\
+    \hline
+    \code{vocabularies} & \code{src/vocabularies} & \code{enrichment/} (làm giàu bằng LLM, nhập hàng loạt), \code{audio/}, \code{images/}, \code{vocabulary-persistence.service.ts}. \\
+    \hline
+    \code{practice} & \code{src/practice} & \code{gemma-judge.ts} (chấm câu bằng LLM), \code{scoring.processor.ts}, \code{practice.service.ts}. \\
+    \hline
+    \code{pronunciation} & \code{src/pronunciation} & \code{pronunciation-scoring.client.ts} (proxy tới vi dịch vụ), \code{pronunciation.service.ts}. \\
+    \hline
+    \code{leaderboard} & \code{src/leaderboard} & \code{leaderboard.service.ts}. \\
+    \hline
+    \code{config} & \code{src/config} & Các tệp cấu hình theo miền: \code{learn.config.ts}, \code{gemma.config.ts}, \code{auth.config.ts}\ldots \\
+    \hline
+  \end{tabular}
+  \caption{Ánh xạ mô-đun nghiệp vụ tới tệp hiện thực then chốt}
+  \label{tab:source-layout}
+\end{table}
+
+\subsection{Các mối quan tâm xuyên suốt}
+\label{subsec:cross-cutting}
+
+Nhờ cơ chế \textit{tiêm phụ thuộc} và các thành phần khai báo của NestJS, các
+mối quan tâm chung được hiện thực một lần và áp dụng toàn cục thay vì lặp lại
+trong từng controller:
+
+\begin{itemize}
+  \item \textbf{Kiểm tra đầu vào:} một \code{ValidationPipe} toàn cục với
+        \code{whitelist}, \code{forbidNonWhitelisted} và \code{transform}
+        biến mỗi DTO (khai báo bằng \code{class-validator}) thành lớp bảo vệ:
+        trường lạ bị loại bỏ, dữ liệu sai kiểu bị chặn bằng lỗi 400 trước khi
+        chạm tới service.
+  \item \textbf{Xác thực và phân quyền:} \code{JwtAuthGuard} (dựa trên
+        \code{passport-jwt}, xem \code{jwt.strategy.ts}) trích và xác minh
+        access token ở mọi endpoint cần đăng nhập; \code{RolesGuard} kết hợp
+        decorator \code{@Roles('admin')} chặn các thao tác quản trị; quyền sở
+        hữu tài nguyên được kiểm tra ngay trong service (mục~\ref{subsec:rbac}).
+  \item \textbf{Phiên bản hoá API:} bật \textit{URI versioning} mặc định
+        \code{v1}; controller khai báo \code{@Controller(\{ path, version: '1' \})}
+        nên mọi tài nguyên nằm dưới tiền tố \code{/v1} (mục~\ref{subsec:rest-theory}).
+  \item \textbf{Cấu hình theo miền:} mỗi nhóm tham số được gói trong một
+        \textit{namespace} cấu hình riêng (ví dụ \code{learn.config.ts},
+        \code{gemma.config.ts}), tách bạch và có giá trị mặc định an toàn cho
+        môi trường phát triển.
+\end{itemize}
+
+% =====================================================================
+\section{Hiện thực hoá tầng dữ liệu}
+\label{sec:hien-thuc-du-lieu}
+
+Tầng dữ liệu hiện thực 17 bảng trong Bảng~\ref{tab:db-overview} thành các lớp
+\textit{thực thể} (entity) TypeORM. Mỗi thực thể khai báo khoá chính
+\code{uuid}, tên cột \code{snake_case} và kiểu \code{timestamptz} cho các mốc
+thời gian, đúng quy ước thiết kế ở Chương~\ref{chuong:phan-tich-thiet-ke}.
+Một số kỹ thuật hiện thực đáng chú ý:
+
+\begin{itemize}
+  \item \textbf{Giao dịch bảo đảm tính nguyên tử:} các thao tác ghi nhiều
+        bảng được gói trong \code{dataSource.transaction(...)}. Ví dụ tiêu
+        biểu là việc nộp một lượt ôn (mục~\ref{subsec:impl-hmac}): bản ghi
+        tiến độ và bản ghi nhật ký hoạt động được lưu trong cùng một giao
+        dịch, nên một lượt ôn không thể "ghi nửa vời" --- đáp ứng NFR-04 trong
+        Bảng~\ref{tab:nfr}.
+  \item \textbf{Ràng buộc toàn vẹn và chống trùng lặp:} ngoài khoá ngoại và
+        quy tắc xoá lan truyền, hệ thống dùng \textit{chỉ mục duy nhất bộ
+        phận} (partial unique index) trên bộ ba \code{(language, lemma,
+        part_of_speech)} áp dụng riêng cho từ thuộc kho hệ thống
+        (\code{WHERE source = 'system'}); nhờ đó kho hệ thống không bao giờ có
+        hai bản ghi trùng từ loại cho cùng một từ, trong khi từ cá nhân của
+        người dùng vẫn không bị ràng buộc này.
+  \item \textbf{Quản lý lược đồ bằng migration:} mọi thay đổi lược đồ được mô
+        tả bằng các \textit{migration} có thể phiên bản hoá, được nhận diện và
+        chạy qua công cụ dòng lệnh của TypeORM. Cách này cho phép tái lập lược
+        đồ một cách xác định giữa các môi trường (đáp ứng NFR-06).
+  \item \textbf{Phi chuẩn hoá có kiểm soát:} một số trường được phi chuẩn hoá
+        để tăng tốc đọc, ví dụ \code{decks.vocab_count} (số từ trong bộ thẻ)
+        được cập nhật khi thêm/bớt thành viên thay vì đếm mỗi lần truy vấn.
+\end{itemize}
+
+% =====================================================================
+\section{Hiện thực hoá xác thực và phân quyền}
+\label{sec:hien-thuc-auth}
+
+Phân hệ \code{auth} hiện thực các kỹ thuật bảo mật đã trình bày về lý thuyết
+ở mục~\ref{sec:xac-thuc-phan-quyen}. Lớp \code{TokenService} đảm nhiệm vòng
+đời phiên đăng nhập với một số quyết định hiện thực đáng chú ý:
+
+\begin{itemize}
+  \item \textbf{Cặp token bất đối xứng về bản chất:} \textit{access token} là
+        một \textbf{JWT} được ký, tự chứa và sống ngắn (mục~\ref{subsec:jwt}),
+        trong khi \textit{refresh token} là một chuỗi ngẫu nhiên 48 byte
+        \textit{mờ} (opaque) --- không mang thông tin, chỉ lưu \textbf{bản băm
+        SHA-256} trong bảng \code{refresh_tokens}. Máy chủ không bao giờ lưu
+        token gốc, nên dù cơ sở dữ liệu bị lộ thì token cũng không thể tái sử
+        dụng.
+  \item \textbf{Xoay vòng và phát hiện tái dùng:} mỗi lần làm mới phiên, token
+        cũ bị đánh dấu thu hồi và một token mới được cấp. Nếu một token đã thu
+        hồi (hoặc không tồn tại) được trình lại --- dấu hiệu rò rỉ --- hệ thống
+        \textbf{thu hồi toàn bộ} token còn hiệu lực của người dùng đó và trả
+        về lỗi 401, hạn chế thiệt hại khi token bị đánh cắp.
+  \item \textbf{Băm mật khẩu và đăng nhập bên thứ ba:} mật khẩu được băm bằng
+        \textbf{bcrypt} (mục~\ref{subsec:bcrypt}); với OAuth/OIDC
+        (mục~\ref{subsec:oauth}), token danh tính do nhà cung cấp cấp được xác
+        minh rồi liên kết tới một bản ghi trong \code{user_identities}, cho
+        phép một tài khoản đăng nhập bằng nhiều phương thức.
+  \item \textbf{Chống vét cạn:} endpoint đăng nhập được giới hạn tần suất bằng
+        \code{@nestjs/throttler}, trả về lỗi 429 khi vượt ngưỡng.
+\end{itemize}
+
+% =====================================================================
+\section{Động cơ học thông minh theo ôn tập ngắt quãng}
+\label{sec:dong-co-hoc}
+
+Đây là phân hệ \textit{thông minh} cốt lõi của hệ thống. Một phiên học không
+phải là một danh sách câu hỏi tĩnh: với mỗi người học và mỗi từ, hệ thống
+\textbf{thích nghi} ở ba cấp độ --- chọn \textit{từ nào} để học, sinh
+\textit{dạng câu hỏi nào} phù hợp giai đoạn ghi nhớ, và quyết định
+\textit{khi nào} ôn lại. Toàn bộ quy trình tuân theo luồng đã mô hình hoá ở
+Hình~\ref{fig:activity-srs}: chọn từ $\rightarrow$ mở rộng thành chuỗi câu hỏi
+đã ký $\rightarrow$ chấm điểm $\rightarrow$ (ở bước cuối) lập lịch lại.
+
+\subsection{Lập lịch ôn tập SM-2 mở rộng bước học}
+\label{subsec:impl-sm2}
+
+Hạt nhân lập lịch là hàm thuần \code{applySm2} trong \code{src/progress/srs.ts}:
+nó nhận trạng thái hiện tại của một cặp (người dùng, từ), một
+\textit{điểm chất lượng} \( q \in \{0,\dots,5\} \) và danh sách bước học, rồi
+trả về trạng thái mới cùng thời điểm ôn kế tiếp. Hàm hiện thực thuật toán
+\textbf{SM-2} (mục~\ref{subsec:sm2-theory}) được \textit{mở rộng bằng các bước
+học} theo phong cách Anki. Hệ số dễ nhớ \( EF \) được cập nhật ở \textit{mọi}
+lượt ôn theo công thức~\eqref{eq:sm2-ef}, còn khoảng cách ngày tuân theo
+công thức~\eqref{eq:sm2-interval}; phần mở rộng bổ sung một thang
+\textit{bước học} tính bằng phút để củng cố từ mới ngay trong phiên trước khi
+giao cho thang ngày:
+
+\begin{verbatim}
+// src/progress/srs.ts — cập nhật hệ số dễ nhớ (chặn dưới 1.3)
+function updateEaseFactor(easeFactor, quality) {
+  return Math.max(
+    1.3,
+    easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)),
+  );
+}
+\end{verbatim}
+
+Logic chuyển trạng thái được tóm tắt như sau (Hình~\ref{fig:srs-states}):
+
+\begin{itemize}
+  \item Thẻ đang ở \textit{trạng thái bước} (\code{learningStepIndex} khác
+        \code{null}) dùng khoảng cách \textbf{phút} lấy từ danh sách bước (mặc
+        định \([1, 10]\) phút). Trả lời đúng (\( q \ge 3 \)) đẩy lên một bước;
+        qua bước cuối, thẻ \textit{tốt nghiệp} sang thang ngày. Trả lời sai
+        (\( q < 3 \)) đặt lại về bước 0.
+  \item Thẻ đã tốt nghiệp dùng thang ngày: \( I = 1 \) ngày (lần đầu), \( 6 \)
+        ngày (lần hai), sau đó \( I \leftarrow \lceil I \times EF \rceil \).
+        Một lần trả lời sai sẽ đưa thẻ \textit{rớt} về bước 0 (ôn lại trong
+        phút) thay vì chờ tới hôm sau.
+  \item Trạng thái hiển thị được suy ra từ số lần lặp và khoảng cách:
+        \( I \ge 90 \) ngày $\rightarrow$ \code{mastered}; số lần ôn đúng liên
+        tiếp \( \ge 3 \) $\rightarrow$ \code{review}; còn lại \code{learning}.
+\end{itemize}
+
+Bảng~\ref{tab:srs-params} liệt kê các tham số then chốt và giá trị mặc định
+của chúng (đều có thể cấu hình qua biến môi trường trong \code{learn.config.ts}).
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.2cm}|p{3.0cm}|p{6.0cm}|}
+    \hline
+    \textbf{Tham số} & \textbf{Giá trị mặc định} & \textbf{Ý nghĩa} \\
+    \hline
+    Hệ số dễ nhớ khởi tạo \( EF_0 \) & 2.5 & Giá trị ban đầu của \( EF \). \\
+    \hline
+    Chặn dưới \( EF_{\min} \) & 1.3 & Ngăn khoảng ôn co lại quá nhanh. \\
+    \hline
+    Bước học (phút) & \([1, 10]\) & Khoảng cách trong phiên cho thẻ mới/đang học/vừa rớt. \\
+    \hline
+    Khoảng ngày sau tốt nghiệp & 1 ngày, 6 ngày & Hai mốc đầu của thang ngày. \\
+    \hline
+    Ngưỡng thành thạo & \( \ge 90 \) ngày & Khoảng ôn đạt mốc này $\rightarrow$ \code{mastered}. \\
+    \hline
+    Cửa sổ đưa lại trong phiên & 15 phút & Nếu đến hạn trong cửa sổ này, câu hỏi kế được trả kèm ngay. \\
+    \hline
+  \end{tabular}
+  \caption{Tham số của thuật toán lập lịch SM-2 mở rộng}
+  \label{tab:srs-params}
+\end{table}
+
+% --- PlantUML gợi ý cho Hình máy trạng thái SRS ----------------------
+% @startuml
+% [*] --> new
+% new --> learning : ghi danh (bước 0)
+% learning --> learning : sai (q<3) → bước 0\nhoặc đúng nhưng chưa tốt nghiệp
+% learning --> review : đúng liên tiếp ≥ 3 lần
+% review --> review : đúng → I ← ⌈I×EF⌉
+% review --> learning : sai → rớt về bước 0
+% review --> mastered : I ≥ 90 ngày
+% mastered --> learning : sai → rớt về bước 0
+% mastered --> [*]
+% @enduml
+\figph{srs-state-machine.png}{0.8}{Máy trạng thái vòng đời thẻ học theo SM-2 mở rộng}{fig:srs-states}
+
+Một quyết định thiết kế quan trọng: \code{applySm2} là một \textbf{hàm thuần}
+(pure function) --- không phụ thuộc NestJS, cơ sở dữ liệu hay thời gian thực
+(mốc \code{now} được truyền vào) --- nên có thể kiểm thử đơn vị triệt để
+(mục~\ref{sec:kiem-thu}).
+
+\subsection{Chọn từ học thích nghi theo trình độ}
+\label{subsec:impl-picker}
+
+Lớp \code{VocabPickerService} chọn tập từ cho mỗi phiên theo bốn chế độ
+(hằng ngày, theo chủ đề, theo bộ thẻ, ôn tập). Nguyên tắc chung là
+\textit{ưu tiên từ đã đến hạn} (sắp theo \code{next_review_at} tăng dần),
+sau đó bù thêm \textit{từ mới} cho đủ hạn mức phiên. Điểm "thông minh" nằm ở
+cách chọn từ mới: thay vì lọc cứng theo trình độ (dễ dẫn tới phiên rỗng khi
+người học đã học hết từ ở đúng bậc), hệ thống coi trình độ là một
+\textit{ưu tiên mềm} --- sắp các từ chưa học theo \textbf{khoảng cách CEFR}
+tới trình độ người học (gần nhất trước), rồi mới tới thứ hạng tần suất:
+
+\begin{verbatim}
+// src/learn/vocab-picker.service.ts — ưu tiên từ gần trình độ người học
+qb.orderBy(`ABS(${cefrOrdinalCase('v.cefr_level')} - ${userIdx})`,
+           'ASC', 'NULLS LAST')
+  .addOrderBy('v.frequency_rank', 'ASC', 'NULLS LAST')
+  .limit(limit);
+\end{verbatim}
+
+Nhờ đó người học đã cạn từ ở bậc của mình (hoặc các từ còn lại không gắn bậc
+CEFR) vẫn nhận được các từ phù hợp nhất hiện có thay vì một phiên rỗng. Khi
+thực sự không còn từ nào, picker trả về một \textit{lý do rỗng} có ngữ nghĩa
+(\code{no_due_cards}, \code{no_more_at_level}, \code{deck_exhausted},
+\code{no_enrollment}) để máy khách hiển thị thông điệp phù hợp; chỉ với
+\code{no_due_cards} hệ thống mới kèm theo \textit{thời điểm đến hạn kế tiếp}.
+Các từ mới được chọn sẽ được \textit{tự động ghi danh} (auto-enroll) vào hàng
+đợi học của người dùng trước khi sinh câu hỏi.
+
+\subsection{Sinh câu hỏi thích nghi theo giai đoạn ghi nhớ}
+\label{subsec:impl-questions}
+
+Mỗi từ trong phiên được \code{QuestionBuilderService} mở rộng thành một
+\textit{bài học} (lesson) gồm một chuỗi câu hỏi xếp từ dễ đến khó. Mức độ khó
+được tổ chức thành ba \textbf{dải khó} (difficulty band) và \textbf{12 dạng
+câu hỏi} (Bảng~\ref{tab:question-ladder}). Điểm thích nghi cốt lõi:
+\textit{giai đoạn ghi nhớ của từ quyết định những dải nào được dùng}. Từ càng
+thành thạo thì "sàn" độ khó càng được nâng lên, loại dần các dạng nhận biết
+dễ và tập trung vào sản sinh ngôn ngữ:
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{2.6cm}|p{3.4cm}|p{7.6cm}|}
+    \hline
+    \textbf{Trạng thái từ} & \textbf{Dải khó tối thiểu} & \textbf{Nhóm câu hỏi đại diện} \\
+    \hline
+    \code{new} & Nhận biết (NEW) & Thẻ học (flashcard), điền khuyết trắc nghiệm, chọn từ/nghĩa, nghe chọn, nhìn hình chọn từ. \\
+    \hline
+    \code{learning} / \code{review} & Gợi nhớ (REVIEW) & Điền khuyết tự gõ, nghe gõ lại (dictation), luyện phát âm --- người học phải tự tạo ra dạng từ. \\
+    \hline
+    \code{mastered} & Sản sinh (MASTER) & Phân biệt nghĩa (sense disambiguation) --- dạng khó nhất, đòi hỏi phân biệt giữa các nghĩa của từ đa nghĩa. \\
+    \hline
+  \end{tabular}
+  \caption{Ánh xạ giai đoạn ghi nhớ của từ tới dải khó và nhóm câu hỏi}
+  \label{tab:question-ladder}
+\end{table}
+
+Trên nền tảng đó, bộ dựng câu hỏi áp dụng thêm các cơ chế giữ cho bài học
+\textit{ngắn, đa dạng và khả thi}:
+
+\begin{itemize}
+  \item \textbf{Lấy mẫu xác định theo từ:} với mỗi dải, số dạng câu hỏi
+        "tuỳ chọn" được giới hạn (mặc định 2 dạng/dải) và được chọn bằng phép
+        \textit{xáo trộn xác định} theo định danh của từ. Nhờ vậy mỗi từ luyện
+        một tập dạng câu hỏi khác nhau (thay vì mọi bài đều chạy hết các
+        dạng), nhưng kết quả vẫn \textit{tái lập được}. Dạng thẻ học luôn được
+        giữ làm bước nhập môn.
+  \item \textbf{Trần họ điền khuyết:} các dạng cùng "khoét" một từ trong câu
+        bị giới hạn số lần (mặc định 2) để một câu ví dụ không bị khoét nhiều
+        bước liên tiếp.
+  \item \textbf{Lọc theo dữ liệu sẵn có:} mỗi dạng chỉ được dựng khi đủ dữ
+        liệu (ví dụ dạng nghe cần có \code{audio_url}, dạng nhìn hình cần ảnh
+        nghĩa, dạng dịch cần bản dịch ở ngôn ngữ đích). Dạng nào thiếu dữ liệu
+        sẽ bị bỏ qua một cách an toàn.
+\end{itemize}
+
+\paragraph{Sinh phương án nhiễu thông minh.} Chất lượng của một câu trắc
+nghiệm phụ thuộc vào \textit{phương án nhiễu} (distractor). \code{DistractorService}
+không lấy nhiễu ngẫu nhiên mà chọn các từ "dễ nhầm": \textbf{cùng từ loại,
+cùng ngôn ngữ, cùng bậc CEFR \( \pm 1 \)}, và \textit{ưu tiên các từ chia sẻ
+ít nhất một chủ đề} với từ mục tiêu; chỉ khi không đủ mới nới lỏng điều kiện.
+Với dạng phân biệt nghĩa, nhiễu còn được lấy chính từ \textit{các nghĩa khác}
+của cùng từ (bẫy đa nghĩa), buộc người học thực sự phân biệt ngữ cảnh.
+
+\subsection{Chấm điểm phi trạng thái có ký HMAC}
+\label{subsec:impl-hmac}
+
+Như đã nêu ở mục~\ref{subsec:hmac}, hệ thống chấm điểm phiên học theo cách
+\textbf{phi trạng thái}: máy chủ không lưu phiên trong bộ nhớ mà "đóng dấu"
+tính toàn vẹn vào chính mỗi câu hỏi. Khi sinh câu hỏi, \code{HmacSignerService}
+ký một thông điệp gồm các trường định danh và --- quan trọng --- cả
+\code{stepIndex}/\code{stepCount}, để máy khách không thể giả mạo việc câu
+nào là câu cuối (câu duy nhất làm thay đổi lịch ôn):
+
+\begin{verbatim}
+// src/learn/hmac-signer.service.ts — thông điệp được ký
+const message = [userId, vocabularyId, type, exampleId,
+                 translationLang ?? '', String(stepIndex),
+                 String(stepCount), nonce, String(issuedAtMs)].join('|');
+return createHmac('sha256', this.secret).update(message).digest('hex');
+\end{verbatim}
+
+Khi người học nộp đáp án (Hình~\ref{fig:seq-answer}), \code{LearnService} thực
+hiện ba việc:
+
+\begin{enumerate}
+  \item \textbf{Xác minh chữ ký:} kiểm tra chữ ký HMAC bằng phép so sánh
+        \textit{thời gian hằng số} (\code{timingSafeEqual}) và kiểm tra hạn
+        dùng (mặc định 30 phút); chữ ký sai/hết hạn $\rightarrow$ lỗi 401.
+  \item \textbf{Chấm điểm tại chỗ:} \code{AnswerGraderService} \textit{suy
+        lại} đáp án đúng từ dữ liệu từ vựng (dạng từ bị khoét trong câu, bản
+        dịch của nghĩa, hay chính lemma) rồi so khớp. Điểm chất lượng SM-2
+        được quy đổi theo loại câu: trả lời nhanh và đúng được 5, đúng nhưng
+        chậm được 4, sai lệch một ký tự (đo bằng khoảng cách Levenshtein) được
+        coi là "gần đúng" (3), còn lại 2; riêng thẻ học cho người dùng tự đánh
+        giá theo thang bốn mức.
+  \item \textbf{Lập lịch ở bước cuối:} mỗi bài học chỉ là \textit{một} sự kiện
+        SRS --- chỉ câu hỏi cuối (\code{stepIndex === stepCount - 1}) mới gọi
+        \code{submitReview} để chạy \code{applySm2} và cập nhật lịch; các bước
+        trước chỉ chấm để phản hồi tức thì. Nhờ vậy một từ không thể "tốt
+        nghiệp" chỉ trong một lượt ngồi học.
+\end{enumerate}
+
+Việc cập nhật tiến độ và ghi nhật ký hoạt động được thực hiện trong cùng một
+giao dịch (mục~\ref{sec:hien-thuc-du-lieu}). Nếu lịch vừa được dời vào trong
+\textit{cửa sổ đưa lại} (15 phút), phản hồi sẽ kèm sẵn câu hỏi kế đã ký để máy
+khách hiển thị lại từ ngay trong phiên mà không cần gọi lại API tạo phiên.
+
+% =====================================================================
+\section{Các tính năng trí tuệ nhân tạo và tự động hoá nội dung}
+\label{sec:ai-tu-dong}
+
+Nhóm tính năng thứ hai làm nên tính "thông minh" của hệ thống là việc
+\textbf{tự động tạo và làm giàu nội dung} bằng các dịch vụ AI, giải quyết
+trực tiếp rào cản "tạo nội dung thủ công tốn công" đã nêu ở
+Chương~\ref{chuong:tong-quan}. Tất cả các tác vụ này đều nặng và phụ thuộc
+dịch vụ ngoài, nên được hiện thực trên một \textit{hạ tầng xử lý nền} chung.
+
+\subsection{Hạ tầng xử lý nền bất đồng bộ}
+\label{subsec:impl-worker}
+
+Mọi tác vụ AI được tổ chức theo mẫu \textbf{nhà sản xuất--người tiêu thụ}
+trên \textbf{BullMQ}~\cite{bullmq2024}: tiến trình API tạo bản ghi công việc,
+đẩy vào hàng đợi Redis rồi trả về mã \code{202} kèm mã công việc; tiến trình
+worker tiêu thụ và xử lý nền (xem Hình~\ref{fig:activity-ai} và
+Hình~\ref{fig:activity-practice}). Bảng~\ref{tab:async-jobs} liệt kê các hàng
+đợi đã hiện thực. Bốn cơ chế bảo đảm độ tin cậy (NFR-04) được áp dụng nhất
+quán cho mọi worker:
+
+\begin{itemize}
+  \item \textbf{Tính idempotent:} mỗi worker đọc lại bản ghi và \textit{chỉ}
+        xử lý khi trạng thái còn là \code{pending}; một công việc bị chạy lại
+        sẽ thoát sớm thay vì tạo dữ liệu trùng.
+  \item \textbf{Thử lại có khoảng lùi:} lỗi tạm thời (mạng, 429, một phản hồi
+        không phân tích được) khiến BullMQ thử lại với \textit{backoff}; chỉ
+        khi cạn số lần thử, sự kiện \code{onFailed} mới ghi trạng thái
+        \code{failed}.
+  \item \textbf{Tự giới hạn tần suất:} worker đặt \textit{limiter} (mặc định
+        15 lượt/phút) và độ song song bằng 1 để không vượt hạn mức của khoá
+        AI dùng chung (tầng miễn phí).
+  \item \textbf{Hạn mức theo ngày:} các điểm cuối người dùng có hạn mức theo
+        ngày (ví dụ 30 lượt chấm câu/người/ngày) để bảo vệ tài nguyên chung,
+        trả về lỗi 429 khi vượt.
+\end{itemize}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.0cm}|p{4.6cm}|p{6.4cm}|}
+    \hline
+    \textbf{Hàng đợi} & \textbf{Kích hoạt bởi} & \textbf{Công việc của worker} \\
+    \hline
+    Làm giàu từ vựng & Tạo nhanh / nhập hàng loạt & Tra từ điển + gọi LLM sinh nghĩa, ví dụ, bản dịch, CEFR; tạo bản ghi từ vựng. \\
+    \hline
+    Sinh âm thanh & Sau khi tạo/duyệt từ & Lấy bản ghi âm thật hoặc tổng hợp giọng nói, tải lên kho media. \\
+    \hline
+    Sinh hình ảnh & Quy trình làm giàu nghĩa & Tìm ảnh minh hoạ theo từ, tải lên kho media. \\
+    \hline
+    Chấm điểm luyện viết & Nộp bài luyện viết/nói & Gọi LLM chấm câu theo rubric, lưu điểm và nhận xét. \\
+    \hline
+  \end{tabular}
+  \caption{Các hàng đợi xử lý nền và vai trò của worker}
+  \label{tab:async-jobs}
+\end{table}
+
+\paragraph{Lưu ý về mô hình ngôn ngữ.} Các lời gọi LLM được thực hiện qua API
+\code{generateContent} của nền tảng \textbf{Google AI Studio}, dùng họ mô
+hình mở \textbf{Gemma} của Google DeepMind~\cite{gemma2025technical} làm nền
+tảng tham chiếu. Vì mô hình được cấu hình qua biến môi trường
+(\code{GEMMA_MODEL}), thiết kế là \textit{độc lập mô hình}; trong cấu hình
+triển khai mặc định, do dòng \code{gemma-3-*} đã ngừng phục vụ trên tầng miễn
+phí của AI Studio, hệ thống dùng một mô hình Gemini Flash nhẹ tương đương.
+Một chi tiết hiện thực quan trọng để tiết kiệm hạn mức: các lời gọi đặt
+\code{thinkingConfig.thinkingBudget = 0} nhằm tắt token "suy nghĩ" ẩn ---
+nếu không, mô hình suy luận sẽ tiêu hết hạn mức đầu ra cho phần suy nghĩ và
+cắt cụt JSON kết quả.
+
+\subsection{Làm giàu dữ liệu từ điển tự động bằng LLM}
+\label{subsec:impl-enrich}
+
+Đây là tính năng AI trung tâm: từ một \textit{lemma} đơn lẻ, hệ thống tự
+dựng nên một bản ghi từ vựng đầy đủ (use case ở Bảng~\ref{tab:uc-quickcreate}).
+\code{EnrichmentProcessor} chọn một trong hai đường đi tuỳ dữ liệu sẵn có:
+
+\begin{itemize}
+  \item \textbf{Đường có từ điển (tiếng Anh):} truy vấn Free Dictionary
+        API~\cite{freedictionaryapi} để lấy từ loại, định nghĩa, phiên âm
+        \textbf{IPA} và từ đồng/trái nghĩa; sau đó LLM chỉ cần bổ sung một
+        \textit{gloss} ngắn, \textit{tối thiểu hai câu ví dụ} cho mỗi nghĩa,
+        một bản dịch ngắn và ước lượng bậc CEFR. Cách kết hợp này tận dụng dữ
+        liệu từ điển chính xác cho phần "khó tin tưởng AI" (định nghĩa, phiên
+        âm) và chỉ giao cho AI phần nó làm tốt (ví dụ tự nhiên, bản dịch).
+  \item \textbf{Đường chỉ dùng LLM (phi tiếng Anh hoặc từ điển không có):}
+        LLM sinh toàn bộ cấu trúc nghĩa theo từng từ loại.
+\end{itemize}
+
+Vì Gemma trên AI Studio không hỗ trợ \code{responseSchema} hay vai trò
+\textit{hệ thống} (system role), lược đồ JSON mong muốn được \textbf{nhúng
+thẳng vào prompt} và phản hồi được \textbf{phân tích phòng thủ}. Bộ phân tích
+bóc bỏ dấu rào ```\code{```json}```, dung thứ phần văn xuôi thừa, cắt và giới
+hạn độ dài các trường, và --- quan trọng nhất --- \textit{từ chối} một CEFR
+sai hoặc thiếu hay một nghĩa có dưới hai ví dụ bằng cách ném lỗi, để worker
+\textit{thử lại} thay vì lưu dữ liệu rác. Đoạn dưới minh hoạ lược đồ được yêu
+cầu và một phần kiểm tra phòng thủ:
+
+\begin{verbatim}
+// Lược đồ JSON nhúng trong prompt (rút gọn)
+{ "cefr": "<A1|A2|B1|B2|C1|C2>",
+  "senses": [ { "gloss": "<nhãn ngắn>",
+                "examples": ["<câu>", "<câu>"],
+                "translation": "<bản dịch ngắn>" } ] }
+
+// src/vocabularies/enrichment/gemma-enricher.ts — kiểm tra phòng thủ
+if (!VALID_CEFR.has(cefr))
+  throw new Error(`enricher returned invalid cefr: ${cefr}`);
+if (examples.length < 2)
+  throw new Error(`sense ${i + 1} returned fewer than 2 examples`);
+\end{verbatim}
+
+\paragraph{Vòng kiểm soát chất lượng.} Kết quả do AI sinh ra luôn được kiểm soát theo
+\textit{quyền sở hữu}, đúng tinh thần mục~\ref{subsec:llm-theory}: công việc do
+\textit{quản trị viên} tạo sẽ sinh ra \textbf{bản nháp} thuộc kho hệ thống ở
+trạng thái \code{is_approved = false} --- không xuất hiện trong phiên học của
+ai cho tới khi được duyệt; còn từ do \textit{người học} tạo là từ cá nhân,
+riêng tư và tự duyệt. Nhờ \textit{chỉ mục duy nhất bộ phận}
+(mục~\ref{sec:hien-thuc-du-lieu}), worker bỏ qua mọi từ loại đã tồn tại nên
+không bao giờ ghi đè dữ liệu sẵn có. Các từ được duyệt/tự duyệt tiếp tục kích
+hoạt hàng đợi sinh âm thanh.
+
+\subsection{Nhập từ vựng hàng loạt tự động}
+\label{subsec:impl-bulk}
+
+Tính năng nhập hàng loạt mở rộng cơ chế làm giàu ở quy mô lớn. Hàm
+\code{extractCandidates} (\code{enrichment/import/}) nhận đầu vào ở nhiều định
+dạng --- văn bản dán trực tiếp, CSV, bảng tính \textbf{XLSX} hay tệp
+\textbf{PDF} --- quy về một khối văn bản rồi đưa qua bộ \textit{tách token}
+chung. Bộ tách hỗ trợ hai chế độ: chế độ \textit{danh sách} (mỗi dòng/ô là một
+mục) và chế độ \textit{văn xuôi} (tách từ, chuẩn hoá, loại bỏ \textit{từ dừng});
+kết quả là danh sách \textit{ứng viên lemma}. Sau khi loại các từ đã có trong
+kho, mỗi lemma còn lại được \textbf{phát tán} thành một công việc làm giàu
+độc lập (chia sẻ một \code{batch_id}, và có thể kèm \code{target_deck_id} để
+tự thêm từ mới vào một bộ thẻ đích sau khi tạo xong). Người dùng theo dõi
+tiến độ cả lô qua mã lô thay vì phải chờ đồng bộ.
+
+\subsection{Sinh âm thanh và hình ảnh minh hoạ tự động}
+\label{subsec:impl-media}
+
+Hai loại media được sinh tự động qua các pipeline có \textit{phương án dự
+phòng} nhiều tầng, kết quả đều được lưu trên kho media \textbf{Cloudinary}~\cite{cloudinary2024}:
+
+\begin{itemize}
+  \item \textbf{Âm thanh phát âm:} ưu tiên lấy \textit{bản ghi âm người thật}
+        từ Free Dictionary API; nếu không có, tổng hợp bằng \textbf{Microsoft
+        Edge TTS} (giọng nơ-ron miễn phí, không cần khoá). Hàm trả về cả nguồn
+        đã dùng (\code{dictionary} hay \code{tts}), giúp ưu tiên chất lượng cho
+        các từ phổ biến và chỉ dùng TTS cho phần đuôi dài.
+  \item \textbf{Hình ảnh minh hoạ nghĩa:} tìm ảnh phù hợp qua kho ảnh
+        \textbf{Pexels}~\cite{pexels2024} rồi sao lưu lên Cloudinary. Với các
+        từ trừu tượng không có ảnh phù hợp, pipeline trả về \code{null} và để
+        trống cho quản trị viên bổ sung --- tự động hoá phần "đuôi dài" của
+        các từ cụ thể mà không tạo ra ảnh sai lệch.
+\end{itemize}
+
+\subsection{Chấm điểm câu luyện tập bằng LLM}
+\label{subsec:impl-judge}
+
+Tính năng luyện viết câu (use case ở Bảng~\ref{tab:uc-practice}) dùng LLM làm
+\textit{giám khảo}. Khi người học nộp một câu chứa từ mục tiêu,
+\code{PracticeService} kiểm tra hạn mức ngày, tạo bản ghi \code{pending}, đẩy
+vào hàng đợi và trả \code{202} ngay; nếu việc đẩy hàng đợi thất bại, bản ghi
+được \textit{hoàn tác} để không "kẹt" ở trạng thái chờ và không tiêu phí hạn
+mức. Worker \code{ScoringProcessor} gọi hàm \code{scoreSentence}
+(\code{gemma-judge.ts}) với một prompt yêu cầu chấm theo \textit{rubric} có
+cấu trúc (Bảng~\ref{tab:rubric-fields}); nhiệt độ sinh đặt thấp (0.2) để kết
+quả ổn định. Điểm đặc thù: mô hình được yêu cầu ước lượng
+\textbf{bậc CEFR mà chính câu đó thể hiện} (không phải năng lực tổng thể của
+người học), cùng một câu gợi ý sửa.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.6cm}|p{3.0cm}|p{7.4cm}|}
+    \hline
+    \textbf{Trường rubric} & \textbf{Kiểu} & \textbf{Ý nghĩa} \\
+    \hline
+    \code{overall} & số nguyên 0--100 & Điểm tổng của câu. \\
+    \hline
+    \code{usesTargetWord} & boolean & Câu có dùng đúng từ mục tiêu (kể cả dạng biến cách). \\
+    \hline
+    \code{correctUsage} & boolean & Từ được dùng đúng một trong các nghĩa dự kiến. \\
+    \hline
+    \code{criteria} & 4 tiêu chí 0--5 & Ngữ pháp, dùng từ, độ tự nhiên, độ liên quan. \\
+    \hline
+    \code{cefr} & A1--C2 & Bậc CEFR mà câu thể hiện. \\
+    \hline
+    \code{feedback} & chuỗi & Một, hai câu nhận xét cho người học. \\
+    \hline
+    \code{correctedSentence} & chuỗi, tuỳ chọn & Phiên bản câu được cải thiện (nếu cần). \\
+    \hline
+  \end{tabular}
+  \caption{Cấu trúc rubric chấm điểm câu luyện tập do LLM trả về}
+  \label{tab:rubric-fields}
+\end{table}
+
+Phản hồi của mô hình được phân tích phòng thủ giống như ở phần làm giàu: các
+khoảng số bị kẹp về biên hợp lệ, CEFR sai bị từ chối để worker thử lại. Người
+học thăm dò kết quả qua mã bài luyện.
+
+\subsection{Chấm điểm phát âm qua vi dịch vụ}
+\label{subsec:impl-pron}
+
+Chức năng luyện phát âm (Hình~\ref{fig:seq-pron}) được hiện thực bằng cách
+tách phần xử lý tín hiệu/học máy thành một \textbf{vi dịch vụ} riêng viết bằng
+Python (\textbf{FastAPI})~\cite{fastapi2024}, còn backend chỉ đóng vai
+\textit{proxy mỏng}. \code{PronunciationScoringClient} đóng gói bản ghi âm
+của người học thành một yêu cầu \code{multipart/form-data} (trường
+\code{audio} và \code{word}), gọi điểm cuối \code{/score} với
+\textit{thời gian chờ} ràng buộc, rồi ánh xạ lỗi của dịch vụ ngoài về mã lỗi
+HTTP có ngữ nghĩa: \code{422} (âm thanh quá ngắn / không chấm được)
+$\rightarrow$ \code{400}, còn không kết nối được / lỗi máy chủ $\rightarrow$
+\code{503} (suy giảm có kiểm soát, NFR-04). Kết quả --- điểm tổng và điểm từng
+âm vị --- được lưu vào \code{pronunciation_attempts} làm lịch sử luyện tập.
+Việc cô lập này giữ cho tiến trình backend chính không phải mang các phụ thuộc
+nặng về xử lý âm thanh.
+
+% =====================================================================
+\section{Theo dõi tiến độ và tạo động lực tự động}
+\label{sec:tien-do}
+
+Phân hệ tiến độ biến nhật ký học thành các chỉ số động lực một cách tự động
+(các yêu cầu FR-19, FR-20). Nguồn dữ liệu là bảng \textit{chỉ-thêm}
+\code{learning_activity} --- mỗi lượt ôn ghi đúng một dòng, được ghi cùng giao
+dịch với cập nhật SRS (mục~\ref{subsec:impl-hmac}) nên các con số luôn nhất
+quán với nhau. \code{ProgressService} tính:
+
+\begin{itemize}
+  \item \textbf{Thống kê trang chủ:} số từ theo từng trạng thái
+        (\code{new}/\code{learning}/\code{review}/\code{mastered}), số thẻ đang
+        đến hạn, số lượt ôn hôm nay và thời điểm đến hạn kế tiếp.
+  \item \textbf{Chuỗi ngày học (streak):} số ngày liên tiếp (theo lịch UTC) có
+        ít nhất một lượt ôn, tính lùi từ ngày ôn gần nhất; chuỗi chỉ còn hiệu
+        lực nếu ngày gần nhất là hôm nay hoặc hôm qua.
+  \item \textbf{Biểu đồ hoạt động (heatmap):} gộp số lượt ôn theo từng ngày
+        \textit{theo múi giờ của người dùng} bằng một truy vấn SQL dùng
+        \code{AT TIME ZONE}, để các ô lịch khớp với nửa đêm địa phương của họ.
+\end{itemize}
+
+\textbf{Bảng xếp hạng} được \code{LeaderboardService} tính trực tiếp: xếp hạng
+người học theo \textit{số từ đã thành thạo} (toàn thời gian), chỉ tính những
+tài khoản người học thật, đang hoạt động và \textit{không chọn ẩn}
+(\code{leaderboard_opt_out}); thứ hạng của bản thân người gọi được suy ra từ
+cùng một tập đã sắp xếp để hai con số không bao giờ mâu thuẫn. Bảng xếp hạng
+theo \textit{số từ mới} được dành cho giai đoạn phát triển tiếp theo.
+
+% =====================================================================
+\section{Kiểm thử hệ thống}
+\label{sec:kiem-thu}
+
+Việc kiểm thử được hỗ trợ trực tiếp bởi một lựa chọn thiết kế lặp lại xuyên
+suốt chương: \textbf{tách logic thông minh thành các hàm thuần, độc lập
+framework}. Các hàm như \code{applySm2} (SM-2), bộ ký HMAC, bộ chấm đáp án,
+bộ dựng prompt và bộ phân tích phản hồi LLM đều không phụ thuộc NestJS hay cơ
+sở dữ liệu, nên có thể kiểm thử đơn vị nhanh và tất định. Chiến lược kiểm thử
+gồm hai mức (Bảng~\ref{tab:test-targets}):
+
+\begin{itemize}
+  \item \textbf{Kiểm thử đơn vị} bằng \textbf{Jest}~\cite{jest2024}: tập trung
+        vào các thuật toán và bộ phân tích --- nơi lỗi tinh vi dễ lọt và hậu
+        quả lớn (lập lịch sai, lưu dữ liệu AI rác, chấm điểm sai).
+  \item \textbf{Kiểm thử tích hợp (end-to-end)} bằng \textbf{Supertest}: gọi
+        thật vào các điểm cuối API để kiểm tra luồng xác thực, kiểm tra đầu
+        vào và mã trạng thái trả về.
+\end{itemize}
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{5.0cm}|p{9.4cm}|}
+    \hline
+    \textbf{Thành phần} & \textbf{Trọng tâm kiểm thử} \\
+    \hline
+    \code{srs.ts} & Chuyển trạng thái SM-2, bước học, tốt nghiệp, rớt bước, ngưỡng thành thạo. \\
+    \hline
+    \code{hmac-signer.service.ts} & Ký/xác minh, chống giả mạo, hết hạn, so sánh thời gian hằng số. \\
+    \hline
+    \code{answer-grader.service.ts} & Quy đổi điểm chất lượng cho từng loại câu hỏi. \\
+    \hline
+    \code{question-builder.service.ts} & Dựng bài học đúng dải khó, tôn trọng các trần và lọc dữ liệu. \\
+    \hline
+    \code{gemma-judge.ts}, \code{gemma-enricher.ts} & Phân tích phòng thủ JSON, kẹp số, từ chối CEFR sai. \\
+    \hline
+    \code{import/tokenize.ts}, \code{normalize.ts}, \code{xlsx-parser.ts} & Tách lemma, chuẩn hoá, đọc bảng tính cho nhập hàng loạt. \\
+    \hline
+  \end{tabular}
+  \caption{Một số thành phần tiêu biểu và trọng tâm kiểm thử}
+  \label{tab:test-targets}
+\end{table}
+
+Chất lượng mã nguồn còn được kiểm soát ở mức tĩnh bằng trình kiểm tra kiểu của
+TypeScript (chế độ \textit{strict}), \textbf{ESLint} và \textbf{Prettier},
+chạy trước mỗi lần commit (đáp ứng NFR-06).
+
+% =====================================================================
+\section{Kết chương}
+\label{sec:ket-chuong-4}
+
+Chương này đã trình bày quá trình hiện thực hoá hệ thống, với trọng tâm là các
+thành phần thông minh và tự động hoá. Ở phía \textit{động cơ học}, hệ thống
+thích nghi với từng người học qua thuật toán SM-2 mở rộng bước học
+(\code{srs.ts}), cơ chế chọn từ theo khoảng cách CEFR, bộ sinh câu hỏi nhiều
+tầng theo giai đoạn ghi nhớ với phương án nhiễu "dễ nhầm", và cơ chế chấm điểm
+phi trạng thái an toàn bằng chữ ký HMAC. Ở phía \textit{nội dung}, các tính
+năng AI --- làm giàu từ điển bằng LLM kết hợp từ điển, nhập hàng loạt từ nhiều
+định dạng, sinh âm thanh và hình ảnh tự động, chấm điểm câu và phát âm --- đều
+chạy trên một hạ tầng xử lý nền bất đồng bộ có tính idempotent, biết thử lại,
+tự giới hạn tần suất và suy giảm có kiểm soát. Tất cả được củng cố bằng các
+chỉ số tiến độ tự động và một chiến lược kiểm thử dựa trên việc tách logic
+thành các hàm thuần. Những kết quả hiện thực hoá này là cơ sở để chương tiếp
+theo đánh giá hệ thống và rút ra kết luận.
