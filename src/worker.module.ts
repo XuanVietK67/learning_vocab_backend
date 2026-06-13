@@ -14,8 +14,10 @@ import { ScoringProcessor } from './practice/scoring.processor';
 import { AUDIO_QUEUE } from './vocabularies/audio/audio-queue.constants';
 import { AudioQueueProducer } from './vocabularies/audio/audio-queue.producer';
 import { AudioProcessor } from './vocabularies/audio/audio.processor';
+import { EnrichmentCacheService } from './vocabularies/enrichment/enrichment-cache.service';
 import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.constants';
 import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
+import { VocabEnrichmentCache } from './vocabularies/entities/vocab-enrichment-cache.entity';
 import { VocabEnrichmentJob } from './vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularySense } from './vocabularies/entities/vocabulary-sense.entity';
 import { Vocabulary } from './vocabularies/entities/vocabulary.entity';
@@ -64,6 +66,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
       Vocabulary,
       VocabularySense,
       VocabEnrichmentJob,
+      VocabEnrichmentCache,
       ProductionAttempt,
     ]),
     BullModule.forRootAsync({
@@ -86,6 +89,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
     ScoringProcessor,
     EnrichmentProcessor,
     ImageProcessor,
+    EnrichmentCacheService,
     VocabularyPersistenceService,
     // The enrichment worker enqueues audio for auto-approved user words and
     // appends bulk-imported words to their target deck.

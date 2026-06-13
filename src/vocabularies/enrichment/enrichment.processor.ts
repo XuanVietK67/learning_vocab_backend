@@ -4,14 +4,14 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
-import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { EnrichmentStatus } from '@/vocabularies/entities/enrichment-status.enum';
-import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { VocabEnrichmentJobStatus } from '@/vocabularies/entities/vocab-enrichment-job-status.enum';
 import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 import { Visibility } from '@/vocabularies/entities/visibility.enum';
+import { EnrichmentCacheService } from '@/vocabularies/enrichment/enrichment-cache.service';
+import { DraftInput } from '@/vocabularies/enrichment/enrichment-draft.types';
 import {
   DictionaryPosGroup,
   fetchDictionaryEntry,
@@ -20,10 +20,15 @@ import {
   ENRICHMENT_QUEUE,
   EnrichVocabularyJobData,
 } from '@/vocabularies/enrichment/enrichment-queue.constants';
+import { GemmaBatcher } from '@/vocabularies/enrichment/gemma-batcher';
 import {
-  enrichFromScratch,
+  BatchExamplesWordInput,
+  BatchExamplesWordResult,
+  BatchScratchWordInput,
+  generateBatchExamples,
+  generateBatchScratch,
   GemmaClientOptions,
-  generateExamples,
+  ScratchPosGroup,
 } from '@/vocabularies/enrichment/gemma-enricher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import { DeckMembershipService } from '@/decks/deck-membership.service';
@@ -35,24 +40,28 @@ import {
 } from '@/vocabularies/vocabulary-persistence.service';
 
 // Decorator options are evaluated at class-decoration time, before Nest's DI
-// exists, so concurrency + the limiter are read from env directly. Each job
-// makes several Gemma calls (one per part of speech), so default concurrency is
-// 1 and the limiter caps job starts under the Gemma free-tier RPM.
+// exists, so concurrency + the limiter are read from env directly. Concurrency
+// defaults to the batch size so several per-word jobs run at once and coalesce
+// into one Gemma call (see the batchers below). The limiter still caps job
+// STARTS at the free-tier RPM, which is a safe upper bound on actual calls:
+// batching only collapses starts into fewer calls, never more.
 const CONCURRENCY = parseInt(
-  process.env.ENRICHMENT_WORKER_CONCURRENCY ?? '1',
+  process.env.ENRICHMENT_WORKER_CONCURRENCY ?? '5',
   10,
 );
 const RPM = parseInt(process.env.GEMMA_REQUESTS_PER_MINUTE ?? '15', 10);
 
+// How many words share one Gemma call, and how long a partial batch waits for
+// more words before flushing (so a lone quick-create isn't stuck behind a batch
+// that never fills).
+const BATCH_SIZE = parseInt(process.env.ENRICHMENT_BATCH_SIZE ?? '5', 10);
+const BATCH_LINGER_MS = parseInt(
+  process.env.ENRICHMENT_BATCH_LINGER_MS ?? '300',
+  10,
+);
+
 const MAX_SENSES_PER_POS = 3;
 const DICTIONARY_TIMEOUT_MS = 10_000;
-
-interface DraftInput {
-  partOfSpeech: PartOfSpeech;
-  ipa: string | null;
-  cefrLevel: ProficiencyLevel;
-  senses: PersistSense[];
-}
 
 @Processor(ENRICHMENT_QUEUE, {
   concurrency: CONCURRENCY,
@@ -60,6 +69,18 @@ interface DraftInput {
 })
 export class EnrichmentProcessor extends WorkerHost {
   private readonly logger = new Logger(EnrichmentProcessor.name);
+
+  // One coalescer per call type: dictionary-assisted (examples for known senses)
+  // and scratch (whole structure). Both bucket by `${language}:${t}` so only
+  // compatible requests batch together.
+  private readonly examplesBatcher: GemmaBatcher<
+    BatchExamplesWordInput,
+    BatchExamplesWordResult
+  >;
+  private readonly scratchBatcher: GemmaBatcher<
+    BatchScratchWordInput,
+    ScratchPosGroup[]
+  >;
 
   constructor(
     @InjectRepository(VocabEnrichmentJob)
@@ -69,9 +90,19 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly persistence: VocabularyPersistenceService,
     private readonly audioProducer: AudioQueueProducer,
     private readonly membership: DeckMembershipService,
+    private readonly cache: EnrichmentCacheService,
     private readonly config: ConfigService,
   ) {
     super();
+    const batcherOpts = { maxBatch: BATCH_SIZE, lingerMs: BATCH_LINGER_MS };
+    this.examplesBatcher = new GemmaBatcher(
+      (inputs) => generateBatchExamples(inputs, this.gemmaOptions()),
+      batcherOpts,
+    );
+    this.scratchBatcher = new GemmaBatcher(
+      (inputs) => generateBatchScratch(inputs, this.gemmaOptions()),
+      batcherOpts,
+    );
   }
 
   async process(job: Job<EnrichVocabularyJobData>): Promise<void> {
@@ -204,15 +235,52 @@ export class EnrichmentProcessor extends WorkerHost {
     return [{ language, translation, source: 'gemma' }];
   }
 
-  // Build draft inputs from the dictionary (English) plus Gemma, falling back to
-  // Gemma-only when the dictionary has no entry or the language is non-English.
+  // Cache key bucket so only same-language/same-translation requests batch.
+  private batchKey(
+    language: string,
+    translationLanguage: string | null,
+  ): string {
+    return `${language}:${translationLanguage ?? ''}`;
+  }
+
+  // Cache-first: a hit replays the whole model+dictionary output with no network
+  // call. On a miss, generate, then cache the result before persisting so even a
+  // failed persist (retried) won't re-spend the model.
   private async prepareDrafts(
     lemma: string,
     language: string,
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    const gemmaOpts = this.gemmaOptions();
+    const cached = await this.cache.get(language, lemma, translationLanguage);
+    if (cached) {
+      this.logger.debug(`enrichment cache hit for "${lemma}" (${language})`);
+      return cached;
+    }
 
+    const drafts = await this.generateDrafts(
+      lemma,
+      language,
+      translationLanguage,
+    );
+    if (drafts.length > 0) {
+      await this.cache.put(
+        language,
+        lemma,
+        translationLanguage,
+        drafts,
+        this.config.get<string>('gemma.model', 'unknown'),
+      );
+    }
+    return drafts;
+  }
+
+  // Build draft inputs from the dictionary (English) plus Gemma, falling back to
+  // Gemma-only when the dictionary has no entry or the language is non-English.
+  private async generateDrafts(
+    lemma: string,
+    language: string,
+    translationLanguage: string | null,
+  ): Promise<DraftInput[]> {
     if (language === 'en') {
       const groups = await fetchDictionaryEntry(lemma, DICTIONARY_TIMEOUT_MS);
       if (groups) {
@@ -220,61 +288,75 @@ export class EnrichmentProcessor extends WorkerHost {
           lemma,
           language,
           groups,
-          gemmaOpts,
           translationLanguage,
         );
       }
     }
-    return this.draftsFromScratch(
-      lemma,
-      language,
-      gemmaOpts,
-      translationLanguage,
-    );
+    return this.draftsFromScratch(lemma, language, translationLanguage);
   }
 
   private async draftsFromDictionary(
     lemma: string,
     language: string,
     groups: DictionaryPosGroup[],
-    gemmaOpts: GemmaClientOptions,
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    const drafts: DraftInput[] = [];
-    for (const group of groups) {
-      const pos = mapPartOfSpeech(group.partOfSpeechRaw);
-      if (!pos) continue;
+    // Resolve POS + cap senses up front; one batched Gemma call covers them all.
+    const inputGroups = groups
+      .map((group) => {
+        const pos = mapPartOfSpeech(group.partOfSpeechRaw);
+        if (!pos) return null;
+        return {
+          group,
+          pos,
+          capped: group.senses.slice(0, MAX_SENSES_PER_POS),
+        };
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null);
+    if (inputGroups.length === 0) return [];
 
-      const capped = group.senses.slice(0, MAX_SENSES_PER_POS);
-      const enriched = await generateExamples(
-        {
-          lemma,
-          partOfSpeech: pos,
-          language,
-          senses: capped.map((s) => ({ definition: s.definition })),
-          translationLanguage: translationLanguage ?? undefined,
-        },
-        gemmaOpts,
-      );
+    const wordInput: BatchExamplesWordInput = {
+      lemma,
+      language,
+      translationLanguage: translationLanguage ?? undefined,
+      posGroups: inputGroups.map(({ pos, capped }) => ({
+        partOfSpeech: pos,
+        senses: capped.map((s) => ({ definition: s.definition })),
+      })),
+    };
+
+    const enriched = await this.examplesBatcher.submit(
+      this.batchKey(language, translationLanguage),
+      wordInput,
+    );
+    // The parser keeps posGroups aligned to the request and guarantees enough
+    // senses per group, so this lookup always resolves for a successful word.
+    const sensesByPos = new Map(
+      enriched.posGroups.map((g) => [g.partOfSpeech, g.senses]),
+    );
+
+    const drafts: DraftInput[] = [];
+    for (const { group, pos, capped } of inputGroups) {
+      const enrichedSenses = sensesByPos.get(pos);
+      if (!enrichedSenses) continue;
 
       const senses: PersistSense[] = capped.map((dictSense, i) => {
-        const examples = enriched.senses[i].examples.map((sentence) => ({
-          sentence,
-          source: 'gemma',
-        }));
+        const examples = (enrichedSenses[i]?.examples ?? []).map(
+          (sentence) => ({ sentence, source: 'gemma' }),
+        );
         // Keep the dictionary's own example sentence too, when present.
         if (dictSense.example) {
           examples.push({ sentence: dictSense.example, source: 'dictionary' });
         }
         return {
-          gloss: enriched.senses[i].gloss || null,
+          gloss: enrichedSenses[i]?.gloss || null,
           definition: dictSense.definition,
           synonyms: dictSense.synonyms,
           antonyms: dictSense.antonyms,
           examples,
           translations: this.buildTranslations(
             translationLanguage,
-            enriched.senses[i].translation,
+            enrichedSenses[i]?.translation,
           ),
         };
       });
@@ -292,14 +374,15 @@ export class EnrichmentProcessor extends WorkerHost {
   private async draftsFromScratch(
     lemma: string,
     language: string,
-    gemmaOpts: GemmaClientOptions,
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    const groups = await enrichFromScratch(
-      lemma,
-      language,
-      gemmaOpts,
-      translationLanguage ?? undefined,
+    const groups = await this.scratchBatcher.submit(
+      this.batchKey(language, translationLanguage),
+      {
+        lemma,
+        language,
+        translationLanguage: translationLanguage ?? undefined,
+      },
     );
     return groups.map((group) => ({
       partOfSpeech: group.partOfSpeech,

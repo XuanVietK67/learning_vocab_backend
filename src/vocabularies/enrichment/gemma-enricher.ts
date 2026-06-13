@@ -1,5 +1,6 @@
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
+import { BatchItemResult } from '@/vocabularies/enrichment/gemma-batcher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 
 /**
@@ -168,7 +169,14 @@ Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
 }
 
 export function parseScratchResponse(raw: string): ScratchPosGroup[] {
-  const obj = parseJsonObject(raw);
+  return parsePosGroupsFromWord(parseJsonObject(raw));
+}
+
+// Parse one word object ({ cefr, partsOfSpeech: [...] }) into POS groups.
+// Shared by the single-word and batched scratch parsers so they stay in lockstep.
+function parsePosGroupsFromWord(
+  obj: Record<string, unknown>,
+): ScratchPosGroup[] {
   const cefr = coerceCefr(obj.cefr);
   const groupsRaw = Array.isArray(obj.partsOfSpeech) ? obj.partsOfSpeech : [];
 
@@ -207,21 +215,27 @@ interface GenerateContentResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
 }
 
-/** POST a prompt to Gemma's generateContent endpoint and return the text. */
+/**
+ * POST a prompt to Gemma's generateContent endpoint and return the text.
+ * `maxOutputTokens` defaults to a single-word budget; the batched callers raise
+ * it so a 5-word response isn't truncated (finishReason MAX_TOKENS).
+ */
 export async function callGemma(
   prompt: string,
   opts: GemmaClientOptions,
+  maxOutputTokens = 2048,
 ): Promise<string> {
   const url = `${opts.baseUrl}/models/${opts.model}:generateContent?key=${opts.apiKey}`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     // thinkingBudget: 0 disables the model's hidden reasoning tokens. Without it
     // a thinking model spends the whole output budget on thoughts and truncates
-    // the JSON (finishReason MAX_TOKENS). 2048 leaves headroom for the heaviest
-    // scratch words (many parts of speech x several senses). See gemma.config.ts.
+    // the JSON (finishReason MAX_TOKENS). The default budget leaves headroom for
+    // the heaviest scratch words (many parts of speech x several senses); batched
+    // callers pass a larger value. See gemma.config.ts.
     generationConfig: {
       temperature: 0.4,
-      maxOutputTokens: 2048,
+      maxOutputTokens,
       thinkingConfig: { thinkingBudget: 0 },
     },
   };
@@ -273,6 +287,253 @@ export async function enrichFromScratch(
     opts,
   );
   return parseScratchResponse(text);
+}
+
+// ---- batched entry points (one model call for up to N words) ----
+//
+// Both return one BatchItemResult per input word, in input order, parsed
+// independently so one malformed word can't poison the batch. Words are matched
+// to the response by the echoed "lemma" (case-insensitive), falling back to
+// position. The whole call throwing (network/429/unparseable batch) propagates,
+// so the batcher can fail every participant and let each job retry alone.
+
+export interface BatchExamplesPosInput {
+  partOfSpeech: PartOfSpeech;
+  senses: SenseToEnrich[];
+}
+
+export interface BatchExamplesWordInput {
+  lemma: string;
+  language: string;
+  translationLanguage?: string;
+  posGroups: BatchExamplesPosInput[];
+}
+
+export interface BatchExamplesPosResult {
+  partOfSpeech: PartOfSpeech;
+  senses: EnrichedSense[];
+}
+
+export interface BatchExamplesWordResult {
+  cefr: ProficiencyLevel;
+  posGroups: BatchExamplesPosResult[];
+}
+
+export interface BatchScratchWordInput {
+  lemma: string;
+  language: string;
+  translationLanguage?: string;
+}
+
+// Output token budget for a batch: enough headroom per word to avoid truncation,
+// capped so one call can't run away. ~1 word ≈ the single-word default.
+function batchTokenBudget(count: number): number {
+  return Math.min(8192, 1024 + 1280 * Math.max(1, count));
+}
+
+export function buildBatchExamplesPrompt(
+  words: BatchExamplesWordInput[],
+): string {
+  const language = words[0]?.language ?? 'en';
+  const t = words[0]?.translationLanguage;
+
+  const wordBlocks = words
+    .map((w, wi) => {
+      const posBlocks = w.posGroups
+        .map((g) => {
+          const senseLines = g.senses
+            .map((s, si) => `    ${si + 1}. ${s.definition}`)
+            .join('\n');
+          return `  As ${g.partOfSpeech}:\n${senseLines}`;
+        })
+        .join('\n');
+      return `Word ${wi + 1}: "${w.lemma}"\n${posBlocks}`;
+    })
+    .join('\n\n');
+
+  const translationInstruction = t
+    ? `\n- "translation": a short translation (1-3 words) of the word for THAT sense, written in language "${t}".`
+    : '';
+  const translationField = t ? `, "translation": "<short translation>"` : '';
+
+  return `You help build a language-learning dictionary. Example sentences must be written in language code "${language}". Below are ${words.length} word(s); each lists its part(s) of speech, and under each, numbered sense definitions.
+
+${wordBlocks}
+
+For EACH word, EACH of its parts of speech, and EACH numbered sense (in the same order), produce:
+- "gloss": a very short label of 1-4 words summarising that sense.
+- "examples": an array of at least 2 natural sentences that use the word (or an inflected form) with THAT sense, written in language "${language}".${translationInstruction}
+Also estimate "cefr": the overall CEFR difficulty of each word (A1, A2, B1, B2, C1, or C2).
+
+Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
+{
+  "words": [
+    {
+      "lemma": "<the word>",
+      "cefr": "<A1|A2|B1|B2|C1|C2>",
+      "partsOfSpeech": [
+        { "partOfSpeech": "<the part of speech>", "senses": [ { "gloss": "<short label>", "examples": ["<sentence>", "<sentence>"]${translationField} } ] }
+      ]
+    }
+  ]
+}
+The "words" array MUST have exactly ${words.length} item(s), one per word above, echoing each "lemma".`;
+}
+
+export function parseBatchExamplesResponse(
+  raw: string,
+  words: BatchExamplesWordInput[],
+): BatchItemResult<BatchExamplesWordResult>[] {
+  const indexed = indexWordsByLemma(parseJsonObject(raw));
+
+  return words.map((word, wi) => {
+    const wordObj =
+      indexed.byLemma.get(word.lemma.trim().toLowerCase()) ?? indexed.list[wi];
+    if (!wordObj) {
+      return batchError(`no result returned for "${word.lemma}"`);
+    }
+    try {
+      const cefr = coerceCefr(wordObj.cefr);
+      const posList = (
+        Array.isArray(wordObj.partsOfSpeech) ? wordObj.partsOfSpeech : []
+      ).filter(isObject);
+      const posByLabel = new Map<string, Record<string, unknown>>();
+      for (const p of posList) {
+        const label =
+          typeof p.partOfSpeech === 'string'
+            ? p.partOfSpeech.trim().toLowerCase()
+            : '';
+        if (label && !posByLabel.has(label)) posByLabel.set(label, p);
+      }
+
+      const posGroups: BatchExamplesPosResult[] = word.posGroups.map(
+        (inGroup, gi) => {
+          const respGroup =
+            posByLabel.get(inGroup.partOfSpeech.toLowerCase()) ?? posList[gi];
+          if (!respGroup) {
+            throw new Error(
+              `missing part of speech "${inGroup.partOfSpeech}" for "${word.lemma}"`,
+            );
+          }
+          const sensesRaw = Array.isArray(respGroup.senses)
+            ? respGroup.senses
+            : [];
+          if (sensesRaw.length < inGroup.senses.length) {
+            throw new Error(
+              `"${word.lemma}" (${inGroup.partOfSpeech}) returned ${sensesRaw.length} senses, expected ${inGroup.senses.length}`,
+            );
+          }
+          const senses: EnrichedSense[] = inGroup.senses.map((_, si) => {
+            const s = (sensesRaw[si] ?? {}) as Record<string, unknown>;
+            const examples = coerceExamples(s.examples);
+            if (examples.length < 2) {
+              throw new Error(
+                `"${word.lemma}" (${inGroup.partOfSpeech}) sense ${si + 1} returned fewer than 2 examples`,
+              );
+            }
+            return {
+              gloss: coerceGloss(s.gloss),
+              examples,
+              translation: coerceTranslation(s.translation),
+            };
+          });
+          return { partOfSpeech: inGroup.partOfSpeech, senses };
+        },
+      );
+
+      return { ok: true, value: { cefr, posGroups } };
+    } catch (err) {
+      return batchError(err);
+    }
+  });
+}
+
+export async function generateBatchExamples(
+  words: BatchExamplesWordInput[],
+  opts: GemmaClientOptions,
+): Promise<BatchItemResult<BatchExamplesWordResult>[]> {
+  if (words.length === 0) return [];
+  const text = await callGemma(
+    buildBatchExamplesPrompt(words),
+    opts,
+    batchTokenBudget(words.length),
+  );
+  return parseBatchExamplesResponse(text, words);
+}
+
+export function buildBatchScratchPrompt(
+  words: BatchScratchWordInput[],
+): string {
+  const language = words[0]?.language ?? 'en';
+  const t = words[0]?.translationLanguage;
+  const wordList = words.map((w, i) => `${i + 1}. "${w.lemma}"`).join('\n');
+
+  const translationInstruction = t
+    ? ` Also give a short "translation" (1-3 words) of the word for that sense, written in language "${t}".`
+    : '';
+  const translationField = t ? `, "translation": "<short translation>"` : '';
+
+  return `You help build a language-learning dictionary for language code "${language}". Describe each of the following ${words.length} word(s):
+${wordList}
+
+For each word, for each part of speech it can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use the word (or an inflected form).${translationInstruction} Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2).
+
+Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
+{
+  "words": [
+    {
+      "lemma": "<the word>",
+      "cefr": "<A1|A2|B1|B2|C1|C2>",
+      "partsOfSpeech": [
+        {
+          "partOfSpeech": "<noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|phrase>",
+          "senses": [ { "gloss": "<short label>", "definition": "<definition>", "examples": ["<sentence>", "<sentence>"]${translationField} } ]
+        }
+      ]
+    }
+  ]
+}
+The "words" array MUST have exactly ${words.length} item(s), one per word above, echoing each "lemma".`;
+}
+
+export function parseBatchScratchResponse(
+  raw: string,
+  lemmas: string[],
+): BatchItemResult<ScratchPosGroup[]>[] {
+  const indexed = indexWordsByLemma(parseJsonObject(raw));
+
+  return lemmas.map((lemma, i) => {
+    const wordObj =
+      indexed.byLemma.get(lemma.trim().toLowerCase()) ?? indexed.list[i];
+    if (!wordObj) {
+      return batchError(`no result returned for "${lemma}"`);
+    }
+    try {
+      const groups = parsePosGroupsFromWord(wordObj);
+      if (groups.length === 0) {
+        return batchError(`"${lemma}" produced no usable senses`);
+      }
+      return { ok: true, value: groups };
+    } catch (err) {
+      return batchError(err);
+    }
+  });
+}
+
+export async function generateBatchScratch(
+  words: BatchScratchWordInput[],
+  opts: GemmaClientOptions,
+): Promise<BatchItemResult<ScratchPosGroup[]>[]> {
+  if (words.length === 0) return [];
+  const text = await callGemma(
+    buildBatchScratchPrompt(words),
+    opts,
+    batchTokenBudget(words.length),
+  );
+  return parseBatchScratchResponse(
+    text,
+    words.map((w) => w.lemma),
+  );
 }
 
 // ---- shared coercion helpers ----
@@ -327,4 +588,34 @@ function parseJsonObject(raw: string): Record<string, unknown> {
     throw new Error('enricher JSON was not an object');
   }
   return parsed as Record<string, unknown>;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Wrap a reason (string or thrown value) as a failed batch item.
+function batchError(reason: unknown): { ok: false; error: Error } {
+  const error =
+    reason instanceof Error
+      ? reason
+      : new Error(typeof reason === 'string' ? reason : String(reason));
+  return { ok: false, error };
+}
+
+// Index a batched `{ words: [...] }` response: keep the list (for positional
+// fallback) and a lemma -> word-object map (for robust matching when the model
+// reorders or omits words). First occurrence of a lemma wins.
+function indexWordsByLemma(obj: Record<string, unknown>): {
+  list: Record<string, unknown>[];
+  byLemma: Map<string, Record<string, unknown>>;
+} {
+  const list = (Array.isArray(obj.words) ? obj.words : []).filter(isObject);
+  const byLemma = new Map<string, Record<string, unknown>>();
+  for (const w of list) {
+    const lemma =
+      typeof w.lemma === 'string' ? w.lemma.trim().toLowerCase() : '';
+    if (lemma && !byLemma.has(lemma)) byLemma.set(lemma, w);
+  }
+  return { list, byLemma };
 }
