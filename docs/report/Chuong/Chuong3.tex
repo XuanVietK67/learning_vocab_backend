@@ -294,16 +294,20 @@ mục mã nguồn và chạy qua công cụ dòng lệnh của TypeORM, giúp ti
 \label{sec:cong-nghe-frontend}
 
 Ứng dụng khách (frontend) là một dự án độc lập, đóng vai trò bên tiêu thụ
-API REST của backend. Frontend được xây dựng bằng \textbf{Next.js} ---
-framework React hỗ trợ kết xuất phía máy chủ (Server-Side Rendering --- SSR)
-và sinh trang tĩnh (Static Site Generation --- SSG) \cite{nextjs2024} ---
-trên nền thư viện giao diện \textbf{React} \cite{react2024} và ngôn ngữ
-\textbf{TypeScript}. Việc dùng chung TypeScript ở cả frontend và backend
-giúp thống nhất kiểu dữ liệu của hợp đồng API giữa hai phía. Phần tạo kiểu
-giao diện dùng \textbf{Tailwind CSS} --- framework CSS theo hướng tiện ích
-(utility-first) \cite{tailwind2024} --- kết hợp bộ thành phần
-\textbf{shadcn/ui}. Bảng~\ref{tab:frontend-libs} liệt kê các thư viện
-frontend chính.
+API REST của backend. Frontend được xây dựng bằng \textbf{Next.js 16} theo
+mô hình \textit{App Router} --- framework React hỗ trợ kết xuất phía máy chủ
+(Server-Side Rendering --- SSR), \textit{thành phần phía máy chủ} (Server
+Components) và \textit{hành động phía máy chủ} (Server Actions)
+\cite{nextjs2024} --- trên nền thư viện giao diện \textbf{React~19}
+\cite{react2024} và ngôn ngữ \textbf{TypeScript} (chế độ \textit{strict}).
+Việc dùng chung TypeScript ở cả frontend và backend giúp thống nhất kiểu dữ
+liệu của hợp đồng API giữa hai phía. Phần tạo kiểu giao diện dùng
+\textbf{Tailwind CSS v4} --- framework CSS theo hướng tiện ích (utility-first),
+cấu hình bằng CSS \cite{tailwind2024} --- kết hợp bộ thành phần
+\textbf{shadcn/ui} dựng trên các primitive khả truy cập của \textbf{Base UI}.
+Ràng buộc và kiểm tra dữ liệu biểu mẫu dùng \code{zod} \cite{zod2024}, được
+dùng lại giữa kiểm tra phía máy khách và Server Action. Bảng~\ref{tab:frontend-libs}
+liệt kê các thư viện frontend chính.
 
 \begin{table}[h]
   \centering
@@ -313,9 +317,9 @@ frontend chính.
     \hline
     \textbf{Công nghệ / thư viện} & \textbf{Vai trò} \\
     \hline
-    Next.js, React, TypeScript & Khung ứng dụng, dựng giao diện theo thành phần, định tuyến và kết xuất trang. \\
+    Next.js 16 (App Router), React 19, TypeScript & Khung ứng dụng theo App Router; Server Components/Server Actions, định tuyến và kết xuất trang. \\
     \hline
-    Tailwind CSS, shadcn/ui & Hệ thống tạo kiểu tiện ích và bộ thành phần giao diện tái sử dụng. \\
+    Tailwind CSS v4, shadcn/ui, Base UI & Hệ thống tạo kiểu tiện ích và bộ thành phần giao diện khả truy cập, tái sử dụng. \\
     \hline
     \code{zod} & Khai báo và kiểm tra ràng buộc dữ liệu (biểu mẫu, phản hồi API) phía máy khách. \\
     \hline
@@ -328,10 +332,12 @@ frontend chính.
   \label{tab:frontend-libs}
 \end{table}
 
-Vì trọng tâm của báo cáo là hệ thống phía máy chủ (xem phạm vi đề tài ở
-Chương~\ref{chuong:tong-quan}), phần frontend chỉ được trình bày ở mức ngăn
-xếp công nghệ; frontend giao tiếp với backend hoàn toàn qua các API đã đặc
-tả, không truy cập trực tiếp cơ sở dữ liệu.
+Mục này chỉ giới thiệu \textit{ngăn xếp công nghệ} frontend; quá trình hiện
+thực hoá tầng giao diện (cấu trúc App Router, tầng truy cập API phía máy chủ,
+quản lý phiên và động cơ phiên học phía máy khách) được trình bày ở
+mục~\ref{sec:hien-thuc-frontend}, Chương~\ref{chuong:hien-thuc-hoa}. Trong mọi
+trường hợp, frontend giao tiếp với backend hoàn toàn qua các API đã đặc tả,
+không truy cập trực tiếp cơ sở dữ liệu.
 
 % =====================================================================
 \section{Công nghệ Backend}
