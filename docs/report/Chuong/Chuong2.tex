@@ -1252,17 +1252,68 @@ Như đã nêu ở phạm vi đề tài (mục~\ref{sec:muc-tieu}), trọng tâm
 bày} của báo cáo là hệ thống phía máy chủ; tuy vậy hệ thống còn bao gồm một
 ứng dụng giao diện người dùng hoàn chỉnh tiêu thụ các API đó, mà quá trình hiện
 thực hoá được trình bày ở mục~\ref{sec:hien-thuc-frontend}
-(Chương~\ref{chuong:hien-thuc-hoa}). Phần này tập trung vào \textit{thiết kế}
-giao diện: phác thảo các màn hình chính mà API được thiết kế để phục vụ, cùng
-bản đồ điều hướng và ánh xạ màn hình --- API.
+(Chương~\ref{chuong:hien-thuc-hoa}). Phần này trình bày \textit{thiết kế}
+giao diện: hệ thống thiết kế (design system) làm nền cho diện mạo nhất quán,
+bản đồ điều hướng, phác thảo và ảnh chụp các màn hình chính, cùng ánh xạ giữa
+màn hình và API.
+
+\subsection{Hệ thống thiết kế}
+\label{subsec:design-system}
+
+Giao diện được dựng trên một \textbf{hệ thống thiết kế} thống nhất thay vì tạo
+kiểu rời rạc từng trang. Nền tảng là bộ \textit{biến thiết kế} (design token)
+khai báo bằng biến CSS theo không gian màu \textbf{OKLCH}~\cite{w3ccsscolor4}
+--- không gian màu đồng đều về cảm nhận, thuận lợi cho việc dựng các thang màu
+nhất quán. Hệ thống định nghĩa song song một bảng màu \textit{sáng} và một bảng
+màu \textit{tối}, nên đã sẵn sàng cho chế độ tối (theme-ready); một thang
+\textit{bo góc} (radius) suy ra theo bội số từ một giá trị gốc giúp độ bo của
+mọi thành phần đồng bộ. Bộ thành phần dùng \textbf{shadcn/ui}~\cite{shadcnui2024}
+dựng trên các primitive khả truy cập của \textbf{Base UI}~\cite{baseui2024},
+tạo kiểu bằng \textbf{Tailwind CSS v4}~\cite{tailwind2024}.
+
+Về \textit{nhận diện thương hiệu}, khu vực học của người dùng mang bộ token
+"Sprout" (tông bạc hà) được \textit{giới hạn phạm vi} vào lớp \code{.app-shell}
+của nhóm tuyến \code{(app)} --- các primitive shadcn dùng lại tự kế thừa tông
+màu này --- trong khi khu vực quản trị giữ \textit{chủ đề trung tính} mặc định
+để tách biệt công cụ vận hành khỏi trải nghiệm học. Về \textit{kiểu chữ}, ứng
+dụng tự lưu trữ phông qua \code{next/font}: Geist cho nền chung, Plus Jakarta
+Sans cho văn bản giao diện khu vực học và Newsreader (serif) cho các "khoảnh
+khắc trình bày" như con số lớn và lời chào. Bảng~\ref{tab:design-system} tóm tắt
+các trụ cột của hệ thống thiết kế.
+
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{3.4cm}|p{11.0cm}|}
+    \hline
+    \textbf{Trụ cột} & \textbf{Lựa chọn thiết kế} \\
+    \hline
+    Màu sắc & Biến CSS theo không gian OKLCH; bảng màu sáng/tối song song (theme-ready). \\
+    \hline
+    Bo góc \& khoảng cách & Thang bo góc suy theo bội số từ một giá trị gốc, đồng bộ toàn hệ thống. \\
+    \hline
+    Thành phần & shadcn/ui trên primitive khả truy cập Base UI; tạo kiểu bằng Tailwind CSS v4. \\
+    \hline
+    Thương hiệu & Token "Sprout" (bạc hà) giới hạn trong \code{.app-shell} của khu vực học; quản trị dùng chủ đề trung tính. \\
+    \hline
+    Kiểu chữ & Geist (nền chung), Plus Jakarta Sans (giao diện học), Newsreader serif (số/lời chào), tự lưu trữ qua \code{next/font}. \\
+    \hline
+  \end{tabular}
+  \caption{Các trụ cột của hệ thống thiết kế giao diện}
+  \label{tab:design-system}
+\end{table}
 
 \subsection{Bản đồ điều hướng}
 \label{subsec:sitemap}
 
-Hình~\ref{fig:ui-sitemap} mô tả cấu trúc điều hướng của ứng dụng khách: từ
-màn hình đăng nhập, người dùng mới đi qua luồng khai báo hồ sơ rồi tới trang
-chủ; từ trang chủ có thể truy cập các nhánh học, khám phá từ vựng/bộ thẻ,
-luyện tập và cộng đồng.
+Hình~\ref{fig:ui-sitemap} mô tả cấu trúc điều hướng của ứng dụng khách. Ứng
+dụng chia thành hai khu vực theo nhóm tuyến: khu vực \textit{người học}
+(\code{(app)}) và khu vực \textit{quản trị} (\code{(admin)}). Từ màn hình đăng
+nhập, người dùng mới đi qua luồng khai báo hồ sơ rồi tới trang chủ; từ trang
+chủ có thể truy cập các nhánh học, khám phá từ vựng/bộ thẻ, từ vựng cá nhân,
+luyện tập, cộng đồng và thiết lập. Quản trị viên đi vào khu vực quản trị riêng
+gồm quản trị từ vựng, chủ đề và người dùng.
 
 % --- PlantUML gợi ý (sitemap) ----------------------------------------
 % @startuml
@@ -1271,14 +1322,19 @@ luyện tập và cộng đồng.
 % --> "Trang chủ (Dashboard)"
 % "Trang chủ (Dashboard)" --> "Phiên học (SRS)"
 % "Trang chủ (Dashboard)" --> "Khám phá từ vựng & bộ thẻ"
+% "Trang chủ (Dashboard)" --> "Từ vựng cá nhân"
 % "Trang chủ (Dashboard)" --> "Luyện viết câu"
 % "Trang chủ (Dashboard)" --> "Luyện phát âm"
-% "Trang chủ (Dashboard)" --> "Bảng xếp hạng"
-% "Trang chủ (Dashboard)" --> "Hồ sơ cá nhân"
+% "Trang chủ (Dashboard)" --> "Bảng xếp hạng / Cộng đồng"
+% "Trang chủ (Dashboard)" --> "Hồ sơ cá nhân & Thiết lập"
+% "Đăng nhập / Đăng ký" --> "Khu vực quản trị (Admin)"
+% "Khu vực quản trị (Admin)" --> "Quản trị từ vựng (soạn / duyệt AI / nhập hàng loạt)"
+% "Khu vực quản trị (Admin)" --> "Quản trị chủ đề"
+% "Khu vực quản trị (Admin)" --> "Quản trị người dùng"
 % @enduml
 \figph{ui-sitemap.png}{0.9}{Bản đồ điều hướng của ứng dụng khách}{fig:ui-sitemap}
 
-\subsection{Phác thảo các màn hình chính}
+\subsection{Phác thảo và ảnh chụp các màn hình chính}
 \label{subsec:wireframe}
 
 Hình~\ref{fig:ui-home} và Hình~\ref{fig:ui-learn} phác thảo hai màn hình
@@ -1289,6 +1345,29 @@ phương án trả lời).
 \figph{ui-home.png}{0.55}{Phác thảo màn hình trang chủ}{fig:ui-home}
 
 \figph{ui-learn.png}{0.55}{Phác thảo màn hình phiên học}{fig:ui-learn}
+
+Để minh hoạ kết quả hiện thực hoá, các hình tiếp theo là ảnh chụp một số màn
+hình chính của ứng dụng đã hoàn thiện, trải đều cả khu vực người học và khu vực
+quản trị. Hình~\ref{fig:ui-dashboard} là trang chủ ("Trophy Room") mang nhận
+diện Sprout; Hình~\ref{fig:ui-explore} là màn hình khám phá từ vựng và bộ thẻ;
+Hình~\ref{fig:ui-word} là chi tiết một từ. Hình~\ref{fig:ui-practice-write} và
+Hình~\ref{fig:ui-practice-speak} là hai chế độ luyện tập chủ động (viết câu và
+luyện nói). Hình~\ref{fig:ui-admin-vocab} và Hình~\ref{fig:ui-admin-review} là
+trình soạn từ vựng và hàng đợi duyệt nội dung do AI sinh trong khu vực quản trị.
+
+\figph{ui-dashboard.png}{0.85}{Màn hình trang chủ (Trophy Room) của người học}{fig:ui-dashboard}
+
+\figph{ui-explore.png}{0.85}{Màn hình khám phá từ vựng và bộ thẻ}{fig:ui-explore}
+
+\figph{ui-word-detail.png}{0.85}{Màn hình chi tiết một từ vựng}{fig:ui-word}
+
+\figph{ui-practice-write.png}{0.85}{Màn hình luyện viết câu có chấm điểm}{fig:ui-practice-write}
+
+\figph{ui-practice-speak.png}{0.85}{Màn hình luyện nói / phát âm}{fig:ui-practice-speak}
+
+\figph{ui-admin-vocab.png}{0.85}{Trình soạn từ vựng trong khu vực quản trị}{fig:ui-admin-vocab}
+
+\figph{ui-admin-review.png}{0.85}{Hàng đợi duyệt nội dung do AI sinh}{fig:ui-admin-review}
 
 \subsection{Ánh xạ màn hình --- API}
 \label{subsec:anh-xa-man-hinh}
@@ -1318,7 +1397,17 @@ cho thấy thiết kế backend bám sát nhu cầu giao diện.
     \hline
     Luyện phát âm & \code{POST /v1/pronunciation/score}, \code{GET /v1/pronunciation/attempts} \\
     \hline
-    Bảng xếp hạng & \code{GET /v1/leaderboard} \\
+    Bảng xếp hạng / Cộng đồng & \code{GET /v1/leaderboard}, \code{GET /v1/decks/public} \\
+    \hline
+    Từ vựng cá nhân & \code{/v1/me/vocabularies}, \code{POST /v1/me/vocabularies/quick-create}, \code{GET /v1/me/vocabularies/jobs/:id} \\
+    \hline
+    Bộ thẻ cá nhân & \code{/v1/me/decks}, \code{/v1/decks} \\
+    \hline
+    Hồ sơ \& thiết lập & \code{GET /v1/auth/me}, \code{PATCH /v1/users/:id} \\
+    \hline
+    Quản trị từ vựng & \code{/v1/admin/vocabularies}, \code{/v1/admin/vocabularies/:id}, \code{/v1/admin/vocabularies/quick}, \code{POST /v1/admin/vocabularies/bulk-import} \\
+    \hline
+    Quản trị chủ đề / người dùng & \code{/v1/admin/topics}, \code{/v1/admin/users} \\
     \hline
   \end{tabular}
   \caption{Ánh xạ giữa màn hình giao diện và API}

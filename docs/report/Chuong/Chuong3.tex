@@ -306,8 +306,12 @@ liệu của hợp đồng API giữa hai phía. Phần tạo kiểu giao diện
 cấu hình bằng CSS \cite{tailwind2024} --- kết hợp bộ thành phần
 \textbf{shadcn/ui} dựng trên các primitive khả truy cập của \textbf{Base UI}.
 Ràng buộc và kiểm tra dữ liệu biểu mẫu dùng \code{zod} \cite{zod2024}, được
-dùng lại giữa kiểm tra phía máy khách và Server Action. Bảng~\ref{tab:frontend-libs}
-liệt kê các thư viện frontend chính.
+dùng lại giữa kiểm tra phía máy khách và Server Action. Một quyết định đáng
+chú ý là các biểu đồ trực quan hoá tiến độ (chuỗi ngày học, biểu đồ hoạt động
+dạng heatmap) được \textit{dựng thủ công} bằng CSS/SVG thay vì nhúng một thư
+viện biểu đồ, nhằm giữ kích thước gói tải (bundle) nhỏ và toàn quyền kiểm soát
+bố cục theo hệ thống thiết kế. Bảng~\ref{tab:frontend-libs} liệt kê các thư
+viện frontend chính.
 
 \begin{table}[h]
   \centering
@@ -325,7 +329,13 @@ liệt kê các thư viện frontend chính.
     \hline
     \code{lucide-react}, \code{sonner} & Bộ biểu tượng và thông báo nổi (toast) cho phản hồi thao tác. \\
     \hline
-    \code{next-themes}, \code{input-otp} & Hỗ trợ chế độ sáng/tối và ô nhập mã OTP (xác minh email). \\
+    \code{next-themes}, \code{input-otp} & Bảng màu định nghĩa sẵn cho chế độ tối (theme-ready)~\cite{nextthemes2024} và ô nhập mã OTP (xác minh email). \\
+    \hline
+    \code{next/font} (Geist, Plus Jakarta Sans, Newsreader) & Nạp và tối ưu phông chữ tự lưu trữ (self-hosted), tránh dịch chuyển bố cục khi tải phông \cite{nextjs2024}. \\
+    \hline
+    \code{next/image} & Tối ưu hình ảnh (đổi cỡ, định dạng hiện đại, tải lười) cho ảnh minh hoạ nghĩa và thẻ câu hỏi nhìn hình \cite{nextjs2024}. \\
+    \hline
+    Web Audio API (\code{getUserMedia} + \code{AudioContext}) & Thu âm giọng đọc của người học ngay trên trình duyệt: lấy PCM thô, hạ tần số về 16~kHz đơn kênh và tự đóng gói tệp WAV cho câu hỏi luyện phát âm \cite{w3cwebaudio, w3cmediacapture}. \\
     \hline
   \end{tabular}
   \caption{Các công nghệ và thư viện frontend chính}

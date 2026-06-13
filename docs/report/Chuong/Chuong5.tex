@@ -541,6 +541,20 @@ LLM + sinh âm thanh + tải lên Cloudinary) đo được trong khoảng 4--9 g
 Vì các tác vụ này đã được tách khỏi luồng yêu cầu chính, độ trễ đó không ảnh
 hưởng tới khả năng phản hồi của API.
 
+Ở \textbf{phía giao diện}, cảm nhận về tốc độ đến từ một số lựa chọn hiện thực
+ở mục~\ref{sec:hien-thuc-frontend}. Phần lớn màn hình là Server Component lấy
+dữ liệu ngay trên máy chủ và truyền dòng (streaming) phần khung qua ranh giới
+\textit{Suspense}, nên người dùng thấy nội dung đầu tiên sớm thay vì chờ tải
+toàn bộ gói JavaScript. App Router tự \textit{chia nhỏ mã} (code-splitting) theo
+từng tuyến, giúp gói tải ban đầu của mỗi màn hình nhỏ; phông chữ được tự lưu
+trữ qua \code{next/font} (tránh dịch chuyển bố cục khi tải phông) và hình ảnh đi
+qua \code{next/image} (đổi cỡ, định dạng hiện đại, tải lười). Quyết định
+\textit{không} nhúng thư viện biểu đồ cho các trực quan hoá tiến độ
+(mục~\ref{sec:cong-nghe-frontend}) cũng góp phần giữ gói tải gọn nhẹ. Những lựa
+chọn này hướng tới điểm số tốt trên các tiêu chí của công cụ kiểm toán hiệu năng
+web (ví dụ Lighthouse), tuy việc đo chỉ số định lượng đầy đủ được xác định là
+một hướng hoàn thiện tiếp theo.
+
 % =====================================================================
 \section{Đánh giá khả năng sử dụng}
 \label{sec:danh-gia-usability}

@@ -1,0 +1,15 @@
+@startuml
+' Máy trạng thái vòng đời thẻ học theo SM-2 mở rộng (Hình fig:srs-states, Chương 4)
+skinparam dpi 150
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+[*] --> new
+new --> learning : ghi danh (bước 0)
+learning --> learning : sai (q<3) → bước 0\nhoặc đúng nhưng chưa tốt nghiệp
+learning --> review : đúng liên tiếp ≥ 3 lần
+review --> review : đúng → I ← ⌈I×EF⌉
+review --> learning : sai → rớt về bước 0
+review --> mastered : I ≥ 90 ngày
+mastered --> learning : sai → rớt về bước 0
+mastered --> [*]
+@enduml

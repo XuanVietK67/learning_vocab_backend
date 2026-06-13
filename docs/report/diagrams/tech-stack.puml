@@ -1,0 +1,17 @@
+@startuml
+' Ngăn xếp công nghệ của hệ thống theo tầng (Hình fig:tech-stack, Chương 3)
+skinparam dpi 150
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+rectangle "FRONTEND\nNext.js + React + TypeScript\nTailwind CSS + shadcn/ui" as FE
+rectangle "BACKEND (API)\nNestJS 11 + TypeScript\nController - Service - Repository (TypeORM)" as BE
+rectangle "XỬ LÝ NỀN\nWorker (BullMQ) + Redis" as WK
+database "PostgreSQL" as DB
+cloud "DỊCH VỤ AI / NGOÀI\nGemma 3, Edge TTS, Cloudinary,\nDV chấm phát âm, OAuth, SMTP" as EXT
+FE --> BE : HTTPS / JSON (REST)
+BE --> DB
+BE --> WK : enqueue
+WK --> DB
+WK --> EXT
+BE --> EXT
+@enduml
