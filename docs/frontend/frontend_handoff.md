@@ -51,6 +51,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
 | Admin — get one vocabulary (incl. drafts) | `GET /v1/admin/vocabularies/:id` | admin | [admin_get_vocabulary.md](admin_get_vocabulary.md) |
 | Decks — publish, browse community & clone | `GET /v1/decks/public`, `POST /v1/me/decks/:id/clone`, `visibility` on `POST/PATCH /v1/me/decks` | mixed | [decks_share_and_clone.md](decks_share_and_clone.md) |
+| My Vocabularies — all ways to add a word (manual, quick-create, bulk) | `POST /v1/me/vocabularies`, `POST /v1/me/vocabularies/quick-create`, `POST /v1/me/decks/:id/bulk-import` | user | [me_create_vocabulary.md](me_create_vocabulary.md) |
 | My Vocabularies — quick-create from a lemma | `POST /v1/me/vocabularies/quick-create`, `GET /v1/me/vocabularies/jobs/:jobId` | user | [me_vocabulary_quick_create.md](me_vocabulary_quick_create.md) |
 | Decks — bulk-import words from a lemma list | `POST /v1/me/decks/:id/bulk-import`, `GET /v1/me/vocabularies/batches/:batchId` | user | [decks_bulk_import.md](decks_bulk_import.md) |
 | Design — user vocabulary lists (screens & flows for the 3 phases) | (layout guide, cross-feature) | user | [user_vocab_lists_design.md](user_vocab_lists_design.md) |
