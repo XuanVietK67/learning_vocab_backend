@@ -37,6 +37,14 @@ export default registerAs('learn', () => ({
     process.env.LEARN_REQUEUE_WINDOW_MINUTES ?? '15',
     10,
   ),
+  // Grace window (seconds) before a future-due graduated card is treated as
+  // "early" (free practice). An answer on an early card grades for feedback but
+  // does not move the SRS schedule. Keeps a card due in a few seconds from
+  // feeling blocked. Default 0 (any future-due graduated card is early).
+  earlyToleranceSeconds: parseInt(
+    process.env.LEARN_EARLY_TOLERANCE_SECONDS ?? '0',
+    10,
+  ),
   // Max number of cloze-family questions (cloze MCQ / cloze typing /
   // listening cloze — all of which blank a word in a sentence) allowed in a
   // single word's lesson ladder. Caps how many steps re-use the same example

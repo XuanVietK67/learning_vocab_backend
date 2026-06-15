@@ -73,6 +73,7 @@ export class VocabPickerService {
     user: User,
     slug: string,
     limit: number,
+    practice = false,
   ): Promise<PickResult> {
     this.requireOnboarded(user, 'topic');
 
@@ -81,7 +82,12 @@ export class VocabPickerService {
       throw new NotFoundException(`topic "${slug}" not found`);
     }
 
-    const due = await this.findDueIdsInTopic(user.id, topic.id, limit);
+    const due = await this.findDueIdsInTopic(
+      user.id,
+      topic.id,
+      limit,
+      practice,
+    );
     const need = limit - due.length;
     const fresh = need > 0 ? await this.findFreshIds(user, need, topic.id) : [];
 
@@ -100,6 +106,7 @@ export class VocabPickerService {
     user: User,
     deckId: string,
     limit: number,
+    practice = false,
   ): Promise<PickResult> {
     // Confirm the deck has any members at all — otherwise this is a 404-ish
     // situation (deck doesn't exist, is empty, or the user can't see it).
@@ -108,7 +115,7 @@ export class VocabPickerService {
       throw new NotFoundException('deck not found or has no vocabularies');
     }
 
-    const due = await this.findDueIdsInDeck(user.id, deckId, limit);
+    const due = await this.findDueIdsInDeck(user.id, deckId, limit, practice);
     const need = limit - due.length;
     const fresh =
       need > 0 ? await this.findFreshIdsInDeck(user.id, deckId, need) : [];
@@ -186,12 +193,16 @@ export class VocabPickerService {
     return rows.map((r) => r.vocabularyId);
   }
 
+  // In practice mode the `next_review_at <= now` predicate is dropped so the
+  // caller gets the source's enrolled words regardless of due-state. Ordering
+  // by next_review_at ASC still surfaces the most-overdue words first.
   private async findDueIdsInTopic(
     userId: string,
     topicId: string,
     limit: number,
+    practice = false,
   ): Promise<string[]> {
-    const rows = await this.progressRepo
+    const qb = this.progressRepo
       .createQueryBuilder('p')
       .select('p.vocabulary_id', 'vocabularyId')
       .innerJoin(
@@ -200,8 +211,11 @@ export class VocabPickerService {
         'vt.vocabulary_id = p.vocabulary_id AND vt.topic_id = :topicId',
         { topicId },
       )
-      .where('p.user_id = :userId', { userId })
-      .andWhere('p.next_review_at <= :now', { now: new Date() })
+      .where('p.user_id = :userId', { userId });
+    if (!practice) {
+      qb.andWhere('p.next_review_at <= :now', { now: new Date() });
+    }
+    const rows = await qb
       .orderBy('p.next_review_at', 'ASC')
       .limit(limit)
       .getRawMany<{ vocabularyId: string }>();
@@ -212,8 +226,9 @@ export class VocabPickerService {
     userId: string,
     deckId: string,
     limit: number,
+    practice = false,
   ): Promise<string[]> {
-    const rows = await this.progressRepo
+    const qb = this.progressRepo
       .createQueryBuilder('p')
       .select('p.vocabulary_id', 'vocabularyId')
       .innerJoin(
@@ -222,8 +237,11 @@ export class VocabPickerService {
         'dv.vocabulary_id = p.vocabulary_id AND dv.deck_id = :deckId',
         { deckId },
       )
-      .where('p.user_id = :userId', { userId })
-      .andWhere('p.next_review_at <= :now', { now: new Date() })
+      .where('p.user_id = :userId', { userId });
+    if (!practice) {
+      qb.andWhere('p.next_review_at <= :now', { now: new Date() });
+    }
+    const rows = await qb
       .orderBy('p.next_review_at', 'ASC')
       .limit(limit)
       .getRawMany<{ vocabularyId: string }>();

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
+  BadRequestException,
   Inject,
   Injectable,
   NotFoundException,
@@ -62,6 +63,19 @@ export class LearnService {
     );
     const translationLang = dto.translationLang ?? null;
 
+    // Practice is a modifier on a content source (deck/topic), not a queue of
+    // its own — daily and review are inherently due-driven, so the flag is
+    // meaningless there.
+    if (
+      dto.practice &&
+      dto.mode !== LearnSessionMode.DECK &&
+      dto.mode !== LearnSessionMode.TOPIC
+    ) {
+      throw new BadRequestException(
+        'practice is only supported with mode=deck or mode=topic',
+      );
+    }
+
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('user not found');
@@ -97,7 +111,11 @@ export class LearnService {
         mode: dto.mode,
         enrolledNewlyCount,
         emptyReason: reason,
-        nextDueAt: await this.resolveNextDueAt(userId, reason),
+        // In practice mode the user isn't waiting on the clock — an empty
+        // session means the source is exhausted, not "come back later".
+        nextDueAt: dto.practice
+          ? null
+          : await this.resolveNextDueAt(userId, reason),
         items: [],
       };
     }
@@ -144,9 +162,10 @@ export class LearnService {
       mode: dto.mode,
       enrolledNewlyCount,
       emptyReason,
-      nextDueAt: emptyReason
-        ? await this.resolveNextDueAt(userId, emptyReason)
-        : null,
+      nextDueAt:
+        emptyReason && !dto.practice
+          ? await this.resolveNextDueAt(userId, emptyReason)
+          : null,
       items,
     };
   }
@@ -325,9 +344,19 @@ export class LearnService {
       case LearnSessionMode.DAILY:
         return this.picker.pickDaily(user, limit);
       case LearnSessionMode.TOPIC:
-        return this.picker.pickByTopic(user, dto.topicSlug!, limit);
+        return this.picker.pickByTopic(
+          user,
+          dto.topicSlug!,
+          limit,
+          dto.practice ?? false,
+        );
       case LearnSessionMode.DECK:
-        return this.picker.pickByDeck(user, dto.deckId!, limit);
+        return this.picker.pickByDeck(
+          user,
+          dto.deckId!,
+          limit,
+          dto.practice ?? false,
+        );
       case LearnSessionMode.REVIEW:
         return this.picker.pickReview(user, limit);
     }

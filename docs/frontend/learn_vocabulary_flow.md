@@ -68,7 +68,8 @@ Returns `200 OK`.
   "topicSlug": "travel",    // required iff mode="topic", rejected otherwise
   "deckId": "…uuid…",       // required iff mode="deck", rejected otherwise
   "limit": 15,              // optional, 1..50 (server default 15)
-  "translationLang": "vi"   // optional, lang code — language for hints/translation options
+  "translationLang": "vi",  // optional, lang code — language for hints/translation options
+  "practice": false         // optional; free re-study, deck/topic only — see below
 }
 ```
 
@@ -79,8 +80,11 @@ Returns `200 OK`.
 | `deckId` | only if `mode=deck` | UUID v4 |
 | `limit` | — | integer 1–50 |
 | `translationLang` | — | ISO 639-1 code (`en`, `vi`, `pt-BR`) |
+| `practice` | — | boolean; only valid with `mode=deck` or `mode=topic` (else `400`) |
 
 **Modes:** `daily` = mix of due + new at the user's level; `topic` = words in a topic; `deck` = words in a deck; `review` = only cards already due (never enrolls new words, so `enrolledNewlyCount` is always 0).
+
+**Practice mode (`practice: true`):** lets the user re-study a deck or topic **whenever they want**, without waiting for spaced-repetition due dates. Normally the picker only surfaces cards that are due; with `practice: true` it returns the source's enrolled words regardless of due date (so a card just learned can be drilled again immediately). The spaced-repetition schedule is still protected: answering a card that **isn't due yet** grades for feedback but does **not** move its schedule — the answer comes back with `progress.counted: false` (see below). Only valid with `mode=deck`/`mode=topic`; sending it with `daily`/`review` is a `400`. In practice mode `nextDueAt` is always `null` (the user isn't waiting on a clock) and an empty `items[]` means the source is exhausted, not "come back later".
 
 ### Response `200`
 
@@ -200,7 +204,8 @@ Returns `200 OK`. Send the answer plus the signed envelope from the item.
     "nextReviewAt": "2026-06-03T08:15:00.000Z",
     "lastReviewedAt": "2026-06-03T08:00:00.000Z",
     "correctCount": 1,
-    "incorrectCount": 0
+    "incorrectCount": 0,
+    "counted": true              // false = free practice, schedule left untouched
   },
   "requeue": {                   // null most of the time
     "dueAtMs": 1717400600000,    // re-show the word at this wall-clock time
@@ -212,6 +217,8 @@ Returns `200 OK`. Send the answer plus the signed envelope from the item.
 **`progress` is null on non-final steps.** Only the last step of a word's ladder (`stepIndex === stepCount - 1`) reschedules the card and returns a populated `progress`. On earlier steps `progress` is `null` and `requeue` is `null` — still show `correct` / `correctAnswer` for feedback, then advance to the next step in the ladder.
 
 **Handling `requeue`:** on the final step, if the card's next review lands within ~15 minutes (still being learned this session), the server returns the word's **next-stage ladder** as `requeue.items`. Enqueue them and surface them at `dueAtMs` — because the word has advanced a stage, these are typically harder types than the ones you just saw. When `requeue` is `null`, the card is scheduled far enough out that a later `POST /session` will bring it back; drop it from the current session.
+
+**`progress.counted` (practice mode):** `true` on a normal review that advanced the spaced-repetition schedule. `false` when the answer was **free practice on a card that wasn't due yet** — the server graded it for feedback (`correct`/`correctAnswer`/`quality` are still real) but deliberately left the schedule, status, and counters unchanged, so the SRS interval isn't inflated by early reps. Use it to show a subtle "practice — not counted toward your next review" hint; don't treat `counted: false` as an error. `counted` is absent on non-final steps (where `progress` is `null`). Cards that genuinely are due (or still in learning steps) always come back `counted: true` even inside a practice session.
 
 ---
 
@@ -260,11 +267,13 @@ Query params: `limit` (1–100, default 20), `translationLang` (optional lang co
 
 ### `POST /v1/me/progress/review` → `200`
 
-Submit a self-graded review. **Quality 0–2 = forgot, 3–5 = remembered.** Returns the updated `progress` object (same shape as in the answer response).
+Submit a self-graded review. **Quality 0–2 = forgot, 3–5 = remembered.** Returns the updated `progress` object (same shape as in the answer response, including `counted`).
 
 ```jsonc
 { "vocabularyId": "…uuid…", "quality": 4 }
 ```
+
+Same practice-mode rule as the learn loop: if the card is a **graduated card that isn't due yet**, the review is graded for feedback but the schedule/status/counters are left untouched and the response comes back with `counted: false`. Due cards (and cards still in learning steps) reschedule normally and return `counted: true`.
 
 `404` if the card isn't enrolled — call `/enroll` first.
 

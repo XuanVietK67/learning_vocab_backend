@@ -53,6 +53,13 @@ export class LearningActivity {
   @Column({ name: 'became_mastered', type: 'boolean' })
   becameMastered!: boolean;
 
+  // True when this row came from free practice (the card was not yet due). These
+  // count toward the engagement heatmap but never toward SRS metrics: `was_new`
+  // / `became_mastered` stay false and the progress row's accuracy counters are
+  // left untouched.
+  @Column({ name: 'is_practice', type: 'boolean', default: false })
+  isPractice!: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }

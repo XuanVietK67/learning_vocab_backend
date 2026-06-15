@@ -18,6 +18,11 @@ export class ProgressResponseDto {
   @Expose() lastReviewedAt!: Date | null;
   @Expose() correctCount!: number;
   @Expose() incorrectCount!: number;
+  // false when the answer was free practice on a not-yet-due card: it was
+  // graded for feedback but left the schedule, status, and counters untouched.
+  // true on a real (due) review that moved the SRS schedule. Set by
+  // submitReview; absent on rows fetched outside the review flow.
+  @Expose() counted?: boolean;
 }
 
 export class DueCardResponseDto extends ProgressResponseDto {
