@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -42,6 +43,15 @@ export class CreateSessionDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  // Free-practice mode: surface the source's enrolled words regardless of
+  // their due date. Valid only with mode=deck or mode=topic; rejected for
+  // daily/review (those are inherently due-driven). Answers on not-yet-due
+  // cards grade for feedback but do not move the SRS schedule.
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  practice?: boolean;
 
   @IsOptional()
   @IsString()

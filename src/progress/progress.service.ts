@@ -258,6 +258,36 @@ export class ProgressService {
     }
 
     const now = new Date();
+
+    // Free practice: a graduated card whose next review is still in the future
+    // is "early". Grade it for feedback and log it for the engagement heatmap,
+    // but leave the SRS schedule, status, ease, repetitions, and accuracy
+    // counters untouched — an early success carries no scheduling signal, so
+    // counting it would inflate the interval and defeat spaced repetition.
+    // (Cards in learning steps are meant to recur within the session, and NEW
+    // cards default next_review_at = now(), so neither is ever "early".)
+    const isEarly =
+      progress.learningStepIndex === null &&
+      progress.nextReviewAt.getTime() >
+        now.getTime() + this.cfg.earlyToleranceSeconds * 1000;
+    if (isEarly) {
+      await this.dataSource.manager.insert(LearningActivity, {
+        userId,
+        vocabularyId: dto.vocabularyId,
+        reviewedAt: now,
+        quality: dto.quality,
+        isCorrect: dto.quality >= 3,
+        wasNew: false,
+        becameMastered: false,
+        isPractice: true,
+      });
+      const unchanged = plainToInstance(ProgressResponseDto, progress, {
+        excludeExtraneousValues: true,
+      });
+      unchanged.counted = false;
+      return unchanged;
+    }
+
     const next = applySm2(
       {
         status: progress.status,
@@ -302,12 +332,15 @@ export class ProgressService {
         isCorrect: dto.quality >= 3,
         wasNew,
         becameMastered,
+        isPractice: false,
       });
     });
 
-    return plainToInstance(ProgressResponseDto, progress, {
+    const result = plainToInstance(ProgressResponseDto, progress, {
       excludeExtraneousValues: true,
     });
+    result.counted = true;
+    return result;
   }
 
   // Per-day study activity for a date range, bucketed by the caller's local day
