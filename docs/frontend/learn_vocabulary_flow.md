@@ -235,7 +235,12 @@ Response:
 { "enrolled": 8, "alreadyEnrolled": 2, "unknownVocabularyIds": ["…uuid…"] }
 ```
 
-`unknownVocabularyIds` = ids that don't exist or aren't enrollable by this user (only system words and the caller's own private words can be enrolled). Re-enrolling an already-enrolled word is a no-op (counted in `alreadyEnrolled`).
+Two authorization models, depending on which field you send:
+
+- **`vocabularyIds`** — only **system words** and the **caller's own private words** are enrollable. Anything else (a word owned by another user) comes back in `unknownVocabularyIds` and is not enrolled.
+- **`deckId`** — enrollment is authorized by **deck membership**, not vocab ownership. Every word in a deck the caller can study (a deck they **own**, a **seeded** deck, or a user deck published **`public`**) is enrolled, **even cloned/community-deck words still owned by the original author**. This is what makes a cloned deck studyable. A deck the caller can't study gives `403`; an empty/nonexistent deck gives `400`/`404`.
+
+Re-enrolling an already-enrolled word is a no-op (counted in `alreadyEnrolled`).
 
 ### `GET /v1/me/progress/due` → `200`
 

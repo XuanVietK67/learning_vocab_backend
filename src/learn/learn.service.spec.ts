@@ -178,6 +178,27 @@ describe('LearnService — mode dispatch', () => {
     expect(res.enrolledNewlyCount).toBe(3);
   });
 
+  it('deck mode auto-enrolls fresh picks via deck context (membership, not ownership)', async () => {
+    const deckId = '22222222-2222-2222-2222-222222222222';
+    picker.pickByDeck.mockResolvedValue({
+      dueVocabIds: [],
+      freshVocabIds: ['v1', 'v2'],
+      emptyReason: null,
+    });
+    progressService.enroll.mockResolvedValue({
+      enrolled: 2,
+      alreadyEnrolled: 0,
+      unknownVocabularyIds: [],
+    });
+    const dto: CreateSessionDto = { mode: LearnSessionMode.DECK, deckId };
+    const res = await service.createSession(USER_ID, dto);
+    expect(progressService.enroll).toHaveBeenCalledWith(USER_ID, {
+      deckId,
+      vocabularyIds: ['v1', 'v2'],
+    });
+    expect(res.enrolledNewlyCount).toBe(2);
+  });
+
   it('clamps limit between 1 and 50', async () => {
     picker.pickDaily.mockResolvedValue(emptyPick('no_more_at_level'));
     await service.createSession(USER_ID, {

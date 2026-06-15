@@ -193,6 +193,10 @@ Path param: `:id` must be a UUID v4 — otherwise `400`.
   and vice versa. The copy still references the original vocabulary rows, so if the original
   author deletes one of their words, that word also disappears from the clone (DB cascade).
 - After cloning, treat the returned deck like any other owned deck (`/v1/me/decks/*`).
+- **Studying works immediately.** Starting a `deck`-mode session (`POST /v1/me/learn/session`)
+  auto-enrolls the cloned deck's words and `/v1/me/learn/answer` succeeds — even though those
+  words are still owned (by reference) by the original author. Deck enrollment is authorized
+  by deck membership, not vocabulary ownership.
 
 ---
 
