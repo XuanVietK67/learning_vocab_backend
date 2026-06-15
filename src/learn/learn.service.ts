@@ -70,12 +70,21 @@ export class LearnService {
     // 1) Pick vocab IDs for this mode
     const picked = await this.dispatchPicker(user, dto, limit);
 
-    // 2) Auto-enroll fresh picks (review mode never has fresh)
+    // 2) Auto-enroll fresh picks (review mode never has fresh). In deck mode the
+    //    picks can be words owned by another author (e.g. a cloned community
+    //    deck), so enroll them via deck context — membership, not vocab
+    //    ownership, is the authorization. Other modes enroll by id.
     let enrolledNewlyCount = 0;
     if (picked.freshVocabIds.length > 0) {
-      const result = await this.progressService.enroll(userId, {
-        vocabularyIds: picked.freshVocabIds,
-      });
+      const result =
+        dto.mode === LearnSessionMode.DECK
+          ? await this.progressService.enroll(userId, {
+              deckId: dto.deckId!,
+              vocabularyIds: picked.freshVocabIds,
+            })
+          : await this.progressService.enroll(userId, {
+              vocabularyIds: picked.freshVocabIds,
+            });
       enrolledNewlyCount = result.enrolled;
     }
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,6 +10,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, In, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import learnConfig from '@/config/learn.config';
+import { Deck } from '@/decks/entities/deck.entity';
 import { DeckVocabulary } from '@/decks/entities/deck-vocabulary.entity';
 import { DueQueryDto } from '@/progress/dto/due-query.dto';
 import { EnrollDto, EnrollResponseDto } from '@/progress/dto/enroll.dto';
@@ -33,6 +35,7 @@ import { applySm2, ReviewQuality } from '@/progress/srs';
 import { User } from '@/users/entities/user.entity';
 import { VocabularyResponseDto } from '@/vocabularies/dto/vocabulary-response.dto';
 import { VocabularySource } from '@/vocabularies/entities/vocabulary-source.enum';
+import { Visibility } from '@/vocabularies/entities/visibility.enum';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 
 @Injectable()
@@ -50,12 +53,20 @@ export class ProgressService {
   ) {}
 
   async enroll(userId: string, dto: EnrollDto): Promise<EnrollResponseDto> {
-    const requested = await this.resolveVocabularyIds(dto);
+    // Deck enrollment is authorized by deck membership + deck access, so it
+    // takes a separate path that does NOT apply the per-word ownership filter.
+    if (dto.deckId) {
+      return this.enrollDeckMembers(userId, dto.deckId, dto.vocabularyIds);
+    }
+
+    const requested = Array.from(new Set(dto.vocabularyIds ?? []));
     if (requested.length === 0) {
       return { enrolled: 0, alreadyEnrolled: 0, unknownVocabularyIds: [] };
     }
 
-    // Accept system vocab (anyone can enroll) plus the caller's own private vocab.
+    // Free-form enrollment by id: accept system vocab (anyone can enroll) plus
+    // the caller's own private vocab. This filter is a security control — it
+    // stops a caller from enrolling in arbitrary private words by id.
     const existing = await this.vocabRepo
       .createQueryBuilder('v')
       .select('v.id', 'id')
@@ -73,19 +84,94 @@ export class ProgressService {
     const unknownVocabularyIds = requested.filter((id) => !knownIds.has(id));
     const knownRequested = requested.filter((id) => knownIds.has(id));
 
-    if (knownRequested.length === 0) {
+    return this.persistEnrollment(userId, knownRequested, unknownVocabularyIds);
+  }
+
+  // Enroll the members of a deck the caller is entitled to study. Unlike the
+  // by-id path, this trusts deck membership rather than vocab ownership: a
+  // cloned/community deck's words are still owned by the original author, but
+  // the caller is entitled to study every member of a deck they own (or a
+  // seeded/public deck). When `restrictTo` is given (e.g. the session
+  // auto-enroll passing just the fresh picks), only those members are enrolled.
+  private async enrollDeckMembers(
+    userId: string,
+    deckId: string,
+    restrictTo?: string[],
+  ): Promise<EnrollResponseDto> {
+    await this.assertDeckStudyable(userId, deckId);
+
+    const memberRows = await this.dataSource
+      .getRepository(DeckVocabulary)
+      .find({
+        where: { deckId },
+        select: { vocabularyId: true },
+      });
+    if (memberRows.length === 0) {
+      throw new BadRequestException(
+        'deck has no vocabularies or does not exist',
+      );
+    }
+    const memberIds = new Set(memberRows.map((r) => r.vocabularyId));
+
+    let enrollableIds: string[];
+    let unknownVocabularyIds: string[];
+    if (restrictTo && restrictTo.length > 0) {
+      const requested = Array.from(new Set(restrictTo));
+      // Anything requested that isn't actually in the deck is unknown — never
+      // enroll it, since deck membership is the only authorization here.
+      enrollableIds = requested.filter((id) => memberIds.has(id));
+      unknownVocabularyIds = requested.filter((id) => !memberIds.has(id));
+    } else {
+      enrollableIds = Array.from(memberIds);
+      unknownVocabularyIds = [];
+    }
+
+    return this.persistEnrollment(userId, enrollableIds, unknownVocabularyIds);
+  }
+
+  // A deck is studyable by the caller when they own it, it's a seeded
+  // (owner-less) deck, or it's a user deck published `public`. Mirrors the
+  // visibility rules in DecksService.findById / cloneDeck.
+  private async assertDeckStudyable(
+    userId: string,
+    deckId: string,
+  ): Promise<void> {
+    const deck = await this.dataSource.getRepository(Deck).findOne({
+      where: { id: deckId },
+      select: { id: true, ownerId: true, visibility: true },
+    });
+    if (!deck) {
+      throw new NotFoundException('deck not found');
+    }
+    const studyable =
+      deck.ownerId === userId ||
+      deck.ownerId === null ||
+      deck.visibility === Visibility.PUBLIC;
+    if (!studyable) {
+      throw new ForbiddenException('not your deck');
+    }
+  }
+
+  // Create NEW progress rows for the enrollable ids that aren't already
+  // enrolled, and report the tally. Shared by both enrollment paths.
+  private async persistEnrollment(
+    userId: string,
+    enrollableIds: string[],
+    unknownVocabularyIds: string[],
+  ): Promise<EnrollResponseDto> {
+    if (enrollableIds.length === 0) {
       return { enrolled: 0, alreadyEnrolled: 0, unknownVocabularyIds };
     }
 
     const alreadyEnrolledRows = await this.progressRepo.find({
-      where: { userId, vocabularyId: In(knownRequested) },
+      where: { userId, vocabularyId: In(enrollableIds) },
       select: { vocabularyId: true },
     });
     const alreadyEnrolledSet = new Set(
       alreadyEnrolledRows.map((r) => r.vocabularyId),
     );
 
-    const toCreate = knownRequested.filter((id) => !alreadyEnrolledSet.has(id));
+    const toCreate = enrollableIds.filter((id) => !alreadyEnrolledSet.has(id));
     if (toCreate.length > 0) {
       const rows = toCreate.map((vocabularyId) =>
         this.progressRepo.create({
@@ -318,27 +404,6 @@ export class ProgressService {
       select: { nextReviewAt: true },
     });
     return row?.nextReviewAt ?? null;
-  }
-
-  private async resolveVocabularyIds(dto: EnrollDto): Promise<string[]> {
-    if (dto.vocabularyIds && dto.vocabularyIds.length > 0) {
-      return Array.from(new Set(dto.vocabularyIds));
-    }
-    if (dto.deckId) {
-      const rows = await this.dataSource.getRepository(DeckVocabulary).find({
-        where: { deckId: dto.deckId },
-        select: { vocabularyId: true },
-      });
-      if (rows.length === 0) {
-        throw new BadRequestException(
-          'deck has no vocabularies or does not exist',
-        );
-      }
-      return rows.map((r) => r.vocabularyId);
-    }
-    throw new BadRequestException(
-      'enroll requires either vocabularyIds or deckId',
-    );
   }
 
   private async computeCounts(userId: string): Promise<ProgressCountsDto> {
