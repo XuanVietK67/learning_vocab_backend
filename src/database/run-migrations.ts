@@ -29,6 +29,10 @@ const dataSource = new DataSource({
 
 async function run() {
   await dataSource.initialize();
+  // The first migration creates tables with `DEFAULT uuid_generate_v4()`, which
+  // lives in the uuid-ossp extension. A fresh database (e.g. Railway) doesn't
+  // enable it by default, so bootstrap it here. Idempotent.
+  await dataSource.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   const applied = await dataSource.runMigrations();
   console.log(
     applied.length
