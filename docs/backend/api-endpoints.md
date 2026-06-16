@@ -16,6 +16,7 @@ Single source of truth for every HTTP endpoint exposed by this backend.
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | `/` | none | Liveness check — returns the app hello string. |
+| GET | `/health` | none | Version-neutral liveness probe — returns `{ "status": "ok" }`. Used by the platform healthcheck (Railway). |
 
 ## Auth — `/v1/auth`
 
