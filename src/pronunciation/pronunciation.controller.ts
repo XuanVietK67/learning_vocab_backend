@@ -23,10 +23,13 @@ import {
 import { ScorePronunciationDto } from '@/pronunciation/dto/score-pronunciation.dto';
 import { PronunciationService } from '@/pronunciation/pronunciation.service';
 
-// libsndfile (the scoring service decoder) handles WAV/FLAC/OGG; browser
-// webm/opus must be transcoded to one of these before upload (v1 limitation).
-const ACCEPTED_AUDIO = /^audio\/(wav|x-wav|wave|vnd\.wave|flac|x-flac|ogg)$/;
-const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
+// The deployed scoring service decodes via ffmpeg, so browser MediaRecorder
+// output (webm/opus, mp4/m4a) and mp3 upload directly — no client-side
+// transcode needed. The optional `;codecs=...` suffix some browsers append is
+// allowed. libsndfile-era formats (WAV/FLAC/OGG) still work.
+const ACCEPTED_AUDIO =
+  /^audio\/(wav|x-wav|wave|vnd\.wave|flac|x-flac|ogg|webm|mp4|x-m4a|m4a|aac|mpeg|mp3)(;.*)?$/;
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 
 @Controller({ path: 'pronunciation', version: '1' })
 @UseGuards(JwtAuthGuard)
