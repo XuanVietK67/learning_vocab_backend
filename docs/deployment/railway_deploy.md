@@ -87,7 +87,7 @@ the worker concurrency knobs, `PRONUNCIATION_*` (+ the HF Space token), and
 [.github/workflows/ci.yml](../../.github/workflows/ci.yml):
 
 - **On every PR to `master` and every push to `master`** — the `build` job runs
-  `npm ci` → `lint:ci` → `build` → `test`. This is the required gate.
+  `npm install` → `lint:ci` → `build` → `test`. This is the required gate.
 - **On push to `master` only** (after `build` passes) — the `deploy` job installs
   the Railway CLI and runs `railway up --ci --service api` then
   `... --service worker`, authenticated by `RAILWAY_TOKEN`. Each upload builds the

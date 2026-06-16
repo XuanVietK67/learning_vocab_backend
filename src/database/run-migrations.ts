@@ -10,7 +10,7 @@ import { DataSource } from 'typeorm';
  * Deliberately leaner than data-source.ts: running migrations needs only the
  * connection and the compiled migration files — never the entity classes — so
  * this file pulls no `@/` path aliases and no dev-only `tsconfig-paths`, which
- * are absent from the production image (`npm ci --omit=dev`). Migrations are
+ * are absent from the production image (`npm install --omit=dev`). Migrations are
  * resolved relative to __dirname, so the glob points at dist/database/migrations
  * when compiled and src/database/migrations under ts-node.
  */
