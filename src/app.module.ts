@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HealthController } from './health/health.controller';
 import audioConfig from './config/audio.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
@@ -50,6 +51,8 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         username: config.get<string>('database.username'),
         password: config.get<string>('database.password'),
         database: config.get<string>('database.name'),
+        ssl:
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         autoLoadEntities: true,
         synchronize: false,
       }),
@@ -66,7 +69,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     PracticeModule,
     PronunciationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [AppService],
 })
 export class AppModule {}

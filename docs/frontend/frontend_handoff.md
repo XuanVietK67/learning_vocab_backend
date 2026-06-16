@@ -7,7 +7,8 @@ Index for frontend engineers integrating with this backend. This file holds the 
 ## Base URL and conventions
 
 - **Base URL (local dev):** `http://localhost:3000` (port via `PORT` env; see [.env.example](../../.env.example)).
-- **API version prefix:** `/v1`. All controllers are mounted under `/v1/...`. The only unversioned route is `GET /` (liveness).
+- **Base URL (production):** the Railway api service domain, e.g. `https://<api>.up.railway.app`. CORS is origin-restricted in production (`CORS_ORIGINS` env) — the deployed frontend origin must be whitelisted there or browser requests are blocked. See [../deployment/railway_deploy.md](../deployment/railway_deploy.md).
+- **API version prefix:** `/v1`. All controllers are mounted under `/v1/...`. Unversioned routes: `GET /` and `GET /health` (liveness).
 - **Content type:** all requests and responses are `application/json`. Send `Content-Type: application/json`.
 - **Validation:** global `ValidationPipe` with `whitelist + forbidNonWhitelisted + transform` — unknown body fields → `400`.
 - **Auth header (when required):** `Authorization: Bearer <accessToken>`. Access token lifetime defaults to `15m`; refresh token lifetime defaults to `30d`. Refresh tokens are rotated on every `/auth/refresh` — store the new one immediately.

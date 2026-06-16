@@ -59,6 +59,8 @@ import { DeckMembershipService } from './decks/deck-membership.service';
         // same way data-source.ts does. __dirname resolves to src/ under ts-node
         // and dist/ when compiled, so the {ts,js} extensions cover both.
         entities: [join(__dirname, '**', '*.entity.{ts,js}')],
+        ssl:
+          process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         synchronize: false,
       }),
     }),
