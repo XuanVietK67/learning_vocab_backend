@@ -131,6 +131,7 @@ describe('LearnService — mode dispatch', () => {
       expect.objectContaining({ id: USER_ID }),
       'food',
       15,
+      false,
     );
   });
 
@@ -145,6 +146,7 @@ describe('LearnService — mode dispatch', () => {
       expect.objectContaining({ id: USER_ID }),
       '22222222-2222-2222-2222-222222222222',
       15,
+      false,
     );
     expect(res.emptyReason).toBe('deck_exhausted');
   });
