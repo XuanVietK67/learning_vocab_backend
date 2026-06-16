@@ -7,7 +7,7 @@ Index for frontend engineers integrating with this backend. This file holds the 
 ## Base URL and conventions
 
 - **Base URL (local dev):** `http://localhost:3000` (port via `PORT` env; see [.env.example](../../.env.example)).
-- **Base URL (production):** the Railway api service domain, e.g. `https://<api>.up.railway.app`. CORS is origin-restricted in production (`CORS_ORIGINS` env) — the deployed frontend origin must be whitelisted there or browser requests are blocked. See [../deployment/railway_deploy.md](../deployment/railway_deploy.md).
+- **Base URL (production):** the deployed Railway domain, e.g. `https://<your-domain>.up.railway.app` (https, no port). CORS is origin-restricted in production (`CORS_ORIGINS` env) — the deployed frontend origin must be whitelisted there or browser requests are blocked. Full setup + env-switch guide: [production_api_base_url.md](production_api_base_url.md).
 - **API version prefix:** `/v1`. All controllers are mounted under `/v1/...`. Unversioned routes: `GET /` and `GET /health` (liveness).
 - **Content type:** all requests and responses are `application/json`. Send `Content-Type: application/json`.
 - **Validation:** global `ValidationPipe` with `whitelist + forbidNonWhitelisted + transform` — unknown body fields → `400`.
@@ -43,6 +43,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 
 | Feature | Method + path | Auth | Doc |
 |---|---|---|---|
+| Setup — production base URL & environment switch (deployed vs local) | (config, all endpoints) | n/a | [production_api_base_url.md](production_api_base_url.md) |
 | Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
 | User — read & update profile (onboarding + leaderboard opt-out) | `GET /v1/users/:id`, `PATCH /v1/users/:id` | user (self) | [users_profile.md](users_profile.md) |
 | Overview — everything a normal user can do (for the homepage redesign) | (capability map, cross-feature) | user | [user_capabilities.md](user_capabilities.md) |
