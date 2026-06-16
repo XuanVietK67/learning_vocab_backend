@@ -21,7 +21,7 @@ Score one spoken word.
 
 | Field | Required | Type | Rules |
 |---|---|---|---|
-| `audio` | yes | file | WAV / FLAC / OGG, **≤ 5 MB**. See the audio-format note below. |
+| `audio` | yes | file | WAV / FLAC / OGG, **webm/opus, mp4/m4a or mp3**, **≤ 10 MB**. See the audio-format note below. |
 | `vocabularyId` | one of | string | UUID of a catalog/owned vocabulary. The word scored is its `lemma`. |
 | `word` | one of | string | Free-text word, 1–128 chars. Use when there is no `vocabularyId`. |
 
@@ -31,7 +31,8 @@ Send **exactly one** of `vocabularyId` or `word` — sending both, or neither, i
 
 ```js
 const form = new FormData();
-form.append('audio', wavBlob, 'thin.wav'); // a WAV Blob
+// MediaRecorder webm/opus uploads directly — no client transcode needed.
+form.append('audio', recordedBlob, 'thin.webm');
 form.append('vocabularyId', 'c2a1f0de-1111-2222-3333-444455556666');
 
 const res = await fetch('/v1/pronunciation/score', {
@@ -72,7 +73,7 @@ const res = await fetch('/v1/pronunciation/score', {
 | `400` | Validation: not exactly one of `vocabularyId`/`word`; `word` length; bad UUID; missing/oversized/wrong-type `audio`. Also returned when the scoring service rejects the audio (too short, or no/unmapped phones for the word). |
 | `401` | Missing/invalid JWT. |
 | `404` | `vocabularyId` not found. |
-| `503` | Scoring service unreachable or timed out. |
+| `503` | Scoring service unreachable, or still cold-starting after the backend's retries (see latency note). |
 
 ---
 
@@ -121,7 +122,7 @@ The caller's own attempt history, newest first.
 
 ## Client notes
 
-- **Audio format:** the scoring service decodes **WAV / FLAC / OGG** only. Browser `MediaRecorder` usually produces `webm/opus`, which is **rejected**. Either record/encode WAV (e.g. capture PCM via the Web Audio API and wrap it as a WAV Blob) or transcode before upload. Send the matching MIME type (`audio/wav`, `audio/flac`, `audio/ogg`).
+- **Audio format:** the scoring service decodes via ffmpeg, so browser `MediaRecorder` output (`webm/opus`, or `mp4` on Safari), plus `mp3` and WAV/FLAC/OGG, all upload directly — **no client-side transcode needed**. Just send the blob with its native MIME type (`audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/wav`, …).
 - **Don't set `Content-Type` manually** on the `fetch`/upload — let the client set the multipart boundary.
-- **Latency:** scoring runs on CPU; expect a few hundred ms once the service is warm. The backend times out the upstream call at `PRONUNCIATION_TIMEOUT_MS` (default 8 s) and returns `503` on timeout — surface a retry affordance.
+- **Latency & cold start:** once warm, scoring takes ~a few hundred ms. The service sleeps after long idle and the **first** request can take **30–60 s** while it wakes. The backend retries cold-start signals (timeout / `503`) before returning `503`, so show a "warming up…" state on the first attempt and a retry affordance if it still fails.
 - **Audio quality gate:** a very short clip is rejected with `400` ("audio too short"). Use `audioQuality` in the response to warn on `clipping` or low `snr_db`.
