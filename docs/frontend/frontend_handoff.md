@@ -45,6 +45,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 |---|---|---|---|
 | Setup — production base URL & environment switch (deployed vs local) | (config, all endpoints) | n/a | [production_api_base_url.md](production_api_base_url.md) |
 | Auth — login session, access & refresh tokens | `POST /v1/auth/{register,login,refresh,logout}`, `GET /v1/auth/me` | mixed | [auth_session_tokens.md](auth_session_tokens.md) |
+| Auth — sign in with Google (real Gmail) | `POST /v1/auth/google` | none | [auth_google_sign_in.md](auth_google_sign_in.md) |
 | User — read & update profile (onboarding + leaderboard opt-out) | `GET /v1/users/:id`, `PATCH /v1/users/:id` | user (self) | [users_profile.md](users_profile.md) |
 | Overview — everything a normal user can do (for the homepage redesign) | (capability map, cross-feature) | user | [user_capabilities.md](user_capabilities.md) |
 | Admin — create vocabulary | `POST /v1/admin/vocabularies` | admin | [admin_create_vocabulary.md](admin_create_vocabulary.md) |
@@ -147,15 +148,7 @@ Revoke a refresh token. No auth header.
 **Response 204** (empty body).
 
 ### `POST /v1/auth/google`
-Sign in / sign up with a Google ID token (from Google Identity Services on the client).
-
-**Request body**
-
-```json
-{ "idToken": "eyJhbGciOi..." }
-```
-
-**Response 200**: `AuthResponse`.
+Sign in / sign up with a Google ID token (from Google Identity Services on the client). Returns `AuthResponse`. Full request/response, error table, GIS integration, and new-user onboarding handling: [auth_google_sign_in.md](auth_google_sign_in.md).
 
 ### `POST /v1/auth/apple`
 Sign in / sign up with an Apple ID token (from Sign in with Apple). `fullName` is forwarded only on first sign-in (Apple omits it on subsequent logins).
