@@ -13,6 +13,7 @@ import { Visibility } from '@/vocabularies/entities/visibility.enum';
 import { EnrichmentCacheService } from '@/vocabularies/enrichment/enrichment-cache.service';
 import { DraftInput } from '@/vocabularies/enrichment/enrichment-draft.types';
 import {
+  composeIpaFromWords,
   DictionaryPosGroup,
   fetchDictionaryEntry,
 } from '@/vocabularies/enrichment/dictionary-client';
@@ -384,9 +385,25 @@ export class EnrichmentProcessor extends WorkerHost {
         translationLanguage: translationLanguage ?? undefined,
       },
     );
+
+    // Hybrid IPA: the dictionary has no whole-lemma entry (that's why we're on
+    // the scratch path), but for an English multi-word phrase we can still
+    // compose IPA from per-word lookups. When that can't cover every word, fall
+    // back to the best-effort IPA Gemma returned. A dictionary hiccup here must
+    // not fail enrichment — it just degrades to the Gemma IPA.
+    let composedIpa: string | null = null;
+    if (language === 'en') {
+      try {
+        composedIpa = await composeIpaFromWords(lemma, DICTIONARY_TIMEOUT_MS);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`IPA composition failed for "${lemma}": ${msg}`);
+      }
+    }
+
     return groups.map((group) => ({
       partOfSpeech: group.partOfSpeech,
-      ipa: null,
+      ipa: composedIpa ?? group.ipa,
       cefrLevel: group.cefr,
       senses: group.senses.map((s) => ({
         gloss: s.gloss || null,
