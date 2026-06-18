@@ -89,7 +89,7 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<AuthResponseDto> {
     return this.authService.signInWithGoogle(
-      dto.idToken,
+      { code: dto.code, idToken: dto.idToken },
       tokenContextFrom(req),
     );
   }

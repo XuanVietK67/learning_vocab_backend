@@ -58,10 +58,12 @@ export class AuthService {
   }
 
   async signInWithGoogle(
-    idToken: string,
+    input: { code?: string; idToken?: string },
     ctx: IssueTokenContext,
   ): Promise<AuthResponseDto> {
-    const profile = await this.googleService.verifyIdToken(idToken);
+    const profile = input.code
+      ? await this.googleService.verifyAuthCode(input.code)
+      : await this.googleService.verifyIdToken(input.idToken!);
     return this.findOrCreateFromSocial(AuthProvider.GOOGLE, profile, ctx);
   }
 

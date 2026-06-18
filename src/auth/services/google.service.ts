@@ -18,10 +18,45 @@ export interface SocialProfile {
 export class GoogleService {
   private readonly client: OAuth2Client | null;
   private readonly clientId: string;
+  private readonly clientSecret: string;
 
   constructor(config: ConfigService) {
     this.clientId = config.get<string>('auth.google.clientId') ?? '';
-    this.client = this.clientId ? new OAuth2Client(this.clientId) : null;
+    this.clientSecret = config.get<string>('auth.google.clientSecret') ?? '';
+    this.client = this.clientId
+      ? new OAuth2Client({
+          clientId: this.clientId,
+          clientSecret: this.clientSecret,
+          // The GIS popup code flow exchanges against the literal `postmessage`
+          // redirect rather than a registered redirect URL.
+          redirectUri: 'postmessage',
+        })
+      : null;
+  }
+
+  // Authorization-code flow: exchange the GIS popup `code` with Google for tokens,
+  // then verify the resulting `id_token` with the same logic as the legacy flow.
+  async verifyAuthCode(code: string): Promise<SocialProfile> {
+    if (!this.client || !this.clientSecret) {
+      throw new ServiceUnavailableException('google sign-in not configured');
+    }
+
+    let idToken: string | null | undefined;
+    try {
+      const { tokens } = await this.client.getToken({
+        code,
+        redirect_uri: 'postmessage',
+      });
+      idToken = tokens.id_token;
+    } catch {
+      throw new UnauthorizedException('invalid google token');
+    }
+
+    if (!idToken) {
+      throw new UnauthorizedException('invalid google token');
+    }
+
+    return this.verifyIdToken(idToken);
   }
 
   async verifyIdToken(idToken: string): Promise<SocialProfile> {
