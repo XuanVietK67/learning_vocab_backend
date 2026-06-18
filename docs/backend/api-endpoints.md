@@ -28,7 +28,7 @@ Source: [src/auth/auth.controller.ts](../../src/auth/auth.controller.ts)
 | POST | `/v1/auth/login` | none | Email + password login. Rate-limited by `AUTH_LOGIN_THROTTLE_*` env vars. |
 | POST | `/v1/auth/refresh` | none (refresh token in body) | Exchange a refresh token for a fresh access + refresh pair. |
 | POST | `/v1/auth/logout` | none (refresh token in body) | Revoke the given refresh token. Returns 204. |
-| POST | `/v1/auth/google` | none | Sign in / sign up using a Google ID token. |
+| POST | `/v1/auth/google` | none | Sign in / sign up with Google: exchanges a GIS popup authorization `code` (legacy `idToken` still accepted). |
 | POST | `/v1/auth/apple` | none | Sign in / sign up using an Apple ID token. |
 | POST | `/v1/auth/github` | none | Sign in / sign up using a GitHub OAuth authorization code. |
 | GET | `/v1/auth/me` | JWT | Return the currently authenticated user's profile. |
