@@ -111,6 +111,7 @@ describe('parseExamplesResponse', () => {
 describe('parseScratchResponse', () => {
   const valid = JSON.stringify({
     cefr: 'B2',
+    ipa: '/rʌn/',
     partsOfSpeech: [
       {
         partOfSpeech: 'noun',
@@ -135,6 +136,22 @@ describe('parseScratchResponse', () => {
     expect(groups[0].partOfSpeech).toBe(PartOfSpeech.NOUN);
     expect(groups[0].cefr).toBe(ProficiencyLevel.B2);
     expect(groups[0].senses[0].definition).toBe('an act of running');
+  });
+
+  it('applies the word-level IPA to the group (null when absent)', () => {
+    expect(parseScratchResponse(valid)[0].ipa).toBe('/rʌn/');
+    const noIpa = parseScratchResponse(
+      JSON.stringify({
+        cefr: 'A1',
+        partsOfSpeech: [
+          {
+            partOfSpeech: 'noun',
+            senses: [{ gloss: 'g', definition: 'd', examples: ['a', 'b'] }],
+          },
+        ],
+      }),
+    );
+    expect(noIpa[0].ipa).toBeNull();
   });
 
   it('drops senses missing a definition or with fewer than 2 examples', () => {

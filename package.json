@@ -34,6 +34,7 @@
     "db:seed": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/seeds/seed.ts",
     "db:backfill-audio": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/scripts/backfill-audio.ts",
     "db:backfill-images": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/scripts/backfill-images.ts",
+    "db:backfill-ipa": "ts-node --project tsconfig.seed.json -r tsconfig-paths/register src/database/scripts/backfill-ipa.ts",
     "db:up": "docker compose up -d postgres pgadmin redis",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"

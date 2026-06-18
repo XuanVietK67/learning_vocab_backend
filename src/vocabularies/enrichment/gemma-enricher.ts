@@ -14,7 +14,8 @@ import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
  *   - generateExamples: the dictionary already gave us POS + definitions; Gemma
  *     adds a short gloss + >=2 example sentences per sense, and the word's CEFR.
  *   - enrichFromScratch: no dictionary (non-English, or a dictionary miss) —
- *     Gemma produces the whole POS-grouped sense structure. IPA is left null.
+ *     Gemma produces the whole POS-grouped sense structure plus a best-effort
+ *     IPA, used only when per-word dictionary composition can't cover the lemma.
  */
 
 export interface GemmaClientOptions {
@@ -26,6 +27,8 @@ export interface GemmaClientOptions {
 
 const VALID_CEFR = new Set<string>(Object.values(ProficiencyLevel));
 const GLOSS_MAX = 128;
+// Matches the vocabularies.ipa column length.
+const IPA_MAX = 128;
 const DEFINITION_MAX = 2000;
 const EXAMPLE_MAX = 1000;
 const MAX_EXAMPLES_PER_SENSE = 3;
@@ -133,6 +136,9 @@ export interface ScratchSense {
 
 export interface ScratchPosGroup {
   partOfSpeech: PartOfSpeech;
+  // Best-effort IPA for the whole lemma (word-level, applied to every group).
+  // Null when the model omits it; the worker prefers dictionary-composed IPA.
+  ipa: string | null;
   cefr: ProficiencyLevel;
   senses: ScratchSense[];
 }
@@ -152,11 +158,12 @@ export function buildScratchPrompt(
 
 For each part of speech the word can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use "${lemma}" (or an inflected form).${translationInstruction}
 
-Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2).
+Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2), and "ipa": the IPA phonetic transcription of the whole "${lemma}" wrapped in slashes (e.g. "/həˈloʊ/").
 
 Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
 {
   "cefr": "<A1|A2|B1|B2|C1|C2>",
+  "ipa": "<IPA transcription, in slashes>",
   "partsOfSpeech": [
     {
       "partOfSpeech": "<noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|phrase>",
@@ -178,6 +185,9 @@ function parsePosGroupsFromWord(
   obj: Record<string, unknown>,
 ): ScratchPosGroup[] {
   const cefr = coerceCefr(obj.cefr);
+  // IPA is word-level in the response; apply the same value to every POS group,
+  // mirroring how the dictionary client distributes the word's IPA.
+  const ipa = coerceIpa(obj.ipa);
   const groupsRaw = Array.isArray(obj.partsOfSpeech) ? obj.partsOfSpeech : [];
 
   const groups: ScratchPosGroup[] = [];
@@ -204,7 +214,8 @@ function parsePosGroupsFromWord(
         translation: coerceTranslation(s.translation),
       });
     }
-    if (senses.length > 0) groups.push({ partOfSpeech: pos, cefr, senses });
+    if (senses.length > 0)
+      groups.push({ partOfSpeech: pos, ipa, cefr, senses });
   }
   return groups;
 }
@@ -476,7 +487,7 @@ export function buildBatchScratchPrompt(
   return `You help build a language-learning dictionary for language code "${language}". Describe each of the following ${words.length} word(s):
 ${wordList}
 
-For each word, for each part of speech it can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use the word (or an inflected form).${translationInstruction} Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2).
+For each word, for each part of speech it can have (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, phrase), give 1-3 of its most common senses. For each sense provide a short "gloss" (1-4 words), a learner-friendly "definition", and at least 2 natural "examples" sentences in language "${language}" that use the word (or an inflected form).${translationInstruction} Also give "cefr": the overall CEFR difficulty of the word (A1, A2, B1, B2, C1, or C2), and "ipa": the IPA phonetic transcription of the whole word wrapped in slashes (e.g. "/həˈloʊ/").
 
 Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
 {
@@ -484,6 +495,7 @@ Reply with ONLY a JSON object (no markdown, no prose) of exactly this shape:
     {
       "lemma": "<the word>",
       "cefr": "<A1|A2|B1|B2|C1|C2>",
+      "ipa": "<IPA transcription, in slashes>",
       "partsOfSpeech": [
         {
           "partOfSpeech": "<noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|phrase>",
@@ -549,6 +561,13 @@ function coerceCefr(value: unknown): ProficiencyLevel {
 function coerceGloss(value: unknown): string {
   const gloss = typeof value === 'string' ? value.trim() : '';
   return gloss.slice(0, GLOSS_MAX);
+}
+
+// Optional best-effort IPA from the model. Missing/blank is fine — the worker
+// only uses this when it can't compose IPA from the dictionary.
+function coerceIpa(value: unknown): string | null {
+  const ipa = typeof value === 'string' ? value.trim() : '';
+  return ipa ? ipa.slice(0, IPA_MAX) : null;
 }
 
 // Optional: a missing/blank translation is fine (the request may not have asked
