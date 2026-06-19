@@ -36,5 +36,7 @@ import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
     HmacSignerService,
     VocabPickerService,
   ],
+  // Exported so the practice module can reuse the SRS picker to suggest words.
+  exports: [VocabPickerService],
 })
 export class LearnModule {}
