@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 export interface SendMailInput {
   to: string;
@@ -46,12 +47,17 @@ export class MailerService {
     const pass = this.config.get<string>('mail.smtp.pass') ?? '';
     this.from = this.config.getOrThrow<string>('mail.from');
 
-    this.transporter = nodemailer.createTransport({
+    // Force IPv4: many hosts (Railway, Docker, some VPS) resolve smtp hosts
+    // to an IPv6 address they cannot route, yielding ENETUNREACH on connect.
+    // `family` is a valid nodemailer socket option but missing from its types.
+    const options: SMTPTransport.Options & { family: number } = {
       host,
       port,
       secure,
       auth: user && pass ? { user, pass } : undefined,
-    });
+      family: 4,
+    };
+    this.transporter = nodemailer.createTransport(options);
     return this.transporter;
   }
 }
