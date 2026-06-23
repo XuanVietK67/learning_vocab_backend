@@ -64,9 +64,32 @@ const BATCH_LINGER_MS = parseInt(
 const MAX_SENSES_PER_POS = 3;
 const DICTIONARY_TIMEOUT_MS = 10_000;
 
+// Base delay for the job's exponential retry backoff. The producer sets
+// attempts + backoff:{type:'custom'} and BullMQ calls enrichmentBackoff for each
+// retry delay. A Gemma 503 "high demand" spike can last minutes, so the default
+// (~15s base, doubling) spreads ~5 attempts across a few minutes.
+const RETRY_BASE_DELAY_MS = parseInt(
+  process.env.ENRICHMENT_RETRY_DELAY_MS ?? '15000',
+  10,
+);
+
+/**
+ * Exponential backoff with full jitter: `base * 2^(attemptsMade-1)`, then a
+ * random 50–100% of that. The jitter matters because one quick-import fans out
+ * many per-lemma jobs that would otherwise retry in lockstep and hammer the same
+ * overloaded Gemma endpoint together (thundering herd). Exported for testing.
+ */
+export function enrichmentBackoff(attemptsMade: number): number {
+  const exp = RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attemptsMade - 1);
+  return Math.round(exp * (0.5 + Math.random() * 0.5));
+}
+
 @Processor(ENRICHMENT_QUEUE, {
   concurrency: CONCURRENCY,
   limiter: { max: RPM, duration: 60_000 },
+  settings: {
+    backoffStrategy: (attemptsMade) => enrichmentBackoff(attemptsMade),
+  },
 })
 export class EnrichmentProcessor extends WorkerHost {
   private readonly logger = new Logger(EnrichmentProcessor.name);
@@ -419,7 +442,7 @@ export class EnrichmentProcessor extends WorkerHost {
 
   private gemmaOptions(): GemmaClientOptions {
     return {
-      apiKey: this.config.getOrThrow<string>('gemma.apiKey'),
+      apiKeys: this.config.getOrThrow<string[]>('gemma.apiKeys'),
       baseUrl: this.config.getOrThrow<string>('gemma.baseUrl'),
       model: this.config.getOrThrow<string>('gemma.model'),
       timeoutMs: this.config.get<number>('gemma.timeoutMs', 30_000),

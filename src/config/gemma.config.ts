@@ -6,7 +6,14 @@ import { registerAs } from '@nestjs/config';
 // the user. dailyAttemptsPerUser bounds how many submissions one user can spend
 // against the single shared key per UTC day.
 export default registerAs('gemma', () => ({
-  apiKey: process.env.GEMMA_API_KEY ?? '',
+  // One or more API keys for rotation. Prefer GEMMA_API_KEYS (comma-separated,
+  // each from a different project/account) to raise the free-tier 429 ceiling;
+  // falls back to the single GEMMA_API_KEY. The worker tries the next key on a
+  // 429/503 before letting BullMQ back off. See common/gemma/gemma-request.ts.
+  apiKeys: (process.env.GEMMA_API_KEYS ?? process.env.GEMMA_API_KEY ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0),
   baseUrl:
     process.env.GEMMA_BASE_URL ??
     'https://generativelanguage.googleapis.com/v1beta',

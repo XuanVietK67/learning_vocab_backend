@@ -1,3 +1,7 @@
+import {
+  GemmaRequestOptions,
+  generateContent,
+} from '@/common/gemma/gemma-request';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 import { PartOfSpeech } from '@/vocabularies/entities/part-of-speech.enum';
 import { BatchItemResult } from '@/vocabularies/enrichment/gemma-batcher';
@@ -18,12 +22,7 @@ import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
  *     IPA, used only when per-word dictionary composition can't cover the lemma.
  */
 
-export interface GemmaClientOptions {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  timeoutMs: number;
-}
+export type GemmaClientOptions = GemmaRequestOptions;
 
 const VALID_CEFR = new Set<string>(Object.values(ProficiencyLevel));
 const GLOSS_MAX = 128;
@@ -222,22 +221,18 @@ function parsePosGroupsFromWord(
 
 // ---- network ----
 
-interface GenerateContentResponse {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
-
 /**
  * POST a prompt to Gemma's generateContent endpoint and return the text.
  * `maxOutputTokens` defaults to a single-word budget; the batched callers raise
- * it so a 5-word response isn't truncated (finishReason MAX_TOKENS).
+ * it so a 5-word response isn't truncated (finishReason MAX_TOKENS). Key
+ * rotation + the non-2xx handling live in common/gemma/gemma-request.ts.
  */
 export async function callGemma(
   prompt: string,
   opts: GemmaClientOptions,
   maxOutputTokens = 2048,
 ): Promise<string> {
-  const url = `${opts.baseUrl}/models/${opts.model}:generateContent?key=${opts.apiKey}`;
-  const body = {
+  return generateContent(opts, {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     // thinkingBudget: 0 disables the model's hidden reasoning tokens. Without it
     // a thinking model spends the whole output budget on thoughts and truncates
@@ -249,34 +244,7 @@ export async function callGemma(
       maxOutputTokens,
       thinkingConfig: { thinkingBudget: 0 },
     },
-  };
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`gemma ${res.status}: ${detail.slice(0, 200)}`);
-  }
-
-  const data = (await res.json()) as GenerateContentResponse;
-  const text = data.candidates?.[0]?.content?.parts
-    ?.map((p) => p.text ?? '')
-    .join('')
-    .trim();
-  if (!text) throw new Error('gemma returned an empty response');
-  return text;
+  });
 }
 
 export async function generateExamples(

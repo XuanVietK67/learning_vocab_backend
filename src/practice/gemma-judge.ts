@@ -1,3 +1,7 @@
+import {
+  GemmaRequestOptions,
+  generateContent,
+} from '@/common/gemma/gemma-request';
 import { ProductionRubric } from '@/practice/rubric.types';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
 
@@ -11,12 +15,7 @@ import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
  * embedded in the user prompt and the response is parsed defensively.
  */
 
-export interface GemmaJudgeOptions {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  timeoutMs: number;
-}
+export type GemmaJudgeOptions = GemmaRequestOptions;
 
 export interface JudgeInput {
   lemma: string;
@@ -138,21 +137,17 @@ function extractJsonObject(raw: string): string {
   return text;
 }
 
-interface GenerateContentResponse {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-}
-
 /**
  * Score one sentence. Resolves to the rubric + the model name. Throws on
  * network error, non-2xx (including 429 rate-limit — the caller turns that into
- * a BullMQ retry), timeout, or an unparseable rubric.
+ * a BullMQ retry), timeout, or an unparseable rubric. Key rotation lives in
+ * common/gemma/gemma-request.ts.
  */
 export async function scoreSentence(
   input: JudgeInput,
   opts: GemmaJudgeOptions,
 ): Promise<{ rubric: ProductionRubric; model: string }> {
-  const url = `${opts.baseUrl}/models/${opts.model}:generateContent?key=${opts.apiKey}`;
-  const body = {
+  const text = await generateContent(opts, {
     contents: [{ role: 'user', parts: [{ text: buildJudgePrompt(input) }] }],
     // thinkingBudget: 0 disables hidden reasoning tokens that would otherwise eat
     // the output budget and truncate the rubric JSON. See gemma.config.ts.
@@ -161,33 +156,7 @@ export async function scoreSentence(
       maxOutputTokens: 512,
       thinkingConfig: { thinkingBudget: 0 },
     },
-  };
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`gemma ${res.status}: ${detail.slice(0, 200)}`);
-  }
-
-  const data = (await res.json()) as GenerateContentResponse;
-  const text = data.candidates?.[0]?.content?.parts
-    ?.map((p) => p.text ?? '')
-    .join('')
-    .trim();
-  if (!text) throw new Error('gemma returned an empty response');
+  });
 
   return { rubric: parseRubric(text), model: opts.model };
 }

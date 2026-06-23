@@ -75,7 +75,7 @@ export class ScoringProcessor extends WorkerHost {
         sentence: attempt.submittedText,
       },
       {
-        apiKey: this.config.getOrThrow<string>('gemma.apiKey'),
+        apiKeys: this.config.getOrThrow<string[]>('gemma.apiKeys'),
         baseUrl: this.config.getOrThrow<string>('gemma.baseUrl'),
         model: this.config.getOrThrow<string>('gemma.model'),
         timeoutMs: this.config.get<number>('gemma.timeoutMs', 30_000),
