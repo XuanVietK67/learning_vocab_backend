@@ -25,8 +25,11 @@ export class EnrichmentQueueProducer {
   async enqueue(jobId: string): Promise<void> {
     const opts: JobsOptions = {
       jobId,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
+      // Gemma 429/503 spikes are transient but can last minutes; the custom
+      // strategy (EnrichmentProcessor.enrichmentBackoff) is exponential with
+      // jitter so the fanned-out per-lemma jobs don't retry in lockstep.
+      attempts: parseInt(process.env.ENRICHMENT_MAX_ATTEMPTS ?? '5', 10),
+      backoff: { type: 'custom' },
       removeOnComplete: true,
       removeOnFail: 100,
     };
