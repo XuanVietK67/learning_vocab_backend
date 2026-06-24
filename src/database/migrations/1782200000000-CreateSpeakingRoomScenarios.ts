@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 //   - intro_video_* are present but inert in Phase 1 (no HyperFrames render yet).
 //   - status drives the draft -> published -> retired lifecycle.
 //   - created_by is the authoring admin, SET NULL on user delete.
-export class CreateSpeakingRoomScenarios1782200000000
-  implements MigrationInterface
-{
+export class CreateSpeakingRoomScenarios1782200000000 implements MigrationInterface {
   name = 'CreateSpeakingRoomScenarios1782200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
