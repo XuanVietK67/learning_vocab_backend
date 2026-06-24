@@ -230,3 +230,19 @@ A thin proxy over the phoneme-scoring microservice (`POST /score`, configured vi
 | --- | --- | --- | --- |
 | POST | `/v1/pronunciation/score` | JWT | Score a pronunciation. `multipart/form-data`: `audio` (WAV/FLAC/OGG, webm/opus, mp4/m4a or mp3, ≤10 MB) + exactly one of `vocabularyId` (uuid) or `word` (1–128 chars). Forwards to the scoring service, stores the attempt, returns `{ attemptId, word, transcriptPhonemes, overallScore, phonemes[], audioQuality, modelVersion, createdAt }`. 404 if `vocabularyId` is unknown, 422 if the audio/word is unscorable (too short, no/unmapped phones), 503 if the scoring service is unreachable or still cold-starting after retries. |
 | GET | `/v1/pronunciation/attempts` | JWT | The caller's attempt history, newest first. Query: `vocabularyId` (uuid), `word` (1–128 chars), `page` (default 1), `limit` (default 20, max 100). Returns `{ data: [{ id, vocabularyId, word, overallScore, phonemeScores[], modelVersion, createdAt }], page, limit, total }`. |
+
+## Admin Scenarios — `/v1/admin/scenarios`
+
+Source: [src/speaking-room/admin-scenarios.controller.ts](../../src/speaking-room/admin-scenarios.controller.ts)
+
+Admin-only authoring surface for **Speaking Room** scenarios (Phase 1 — see [docs/plans/speaking_room_phase1_admin_authoring.md](../plans/speaking_room_phase1_admin_authoring.md)). A scenario is a reusable spec (setting, roles, goal, opening line) practiced by many learners in Phase 2. All endpoints require JWT auth **and** `role = 'admin'` (403 otherwise). See [docs/frontend/admin_create_scenario.md](../frontend/admin_create_scenario.md).
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/admin/scenarios` | JWT (admin) | List scenarios, newest first. Filters: `topic` (slug), `cefrLevel` (A1–C2), `status` (`draft`/`published`/`retired`), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }`. |
+| GET | `/v1/admin/scenarios/:id` | JWT (admin) | Fetch one scenario by id. 404 if unknown. |
+| POST | `/v1/admin/scenarios` | JWT (admin) | Create a scenario in `draft`. Body is the scenario spec; `createdBy` is set from the caller. Returns 201 + the scenario. |
+| PATCH | `/v1/admin/scenarios/:id` | JWT (admin) | Edit a scenario. Editing a `published` scenario bumps its `version` so Phase 2 in-flight sessions keep the spec they started with. |
+| POST | `/v1/admin/scenarios/:id/intro-video` | JWT (admin) | Attach the finished intro-video MP4 URL (and optionally its script). Phase 1 does **not** run the HyperFrames render — the URL is supplied out-of-band. Bumps `version` if published. |
+| POST | `/v1/admin/scenarios/:id/publish` | JWT (admin) | Move a `draft`/`retired` scenario to `published`. 400 if already published. |
+| DELETE | `/v1/admin/scenarios/:id` | JWT (admin) | Retire (soft-delete) a scenario — sets `status='retired'`, idempotent. Returns 204. |
