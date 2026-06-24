@@ -21,6 +21,7 @@ import { MailerModule } from './mailer/mailer.module';
 import { PracticeModule } from './practice/practice.module';
 import { ProgressModule } from './progress/progress.module';
 import { PronunciationModule } from './pronunciation/pronunciation.module';
+import { SpeakingRoomModule } from './speaking-room/speaking-room.module';
 import { TopicsModule } from './topics/topics.module';
 import { UsersModule } from './users/users.module';
 import { VocabulariesModule } from './vocabularies/vocabularies.module';
@@ -68,6 +69,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
     LeaderboardModule,
     PracticeModule,
     PronunciationModule,
+    SpeakingRoomModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

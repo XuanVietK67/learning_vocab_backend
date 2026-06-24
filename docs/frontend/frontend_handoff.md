@@ -53,6 +53,7 @@ One doc per feature/endpoint. Add a row here whenever you create a new per-featu
 | Admin — bulk quick-create (list / Excel / PDF) | `POST /v1/admin/vocabularies/quick/extract`, `POST /v1/admin/vocabularies/quick/bulk`, `GET /v1/admin/vocabularies/quick/batch/:batchId` | admin | [admin_bulk_quick_create_vocabulary.md](admin_bulk_quick_create_vocabulary.md) |
 | Admin — list vocabularies | `GET /v1/admin/vocabularies` | admin | [admin_list_vocabularies.md](admin_list_vocabularies.md) |
 | Admin — get one vocabulary (incl. drafts) | `GET /v1/admin/vocabularies/:id` | admin | [admin_get_vocabulary.md](admin_get_vocabulary.md) |
+| Admin — author speaking-room scenarios | `GET/POST/PATCH/DELETE /v1/admin/scenarios`, `POST /v1/admin/scenarios/:id/{publish,intro-video}` | admin | [admin_create_scenario.md](admin_create_scenario.md) |
 | Decks — publish, browse community & clone | `GET /v1/decks/public`, `POST /v1/me/decks/:id/clone`, `visibility` on `POST/PATCH /v1/me/decks` | mixed | [decks_share_and_clone.md](decks_share_and_clone.md) |
 | My Vocabularies — all ways to add a word (manual, quick-create, bulk) | `POST /v1/me/vocabularies`, `POST /v1/me/vocabularies/quick-create`, `POST /v1/me/decks/:id/bulk-import` | user | [me_create_vocabulary.md](me_create_vocabulary.md) |
 | My Vocabularies — quick-create from a lemma | `POST /v1/me/vocabularies/quick-create`, `GET /v1/me/vocabularies/jobs/:jobId` | user | [me_vocabulary_quick_create.md](me_vocabulary_quick_create.md) |
