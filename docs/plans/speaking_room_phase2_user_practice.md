@@ -1,6 +1,18 @@
 # Plan: Speaking Room — Phase 2 (User Practice Session)
 
-Status: **Draft** · Owner: TBD · Last updated: 2026-06-23
+Status: **Phase 2a/2b implemented (text loop + report)** · Owner: TBD · Last updated: 2026-06-25
+
+> **Implementation status (2026-06-25).** The text-only turn loop and the
+> end-of-session report are built and shipped as the learner-facing surface under
+> `/v1/speaking` ([speaking-session.controller.ts](../../src/speaking-room/speaking-session.controller.ts)):
+> browse published scenarios, start a session, take REST turns, end → report.
+> Per §5 the turn LLM returns `{reply, corrections, used_target_words}` (Groq
+> `GROQ_CHAT_MODEL`); the report uses the larger `GROQ_REPORT_MODEL`. Decisions
+> taken: **REST per turn for v1** (push-to-talk is request/response; the streaming
+> WebSocket in §7 is deferred to 2e), report generated **synchronously on `end`**
+> (not queued), and the scenario spec is **snapshotted onto the session** at start
+> so an admin edit can't mutate an in-flight conversation. **Not yet built:** STT
+> (2c), TTS/VoxCPM (2d), WebSocket streaming + VAD + intro/recap video (2e).
 
 The **Speaking Room** lets a learner practice spoken English in a live, turn-based voice
 conversation with an AI partner. This document covers **Phase 2 — the live practice
