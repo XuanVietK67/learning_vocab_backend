@@ -14,8 +14,25 @@ export default registerAs('groq', () => ({
     .filter((k) => k.length > 0),
   // OpenAI-compatible base; the client POSTs `${baseUrl}/chat/completions`.
   baseUrl: process.env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1',
-  // Fast, free-tier-friendly model for short JSON drafting.
+  // Fast, free-tier-friendly model for short JSON drafting (scenario draft).
   model: process.env.GROQ_MODEL ?? 'llama-3.1-8b-instant',
+  // Model for the live speaking-room turns: must be fast (it is in the user's
+  // round-trip every turn). Defaults to the same small instant model.
+  chatModel: process.env.GROQ_CHAT_MODEL ?? 'llama-3.1-8b-instant',
+  // Smarter, slower model for the one end-of-session feedback report (not in the
+  // per-turn loop, so latency matters less than quality — see plan §2.4).
+  reportModel: process.env.GROQ_REPORT_MODEL ?? 'llama-3.3-70b-versatile',
   // Per-request timeout for the chat-completion call.
   timeoutMs: parseInt(process.env.GROQ_TIMEOUT_MS ?? '30000', 10),
+  // Per-user cap on speaking sessions started per day (protects the free tier).
+  dailySessionsPerUser: parseInt(
+    process.env.GROQ_DAILY_SESSIONS_PER_USER ?? '20',
+    10,
+  ),
+  // Hard cap on user turns per session (stops a runaway conversation burning
+  // quota); the learner must end the session once reached.
+  maxTurnsPerSession: parseInt(
+    process.env.GROQ_MAX_TURNS_PER_SESSION ?? '40',
+    10,
+  ),
 }));

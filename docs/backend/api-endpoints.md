@@ -247,3 +247,18 @@ Admin-only authoring surface for **Speaking Room** scenarios (Phase 1 — see [d
 | POST | `/v1/admin/scenarios/:id/intro-video` | JWT (admin) | Attach the finished intro-video MP4 URL (and optionally its script). Phase 1 does **not** run the HyperFrames render — the URL is supplied out-of-band. Bumps `version` if published. |
 | POST | `/v1/admin/scenarios/:id/publish` | JWT (admin) | Move a `draft`/`retired` scenario to `published`. 400 if already published. |
 | DELETE | `/v1/admin/scenarios/:id` | JWT (admin) | Retire (soft-delete) a scenario — sets `status='retired'`, idempotent. Returns 204. |
+
+## Speaking Room — `/v1/speaking`
+
+Source: [src/speaking-room/speaking-session.controller.ts](../../src/speaking-room/speaking-session.controller.ts)
+
+Learner-facing **live practice session** (Phase 2 — see [docs/plans/speaking_room_phase2_user_practice.md](../plans/speaking_room_phase2_user_practice.md)). A turn-based text conversation against an AI partner, pitched at the learner's CEFR level and weaving in their chosen words, ending in a feedback report. All endpoints require JWT auth. Powered by Groq (`GROQ_CHAT_MODEL` per turn, `GROQ_REPORT_MODEL` for the report) — 503 if Groq is unconfigured. Phase 2a is text-only; audio (STT/TTS) and a streaming transport are later milestones.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/speaking/scenarios` | JWT | Browse **published** scenarios as learner-facing cards. Filters: `topic` (slug), `cefrLevel` (A1–C2), `page` (default 1), `limit` (default 20, max 100). When the learner has a level and didn't pin one, level-matched (then "any"-level) scenarios sort first. Returns `{ data, page, limit, total }`. See [docs/frontend/speaking_browse_scenarios.md](../frontend/speaking_browse_scenarios.md). |
+| GET | `/v1/speaking/scenarios/:id` | JWT | Fetch one published scenario card. 404 if unknown or not published. |
+| POST | `/v1/speaking/sessions` | JWT | Start a session. Body `{ scenarioId, vocabularyIds? }` → session handle + AI `openingLine` + snapshotted `selectedWords` + `inaccessibleVocabularyIds` (dropped). 404 if the scenario isn't published, 429 at the daily cap, 503 if Groq is unconfigured. See [docs/frontend/speaking_practice_session.md](../frontend/speaking_practice_session.md). |
+| POST | `/v1/speaking/sessions/:id/turn` | JWT | One learner turn. Body `{ text (1–1000) }` → `{ turnIndex, reply, corrections[], usedTargetWords[] }`. 400 if the session ended or the per-session turn cap is hit, 404 if not the caller's session, 503 if the model fails. See [docs/frontend/speaking_practice_session.md](../frontend/speaking_practice_session.md). |
+| POST | `/v1/speaking/sessions/:id/end` | JWT | End the session and generate the feedback report (idempotent — re-ending returns the stored report, retrying generation if it previously failed). Returns `{ sessionId, reportStatus, report, reportModel }`. See [docs/frontend/speaking_practice_session.md](../frontend/speaking_practice_session.md). |
+| GET | `/v1/speaking/sessions/:id/report` | JWT | Fetch the report; retries generation if not yet `ready`. 400 if the session is still active, 404 if not the caller's session. |
