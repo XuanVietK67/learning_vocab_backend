@@ -168,8 +168,11 @@ The learner-facing **read** endpoints (browse/recommend scenarios) belong to Pha
    first removes the render cost entirely; intro/recap videos become later polish.
 3. **Intro video storage** — where MP4s live (S3-compatible bucket?) and how the URL is
    wired back after the async render.
-4. **LLM-draft helper** — reuse the existing Gemma client (with key rotation) for the
-   optional spec-drafting step, or keep authoring fully manual in v1.
+4. **LLM-draft helper** — ✅ Resolved: built as `POST /v1/admin/scenarios/draft`, powered by
+   **Groq `llama-3.1-8b-instant`** (not Gemma) via its own OpenAI-compatible client with key
+   rotation ([src/common/groq/groq-request.ts](../../src/common/groq/groq-request.ts)). It is
+   optional convenience — returns an unsaved spec to prefill the create form; manual authoring
+   still works without it. See [admin_draft_scenario.md](../frontend/admin_draft_scenario.md).
 
 ---
 
