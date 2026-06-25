@@ -241,6 +241,7 @@ Admin-only authoring surface for **Speaking Room** scenarios (Phase 1 — see [d
 | --- | --- | --- | --- |
 | GET | `/v1/admin/scenarios` | JWT (admin) | List scenarios, newest first. Filters: `topic` (slug), `cefrLevel` (A1–C2), `status` (`draft`/`published`/`retired`), `page` (default 1), `limit` (default 20, max 100). Returns `{ data, page, limit, total }`. |
 | GET | `/v1/admin/scenarios/:id` | JWT (admin) | Fetch one scenario by id. 404 if unknown. |
+| POST | `/v1/admin/scenarios/draft` | JWT (admin) | LLM draft helper (Groq `llama-3.1-8b-instant`). Body `{ brief, cefrLevel?, topic? }` → returns an **unsaved** scenario spec (`+ model`) to prefill the create form. 503 if the helper is unconfigured or the model fails. See [docs/frontend/admin_draft_scenario.md](../frontend/admin_draft_scenario.md). |
 | POST | `/v1/admin/scenarios` | JWT (admin) | Create a scenario in `draft`. Body is the scenario spec; `createdBy` is set from the caller. Returns 201 + the scenario. |
 | PATCH | `/v1/admin/scenarios/:id` | JWT (admin) | Edit a scenario. Editing a `published` scenario bumps its `version` so Phase 2 in-flight sessions keep the spec they started with. |
 | POST | `/v1/admin/scenarios/:id/intro-video` | JWT (admin) | Attach the finished intro-video MP4 URL (and optionally its script). Phase 1 does **not** run the HyperFrames render — the URL is supplied out-of-band. Bumps `version` if published. |
