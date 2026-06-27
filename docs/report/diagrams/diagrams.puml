@@ -19,6 +19,7 @@ skinparam packageStyle rectangle
 actor "Người học" as U
 actor "Quản trị viên" as A
 actor "Gemma 3 (LLM)" as G
+actor "Groq (LLM hội thoại)" as GR
 actor "DV chấm phát âm" as P
 actor "Nhà cung cấp OAuth" as O
 A --|> U
@@ -31,12 +32,14 @@ rectangle "Hệ thống học từ vựng" {
   usecase "Học theo phiên (SRS)" as UC6
   usecase "Luyện viết câu" as UC7
   usecase "Luyện phát âm" as UC8
-  usecase "Theo dõi tiến độ" as UC9
-  usecase "Bảng xếp hạng" as UC10
-  usecase "Quản trị từ vựng / chủ đề" as UC11
-  usecase "Tạo nhanh từ vựng bằng AI" as UC12
-  usecase "Duyệt nội dung AI" as UC13
-  usecase "Quản lý người dùng" as UC14
+  usecase "Luyện nói theo kịch bản" as UC9
+  usecase "Theo dõi tiến độ" as UC10
+  usecase "Bảng xếp hạng" as UC11
+  usecase "Quản trị từ vựng / chủ đề" as UC12
+  usecase "Tạo nhanh từ vựng bằng AI" as UC13
+  usecase "Quản trị kịch bản luyện nói" as UC14
+  usecase "Duyệt nội dung AI" as UC15
+  usecase "Quản lý người dùng" as UC16
 }
 U --> UC1
 U --> UC2
@@ -48,13 +51,17 @@ U --> UC7
 U --> UC8
 U --> UC9
 U --> UC10
-A --> UC11
+U --> UC11
 A --> UC12
 A --> UC13
 A --> UC14
+A --> UC15
+A --> UC16
 UC1 ..> O : <<include>>
 UC7 ..> G : <<include>>
-UC12 ..> G : <<include>>
+UC13 ..> G : <<include>>
+UC9 ..> GR : <<include>>
+UC14 ..> GR : <<include>>
 UC8 ..> P : <<include>>
 @enduml
 
@@ -136,6 +143,44 @@ endif
 :Lưu điểm 0-100 + CEFR + nhận xét;
 |API|
 :Người học thăm dò attempt lấy kết quả;
+stop
+@enduml
+
+' ---------------------------------------------------------------------
+@startuml activity-phien-luyen-noi
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Phiên luyện nói theo kịch bản
+start
+:Người học chọn kịch bản\n(+ từ mục tiêu tuỳ chọn);
+if (Còn hạn mức phiên/ngày?) then (không)
+  :Trả về 429;
+  stop
+else (còn)
+endif
+:Chốt snapshot kịch bản + trình độ + từ mục tiêu;
+:Lưu câu mở đầu của AI (không gọi LLM);
+repeat
+  :Người học gửi câu nói;
+  if (Vượt giới hạn số lượt?) then (có)
+    :Trả về 400 (đề nghị kết thúc);
+    break
+  else (chưa)
+  endif
+  :Ghép toàn bộ hội thoại làm ngữ cảnh + gọi Groq;
+  if (Groq khả dụng?) then (không)
+    :Trả về 503 (không lưu lượt hỏng);
+  else (có)
+    :Lưu lượt người học + lượt AI\n(reply, chỉnh lỗi, từ đã dùng);
+  endif
+repeat while (Tiếp tục hội thoại?) is (tiếp) not (kết thúc)
+:Đánh dấu phiên ENDED;
+:Gọi LLM (mô hình mạnh hơn) sinh báo cáo\ntrên toàn hội thoại;
+if (Sinh báo cáo thành công?) then (có)
+  :Lưu báo cáo = ready;
+else (không)
+  :Đánh dấu report = failed\n(cho phép sinh lại);
+endif
 stop
 @enduml
 
@@ -223,6 +268,34 @@ end
 @enduml
 
 ' ---------------------------------------------------------------------
+@startuml seq-luot-hoi-thoai
+skinparam dpi 150
+skinparam defaultFontName Arial
+title Một lượt hội thoại trong phiên luyện nói
+actor "Người học" as U
+participant "SpeakingSessionController" as C
+participant "SpeakingSessionService" as S
+participant "Groq (Llama 3.3)" as GR
+database "PostgreSQL" as DB
+U -> C : POST /v1/speaking/sessions/:id/turn (text)
+C -> S : takeTurn(userId, sessionId, text)
+S -> DB : SELECT speaking_turns (theo turn_index)
+DB --> S : lịch sử hội thoại
+S -> S : Kiểm tra giới hạn số lượt + dựng ngữ cảnh
+S -> GR : chatCompletion(prompt + lịch sử + từ mục tiêu)
+alt Groq không khả dụng
+  GR --> S : lỗi / timeout
+  S --> C : 503
+  C --> U : 503 (không lưu lượt hỏng)
+else Thành công
+  GR --> S : JSON { reply, corrections, usedTargetWords }
+  S -> DB : INSERT lượt người học + lượt AI
+  S --> C : { reply, corrections, usedTargetWords }
+  C --> U : 200 kết quả lượt
+end
+@enduml
+
+' ---------------------------------------------------------------------
 @startuml kien-truc-tong-the
 skinparam dpi 150
 skinparam defaultFontName Arial
@@ -236,6 +309,7 @@ package "Backend (NestJS)" {
 database "PostgreSQL" as PG
 queue "Redis (BullMQ)" as Redis
 cloud "Gemma 3\n(Google AI Studio)" as Gemma
+cloud "Groq\n(Llama 3.3)" as Groq
 cloud "DV chấm phát âm\n(FastAPI)" as Pron
 cloud "Cloudinary\n(media)" as CDN
 cloud "Edge TTS" as TTS
@@ -249,6 +323,7 @@ Worker --> PG
 API --> OAuth
 API --> Mail
 API --> Pron
+API --> Groq : hội thoại theo lượt + báo cáo
 Worker --> Gemma
 Worker --> TTS
 Worker --> CDN
@@ -395,6 +470,35 @@ entity pronunciation_attempts {
   word : varchar
   overall_score : smallint
 }
+entity scenarios {
+  * id : uuid <<PK>>
+  --
+  title : varchar
+  topic : varchar
+  cefr_level : enum
+  status : enum
+  version : int
+  created_by : uuid <<FK>>
+}
+entity speaking_sessions {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  scenario_id : uuid <<FK>>
+  scenario_snapshot : jsonb
+  status : enum
+  report_status : enum
+  report : jsonb
+}
+entity speaking_turns {
+  * id : uuid <<PK>>
+  --
+  session_id : uuid <<FK>>
+  turn_index : int
+  role : enum
+  text : text
+  corrections : jsonb
+}
 
 users ||--o{ user_identities
 users ||--o{ refresh_tokens
@@ -417,6 +521,10 @@ vocabularies ||--o{ user_word_progress
 vocabularies |o--o{ learning_activity
 vocabularies ||--o{ production_attempts
 vocabularies |o--o{ pronunciation_attempts
+users ||--o{ speaking_sessions
+users |o--o{ scenarios
+scenarios ||--o{ speaking_sessions
+speaking_sessions ||--o{ speaking_turns
 @enduml
 
 ' ---------------------------------------------------------------------
@@ -435,14 +543,20 @@ rectangle "Phiên học (SRS)" as learn
 rectangle "Khám phá từ vựng & bộ thẻ" as explore
 rectangle "Luyện viết câu" as practice
 rectangle "Luyện phát âm" as pron
+rectangle "Phòng luyện nói\n(kịch bản -> hội thoại -> báo cáo)" as speak
 rectangle "Bảng xếp hạng" as board
 rectangle "Hồ sơ cá nhân" as profile
+rectangle "Khu vực quản trị (Admin)" as admin
+rectangle "Quản trị kịch bản luyện nói" as adminscn
 login --> onboard
 onboard --> home
 home --> learn
 home --> explore
 home --> practice
 home --> pron
+home --> speak
 home --> board
 home --> profile
+login --> admin
+admin --> adminscn
 @enduml
