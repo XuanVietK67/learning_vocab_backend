@@ -5,6 +5,7 @@ import learnConfig from '@/config/learn.config';
 import { AnswerGraderService } from '@/learn/answer-grader.service';
 import { CreateSessionDto } from '@/learn/dto/create-session.dto';
 import { LearnSessionMode } from '@/learn/enums/learn-session-mode.enum';
+import { QuestionType } from '@/learn/enums/question-type.enum';
 import { HmacSignerService } from '@/learn/hmac-signer.service';
 import { LearnService } from '@/learn/learn.service';
 import { QuestionBuilderService } from '@/learn/question-builder.service';
@@ -255,5 +256,147 @@ describe('LearnService — mode dispatch', () => {
     await expect(
       svc.createSession(USER_ID, { mode: LearnSessionMode.DAILY }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('LearnService — type-major round ordering', () => {
+  const VA = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const VB = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+  // Every word gets the same three-type ladder (easy→hard): flashcard,
+  // cloze_mcq, dictation. With a shared samplingKey this is what uniform
+  // rounds look like.
+  const LADDER = [
+    { type: QuestionType.FLASHCARD, exampleId: 'ex', prompt: {} },
+    { type: QuestionType.CLOZE_MCQ, exampleId: 'ex', prompt: {} },
+    { type: QuestionType.DICTATION, exampleId: 'ex', prompt: {} },
+  ];
+
+  function vocabTreeQb(vocabs: unknown[]) {
+    const qb = {
+      whereInIds: jest.fn(),
+      leftJoinAndSelect: jest.fn(),
+      addOrderBy: jest.fn(),
+      getMany: jest.fn().mockResolvedValue(vocabs),
+    };
+    qb.whereInIds.mockReturnValue(qb);
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.addOrderBy.mockReturnValue(qb);
+    return qb;
+  }
+
+  async function buildService() {
+    const picker = {
+      pickDaily: jest.fn(),
+      pickByTopic: jest.fn(),
+      pickByDeck: jest.fn(),
+      pickReview: jest.fn().mockResolvedValue({
+        dueVocabIds: [VA, VB],
+        freshVocabIds: [],
+        emptyReason: null,
+      }),
+    };
+    const vocabs = [
+      { id: VA, lemma: 'alpha', senses: [] },
+      { id: VB, lemma: 'bravo', senses: [] },
+    ];
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        LearnService,
+        { provide: VocabPickerService, useValue: picker },
+        {
+          provide: ProgressService,
+          useValue: { enroll: jest.fn(), findNextDueAt: jest.fn() },
+        },
+        {
+          provide: QuestionBuilderService,
+          useValue: { buildLadder: jest.fn().mockResolvedValue(LADDER) },
+        },
+        { provide: AnswerGraderService, useValue: {} },
+        {
+          provide: HmacSignerService,
+          useValue: {
+            issue: jest
+              .fn()
+              .mockReturnValue({ nonce: 'n', issuedAtMs: 1, signature: 's' }),
+            verify: jest.fn(),
+          },
+        },
+        {
+          provide: learnConfig.KEY,
+          useValue: {
+            hmacSecret: 'x',
+            signatureTtlMs: 1800_000,
+            defaultSessionLimit: 15,
+            maxSessionLimit: 50,
+          },
+        },
+        {
+          provide: getRepositoryToken(Vocabulary),
+          useValue: { createQueryBuilder: jest.fn(() => vocabTreeQb(vocabs)) },
+        },
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({ id: USER_ID }),
+          },
+        },
+        {
+          provide: getRepositoryToken(UserWordProgress),
+          useValue: { find: jest.fn().mockResolvedValue([]) },
+        },
+      ],
+    }).compile();
+    return mod.get(LearnService);
+  }
+
+  it('orders items by question type (rounds), not by word', async () => {
+    const service = await buildService();
+    const res = await service.createSession(USER_ID, {
+      mode: LearnSessionMode.REVIEW,
+    });
+
+    // 2 words × 3 types.
+    expect(res.items).toHaveLength(6);
+    // Type-major in ascending ladder difficulty: both flashcards, then both
+    // cloze_mcq, then both dictation.
+    expect(res.items.map((i) => i.type)).toEqual([
+      QuestionType.FLASHCARD,
+      QuestionType.FLASHCARD,
+      QuestionType.CLOZE_MCQ,
+      QuestionType.CLOZE_MCQ,
+      QuestionType.DICTATION,
+      QuestionType.DICTATION,
+    ]);
+    // Each round holds both distinct words.
+    expect(new Set(res.items.slice(0, 2).map((i) => i.vocabularyId))).toEqual(
+      new Set([VA, VB]),
+    );
+  });
+
+  it('keeps per-word steps intact but non-contiguous (final/hardest step last)', async () => {
+    const service = await buildService();
+    const res = await service.createSession(USER_ID, {
+      mode: LearnSessionMode.REVIEW,
+    });
+
+    for (const vocabId of [VA, VB]) {
+      const indices = res.items
+        .map((item, idx) => ({ item, idx }))
+        .filter(({ item }) => item.vocabularyId === vocabId);
+      // Word appears once per round, spread across the session: 3 items
+      // spanning > 2 positions can't be three consecutive indices, so the
+      // word's steps are provably non-adjacent.
+      expect(indices).toHaveLength(3);
+      expect(indices[2].idx - indices[0].idx).toBeGreaterThan(2);
+
+      const steps = indices.map(({ item }) => item);
+      expect(steps.every((s) => s.stepCount === 3)).toBe(true);
+      // stepIndex is assigned in easy→hard ladder order regardless of round
+      // placement; the final step (the SRS-bearing one) is the hardest type.
+      const byStep = [...steps].sort((a, b) => a.stepIndex - b.stepIndex);
+      expect(byStep.map((s) => s.stepIndex)).toEqual([0, 1, 2]);
+      expect(byStep[2].type).toBe(QuestionType.DICTATION);
+    }
   });
 });

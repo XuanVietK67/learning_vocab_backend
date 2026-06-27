@@ -21,15 +21,17 @@ Canonical contract: [api-endpoints.md](../backend/api-endpoints.md) · conventio
 
 This is the flow the study screen should use. The server does the picking, question-building, grading, and spaced-repetition scheduling — the client just renders and reports answers.
 
-Each picked word is expanded into a **lesson ladder** — an ordered (easy→hard) run of questions for that word's mastery stage. `items[]` is the flat, ordered concatenation of every word's ladder; steps of one word share a `groupId` and carry `stepIndex`/`stepCount`.
+Each picked word is expanded into a **lesson ladder** — an ordered (easy→hard) run of questions for that word's mastery stage. `items[]` is then ordered **by question type (rounds)**: all words answer the first/easiest type, then all words answer the next type, and so on (the word order is re-shuffled each round). So a word's steps are **not adjacent** in `items[]` — they're spread one-per-round. Steps of one word still share a `groupId` and carry `stepIndex`/`stepCount`, so you can still track per-word progress; you just can't assume they arrive back-to-back. Rounds run in ascending difficulty, so a word's hardest (SRS-bearing) step is always its last occurrence.
 
 ```
 1. POST /v1/me/learn/session   { mode: "daily" }
         │  server picks due + fresh cards, auto-enrolls the fresh ones,
-        │  expands each word into its lesson ladder of signed questions
+        │  expands each word into its lesson ladder, then orders the
+        │  questions into type-major rounds (one type across all words)
         ▼
    response: { sessionId, items: [ signed question, ... ], emptyReason, nextDueAt }
-        │            (items are grouped by groupId, in stepIndex order)
+        │   (items run round by round: all of type A, then all of type B, …;
+        │    a word's steps share a groupId but are spread across rounds)
         │
         ├─ items empty? → show empty-state from `emptyReason`
         │                 (if "no_due_cards", `nextDueAt` says when to return)
@@ -52,7 +54,8 @@ Each picked word is expanded into a **lesson ladder** — an ordered (easy→har
 
 Key ideas:
 - **You never manually enroll in this path** — `POST /session` auto-enrolls any brand-new words it picks (`enrolledNewlyCount` tells you how many).
-- **A word's lesson is one SRS event.** A new word can be 5–7 questions, but only the final (hardest) step changes the schedule; earlier steps grade for feedback. Render the ladder in `stepIndex` order and treat completing the last step as "the card was reviewed."
+- **A word's lesson is one SRS event.** A new word can be 5–7 questions, but only the final (hardest) step changes the schedule; earlier steps grade for feedback. Just walk `items[]` in the order returned (it's already type-major); only the word's step where `stepIndex === stepCount - 1` reschedules, and treat completing it as "the card was reviewed."
+- **Items are type-major.** Walk `items[]` front to back. The `type` changes mark round boundaries (all words do one type, then the next); a word's `stepIndex`/`stepCount` still describe its own ladder even though its steps are spread across rounds. Don't reorder client-side and don't assume a word's steps are consecutive.
 
 ---
 
@@ -150,7 +153,7 @@ There are twelve types (a discriminated union). Switch on `prompt.type`:
 | `image_choice` | `imageUrl`, `options[]` | Show the image, pick the matching word from the options | the chosen option (a lemma) text |
 | `pronunciation` | `lemma`, `ipa`, `audioUrl` | Show the word (+ optional reference audio); user taps to speak it. **Run speech-to-text on the client** (Web Speech API / device dictation) and submit the transcript. | the speech-to-text transcript (graded leniently against the lemma) |
 
-Which types a word gets depends on its mastery stage, and the easiest band drops away as the word matures — but the frontend doesn't choose; it just renders whatever `type` arrives, in `stepIndex` order:
+Which types a word gets depends on its mastery stage, and the easiest band drops away as the word matures — but the frontend doesn't choose; it just renders whatever `type` arrives, in the order `items[]` returns them (type-major rounds):
 
 | Word stage | Question bands in the ladder |
 |---|---|
@@ -158,7 +161,7 @@ Which types a word gets depends on its mastery stage, and the easiest band drops
 | **learning / review** | recall: a sample of (`cloze_typing`, `dictation`, `pronunciation`) + the hardest band (`sense_disambiguation`) — recognition dropped |
 | **mastered** | hardest band only (`sense_disambiguation`) |
 
-Data availability (audio, a sense image, multiple senses, translation language) still skips individual types. Two caps shape the ladder: the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running, and **each band samples at most a couple of quiz types per word** (the flashcard study step is always kept) — so a single word's lesson stays short and different words exercise different types. The frontend just renders what arrives.
+Data availability (audio, a sense image, multiple senses, translation language) still skips individual types. Two caps shape the ladder: the cloze family (`cloze_mcq`/`cloze_typing`/`listening_cloze`) is capped per lesson so the same sentence isn't blanked several steps running, and **each band samples at most a couple of quiz types** (the flashcard study step is always kept) — so a word's lesson stays short. Within one session the sampling is shared, so the words in that session draw the **same** types (that's what makes each round cover the whole list); data gaps just drop a type for the word that's missing it. The frontend just renders what arrives.
 
 ---
 

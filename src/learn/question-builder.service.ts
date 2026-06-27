@@ -45,6 +45,13 @@ export interface BuildContext {
   // Skip examples whose IDs appear here. Optional — empty/absent means no
   // exclusions.
   excludeExampleIds?: Set<string>;
+  // Seed for the per-band optional-type sampling. When omitted, sampling is
+  // seeded by the word's id, so each word samples a different subset (the
+  // legacy per-word variety, still used by requeue). When the caller passes a
+  // session-wide key, every word in that session samples the *same* types per
+  // band — needed so type-major rounds contain the whole word list instead of
+  // fragmenting per word.
+  samplingKey?: string;
 }
 
 export interface BuiltQuestion {
@@ -90,7 +97,7 @@ export class QuestionBuilderService {
       const forced = inBand.filter((t) => ALWAYS_INCLUDE.has(t));
       const optional = deterministicShuffle(
         inBand.filter((t) => !ALWAYS_INCLUDE.has(t)),
-        `band-${band}-${ctx.vocab.id}`,
+        `band-${band}-${ctx.samplingKey ?? ctx.vocab.id}`,
       );
 
       const built: BuiltQuestion[] = [];

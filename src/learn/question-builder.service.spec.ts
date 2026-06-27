@@ -412,4 +412,23 @@ describe('QuestionBuilderService — per-band sampling cap', () => {
     const b = (await service.buildLadder(ctx())).map((q) => q.type);
     expect(a).toEqual(b);
   });
+
+  it('samplingKey makes two different words sample the same types (uniform rounds)', async () => {
+    const wordA = richVocab(); // id 'voc-1'
+    const wordB = { ...richVocab(), id: 'voc-2' };
+    const samplingKey = 'session-abc';
+    const a = (
+      await service.buildLadder(
+        makeCtx({ vocab: wordA, translationLang: 'vi', samplingKey }),
+      )
+    ).map((q) => q.type);
+    const b = (
+      await service.buildLadder(
+        makeCtx({ vocab: wordB, translationLang: 'vi', samplingKey }),
+      )
+    ).map((q) => q.type);
+    // Same key + same feasibility ⇒ the per-band sampling lands on the same
+    // types for both words, so a type-major round holds every word.
+    expect(b).toEqual(a);
+  });
 });
