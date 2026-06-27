@@ -110,7 +110,7 @@ When `items.length === 0`, render an empty state keyed off `emptyReason`:
 
 ### Branch B — `items.length > 0` → go to the question runner (Step 3)
 
-Keep the whole `items[]` array in client state as your run queue, **in the order returned**. Each item is a signed question; steps of the same word share a `groupId` and carry `stepIndex` / `stepCount`.
+Keep the whole `items[]` array in client state as your run queue, **in the order returned**. The order is **type-major (rounds)**: every word answers the first/easiest question type, then every word answers the next type (word order re-shuffled each round), and so on. So a word's steps are **spread across rounds, not adjacent**. Each item is a signed question; steps of the same word still share a `groupId` and carry `stepIndex` / `stepCount`, but you can't assume they arrive back-to-back — detect a new round when `item.type` changes.
 
 ---
 
@@ -126,7 +126,8 @@ This is the core study screen. Walk `items[]` in order. For each item:
 
 ### UI you can build from the envelope fields
 
-- **Lesson progress within a word:** `stepIndex` / `stepCount` (e.g. "Step 2 of 5") and `groupId` (group consecutive steps of the same `lemma` under one header/progress bar).
+- **Round progress:** items arrive grouped by `type` (a "round"). A new round starts when `item.type` differs from the previous item's — use it to show "Round 2 · Listening" and a per-round progress bar.
+- **Lesson progress within a word:** `stepIndex` / `stepCount` (e.g. "Step 2 of 5") still describe a word's own ladder even though its steps are spread across rounds. Use `groupId` to attribute an answer to a word (e.g. mark that word's dot complete) — **not** to group adjacent items, since a word's steps are no longer consecutive.
 - **Overall session progress:** index into `items[]` (plus any requeued items, see below).
 - **Per-step vs. per-word completion:** only the **final step** of a word (`stepIndex === stepCount - 1`) returns a populated `progress` object and reschedules the card. On earlier steps `progress` is `null` — that's expected; just show feedback and move on. Treat "completed the last step" as "this word was reviewed."
 

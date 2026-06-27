@@ -24,6 +24,9 @@ import {
 } from '@/learn/dto/session-item.dto';
 import { SubmitAnswerDto } from '@/learn/dto/submit-answer.dto';
 import { LearnSessionMode } from '@/learn/enums/learn-session-mode.enum';
+import { QuestionType } from '@/learn/enums/question-type.enum';
+import { deterministicShuffle } from '@/learn/cloze.util';
+import { ladderIndex } from '@/learn/question-bands';
 import { HmacSignerService } from '@/learn/hmac-signer.service';
 import {
   BuiltQuestion,
@@ -62,6 +65,9 @@ export class LearnService {
       this.cfg.maxSessionLimit,
     );
     const translationLang = dto.translationLang ?? null;
+    // One id per session, reused as the seed that makes type sampling and the
+    // per-round word shuffle uniform across the whole list (see step 5).
+    const sessionId = randomUUID();
 
     // Practice is a modifier on a content source (deck/topic), not a queue of
     // its own — daily and review are inherently due-driven, so the flag is
@@ -107,7 +113,7 @@ export class LearnService {
     if (allVocabIds.length === 0) {
       const reason: SessionEmptyReason = picked.emptyReason ?? 'no_due_cards';
       return {
-        sessionId: randomUUID(),
+        sessionId,
         mode: dto.mode,
         enrolledNewlyCount,
         emptyReason: reason,
@@ -135,8 +141,10 @@ export class LearnService {
     );
 
     // 5) Expand each word into its lesson ladder (easy→hard for its stage),
-    //    grouped and signed, in pick order.
-    const items: SessionItemDto[] = [];
+    //    grouped and signed. Passing the shared `sessionId` as `samplingKey`
+    //    makes every word sample the same optional types per band, so the
+    //    type-major rounds below contain the whole list instead of fragmenting.
+    const perWordItems: SessionItemDto[] = [];
     for (const vocabId of allVocabIds) {
       const vocab = vocabById.get(vocabId);
       if (!vocab) continue;
@@ -146,19 +154,29 @@ export class LearnService {
         vocab,
         status,
         translationLang,
+        samplingKey: sessionId,
       });
       if (built.length === 0) continue;
 
-      items.push(
+      perWordItems.push(
         ...this.assembleLessonItems({ userId, vocab, built, translationLang }),
       );
     }
+
+    // 6) Re-order word-major → type-major "rounds": the user answers one
+    //    question type across all words, then the next type. Rounds run in
+    //    ascending ladder difficulty, so each word still meets its questions
+    //    easy→hard (its hardest, SRS-bearing step stays last); within a round
+    //    the words are shuffled (seeded per round) so the order varies between
+    //    rounds. Each item keeps its per-word groupId/stepIndex/stepCount, so
+    //    grading and the final-step SRS reschedule are unaffected.
+    const items = this.toTypeMajorRounds(perWordItems, sessionId);
 
     const emptyReason: SessionEmptyReason | null =
       items.length === 0 ? (picked.emptyReason ?? 'no_due_cards') : null;
 
     return {
-      sessionId: randomUUID(),
+      sessionId,
       mode: dto.mode,
       enrolledNewlyCount,
       emptyReason,
@@ -294,6 +312,37 @@ export class LearnService {
   }
 
   // ------------------- internals -------------------
+
+  // Re-orders the per-word lesson items into type-major rounds: all items of
+  // one question type, then all of the next. Buckets run in ascending ladder
+  // difficulty (so a word still progresses easy→hard across rounds, keeping its
+  // hardest/SRS-bearing step last); within each bucket the items are shuffled
+  // with a per-round seed so the word order differs from round to round. Item
+  // envelopes (groupId/stepIndex/stepCount/signature) are carried over verbatim.
+  private toTypeMajorRounds(
+    perWordItems: SessionItemDto[],
+    sessionId: string,
+  ): SessionItemDto[] {
+    const byType = new Map<QuestionType, SessionItemDto[]>();
+    for (const item of perWordItems) {
+      const bucket = byType.get(item.type);
+      if (bucket) bucket.push(item);
+      else byType.set(item.type, [item]);
+    }
+    const orderedTypes = [...byType.keys()].sort(
+      (a, b) => ladderIndex(a) - ladderIndex(b),
+    );
+    const items: SessionItemDto[] = [];
+    for (const type of orderedTypes) {
+      items.push(
+        ...deterministicShuffle(
+          byType.get(type)!,
+          `round-${type}-${sessionId}`,
+        ),
+      );
+    }
+    return items;
+  }
 
   // Turns a word's built ladder into signed, grouped session items. All
   // steps of one word share a `groupId`; each carries its `stepIndex` /
