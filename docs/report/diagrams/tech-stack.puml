@@ -7,7 +7,7 @@ rectangle "FRONTEND\nNext.js + React + TypeScript\nTailwind CSS + shadcn/ui" as 
 rectangle "BACKEND (API)\nNestJS 11 + TypeScript\nController - Service - Repository (TypeORM)" as BE
 rectangle "XỬ LÝ NỀN\nWorker (BullMQ) + Redis" as WK
 database "PostgreSQL" as DB
-cloud "DỊCH VỤ AI / NGOÀI\nGemma 3, Edge TTS, Cloudinary,\nDV chấm phát âm, OAuth, SMTP" as EXT
+cloud "DỊCH VỤ AI / NGOÀI\nGemma 3, Groq (Llama 3.3), Edge TTS,\nCloudinary, DV chấm phát âm, OAuth, SMTP" as EXT
 FE --> BE : HTTPS / JSON (REST)
 BE --> DB
 BE --> WK : enqueue

@@ -106,6 +106,8 @@ sau tham chiếu trực tiếp.
     \hline
     \code{pronunciation} & \code{src/pronunciation} & \code{pronunciation-scoring.client.ts} (proxy tới vi dịch vụ), \code{pronunciation.service.ts}. \\
     \hline
+    \code{speaking-room} & \code{src/speaking-room} & \code{speaking-session.service.ts} (điều phối phiên), \code{speaking-turn.ts} (một lượt hội thoại), \code{session-report.ts} (báo cáo cuối phiên), \code{scenario-draft.ts}, \code{scenarios.service.ts}. \\
+    \hline
     \code{leaderboard} & \code{src/leaderboard} & \code{leaderboard.service.ts}. \\
     \hline
     \code{config} & \code{src/config} & Các tệp cấu hình theo miền: \code{learn.config.ts}, \code{gemma.config.ts}, \code{auth.config.ts}\ldots \\
@@ -146,7 +148,7 @@ trong từng controller:
 \section{Hiện thực hoá tầng dữ liệu}
 \label{sec:hien-thuc-du-lieu}
 
-Tầng dữ liệu hiện thực 17 bảng trong Bảng~\ref{tab:db-overview} thành các lớp
+Tầng dữ liệu hiện thực 20 bảng trong Bảng~\ref{tab:db-overview} thành các lớp
 \textit{thực thể} (entity) TypeORM. Mỗi thực thể khai báo khoá chính
 \code{uuid}, tên cột \code{snake_case} và kiểu \code{timestamptz} cho các mốc
 thời gian, đúng quy ước thiết kế ở Chương~\ref{chuong:phan-tich-thiet-ke}.
@@ -442,8 +444,10 @@ khách hiển thị lại từ ngay trong phiên mà không cần gọi lại AP
 Nhóm tính năng thứ hai làm nên tính "thông minh" của hệ thống là việc
 \textbf{tự động tạo và làm giàu nội dung} bằng các dịch vụ AI, giải quyết
 trực tiếp rào cản "tạo nội dung thủ công tốn công" đã nêu ở
-Chương~\ref{chuong:tong-quan}. Tất cả các tác vụ này đều nặng và phụ thuộc
-dịch vụ ngoài, nên được hiện thực trên một \textit{hạ tầng xử lý nền} chung.
+Chương~\ref{chuong:tong-quan}. Phần lớn các tác vụ này đều nặng và phụ thuộc
+dịch vụ ngoài, nên được hiện thực trên một \textit{hạ tầng xử lý nền} chung;
+riêng phòng luyện nói (mục~\ref{subsec:impl-speaking}) gọi LLM \textit{đồng bộ}
+theo lượt vì người học chờ phản hồi tức thì.
 
 \subsection{Hạ tầng xử lý nền bất đồng bộ}
 \label{subsec:impl-worker}
@@ -654,6 +658,65 @@ $\rightarrow$ \code{400}, còn không kết nối được / lỗi máy chủ $\
 Việc cô lập này giữ cho tiến trình backend chính không phải mang các phụ thuộc
 nặng về xử lý âm thanh.
 
+\subsection{Hội thoại luyện nói theo kịch bản bằng LLM}
+\label{subsec:impl-speaking}
+
+Phòng luyện nói (use case ở Bảng~\ref{tab:uc-speaking}) là tính năng AI duy
+nhất chạy \textit{đồng bộ trong luồng API} thay vì qua worker nền: một cuộc
+hội thoại theo lượt đòi hỏi phản hồi tức thì nên không thể chờ thăm dò. Hệ
+thống dùng nền tảng \textbf{Groq} với các mô hình \textbf{Llama~3.3}
+\cite{grattafiori2024llama3} và chia tính năng thành ba khối: soạn kịch bản
+(quản trị), vòng lặp hội thoại theo lượt, và sinh báo cáo cuối phiên.
+
+\paragraph{Bản sao kịch bản và khoá phiên bản.} Khi người học bắt đầu một
+phiên (\code{SpeakingSessionService.start}), hệ thống \textit{chốt} một bản
+sao (\code{scenario_snapshot}, kiểu \code{jsonb}) các trường văn bản của kịch
+bản cùng trình độ CEFR và danh sách \textit{từ mục tiêu} đã được giải
+nghĩa thành lemma. Nhờ vậy, dù quản trị viên sửa kịch bản (làm tăng cột
+\code{version}) hay người dùng đổi hồ sơ \textit{giữa chừng}, cuộc hội thoại
+đang diễn ra vẫn giữ nguyên thông số nó khởi đầu. Từ mục tiêu được lọc theo
+đúng quy tắc khả dụng của phân hệ luyện tập (từ hệ thống đã duyệt hoặc từ
+riêng của người học); các từ không hợp lệ bị loại và báo lại cho máy khách.
+Lượt~0 lưu sẵn \textit{câu mở đầu} của AI lấy thẳng từ kịch bản --- không tốn
+một lời gọi LLM nào.
+
+\paragraph{Một lượt hội thoại.} Mỗi lượt (\code{takeTurn},
+Hình~\ref{fig:seq-speaking-turn}) đọc lại toàn bộ các lượt đã lưu, ghép thành
+\textit{ngữ cảnh} rồi gọi Groq \textit{một lần}. Mô hình được yêu cầu trả về
+\textbf{JSON có cấu trúc} gồm: \code{reply} (câu AI nói tiếp), \code{corrections}
+(danh sách gợi ý chỉnh lỗi cho lượt vừa rồi của người học) và
+\code{usedTargetWords} (các từ mục tiêu AI đã khéo léo đưa vào). Cả lượt của
+người học lẫn lượt của AI được lưu vào \code{speaking_turns} theo \code{turn_index}
+tăng dần. Nếu Groq lỗi hoặc hết thời gian chờ, hệ thống trả \code{503} và
+\textit{không} ghi lượt hỏng, nên người học có thể thử lại mà không làm rối
+mạch hội thoại.
+
+\paragraph{Bảo vệ tài nguyên dùng chung.} Vì gọi LLM đồng bộ trên khoá dùng
+chung, tính năng được ràng buộc hai lớp hạn mức: \textit{số phiên theo ngày}
+cho mỗi người dùng (kiểm ở \code{start}) và \textit{số lượt tối đa mỗi phiên}
+(kiểm ở \code{takeTurn}); vượt lần lượt trả về \code{429} và \code{400}. Để
+chịu lỗi hạn mức phía nhà cung cấp, lớp gọi Groq được cấu hình \textit{nhiều
+khoá API} và \textit{xoay vòng khoá} khi gặp 429/503 --- cùng cơ chế đã áp
+dụng để tăng độ bền cho pipeline làm giàu bằng Gemma.
+
+\paragraph{Báo cáo cuối phiên.} Khi kết thúc (\code{end}), hệ thống chuyển
+phiên sang \code{ended} rồi gọi LLM \textit{một lần} trên toàn bộ hội thoại
+--- lần này dùng \textit{mô hình mạnh hơn} mô hình hội thoại để ưu tiên chất
+lượng đánh giá --- sinh báo cáo gồm: tóm tắt khích lệ, các lỗi tiêu biểu kèm
+cách nói tốt hơn, danh sách từ mục tiêu \textit{đã dùng}/\textit{bỏ lỡ},
+trình độ CEFR ước lượng và gợi ý luyện tiếp. Quá trình sinh báo cáo
+\textbf{idempotent} và \textit{không bao giờ ném lỗi ra ngoài}: thất bại được
+ghi nhận là \code{report_status = failed} để máy khách có thể yêu cầu sinh
+lại bằng một lời gọi \code{GET} mà không làm phiên kẹt ở trạng thái hỏng.
+
+\paragraph{Soạn kịch bản có AI trợ giúp.} Ở khu vực quản trị, ngoài thao tác
+CRUD kịch bản thông thường, một điểm cuối \textit{nháp bằng AI}
+(\code{POST /v1/admin/scenarios/draft}) nhận một mô tả ngắn rồi gọi Groq sinh
+một bản nháp kịch bản đầy đủ (vai, bối cảnh, mục tiêu, câu mở đầu, cụm từ gợi
+ý) \textit{chưa lưu} để quản trị viên xem lại, chỉnh sửa rồi mới tạo. Kịch bản
+chỉ hiển thị cho người học sau khi được \textit{xuất bản}
+(\code{status = published}).
+
 % =====================================================================
 \section{Theo dõi tiến độ và tạo động lực tự động}
 \label{sec:tien-do}
@@ -718,7 +781,7 @@ các phần chính của ứng dụng tới tệp hiện thực then chốt.
     \hline
     Tầng đọc dữ liệu & \code{src/lib/me/} & Các hàm đọc bọc \code{cache()} của React (\code{getStats}, \code{getMe}\ldots) chạy phía máy chủ. \\
     \hline
-    Luyện tập chủ động & \code{src/app/(app)/practice/} & Màn hình luyện viết (thăm dò kết quả bất đồng bộ) và luyện nói. \\
+    Luyện tập chủ động & \code{src/app/(app)/practice/} & Màn hình luyện viết câu (thăm dò kết quả bất đồng bộ), luyện phát âm và phòng luyện nói (hội thoại theo lượt). \\
     \hline
     Khu vực quản trị & \code{src/app/(admin)/admin/} & Trình soạn từ vựng, hàng đợi duyệt nội dung AI, nhập/làm giàu hàng loạt. \\
     \hline
@@ -975,7 +1038,11 @@ phi trạng thái an toàn bằng chữ ký HMAC. Ở phía \textit{nội dung},
 năng AI --- làm giàu từ điển bằng LLM kết hợp từ điển, nhập hàng loạt từ nhiều
 định dạng, sinh âm thanh và hình ảnh tự động, chấm điểm câu và phát âm --- đều
 chạy trên một hạ tầng xử lý nền bất đồng bộ có tính idempotent, biết thử lại,
-tự giới hạn tần suất và suy giảm có kiểm soát. Ở phía \textit{máy khách}, một
+tự giới hạn tần suất và suy giảm có kiểm soát. Bổ sung cho nhóm này, \textit{phòng
+luyện nói} đưa LLM (Groq/Llama~3.3) vào một vòng hội thoại nhập vai theo lượt
+chạy đồng bộ, với cơ chế chốt bản sao kịch bản theo phiên bản, hạn mức phiên/lượt
+bảo vệ khoá dùng chung và báo cáo phản hồi cuối phiên sinh lại được. Ở phía
+\textit{máy khách}, một
 ứng dụng Next.js theo App Router tiêu thụ toàn bộ các API trên qua một tầng
 truy cập phía máy chủ, quản lý phiên bằng cookie httpOnly với cơ chế xoay token
 tự động, và điều phối phiên học bằng một bộ rút gọn thuần tách khỏi React. Tất
