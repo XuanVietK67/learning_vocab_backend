@@ -33,6 +33,7 @@ import {
 } from '@/vocabularies/enrichment/gemma-enricher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import { CefrEstimatorService } from '@/vocabularies/enrichment/sources/cefr-estimator.service';
+import { ExampleRetrievalService } from '@/vocabularies/enrichment/sources/example-retrieval.service';
 import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
@@ -64,6 +65,14 @@ const BATCH_LINGER_MS = parseInt(
 
 const MAX_SENSES_PER_POS = 3;
 const DICTIONARY_TIMEOUT_MS = 10_000;
+
+// How many retrieved corpus sentences to attach per sense. The pool is fetched
+// once per word and distributed across its senses (a bare concordance can't tell
+// senses apart), so each sense shows distinct real usage.
+const EXAMPLES_PER_SENSE = parseInt(
+  process.env.ENRICHMENT_EXAMPLES_PER_SENSE ?? '2',
+  10,
+);
 
 // Base delay for the job's exponential retry backoff. The producer sets
 // attempts + backoff:{type:'custom'} and BullMQ calls enrichmentBackoff for each
@@ -117,6 +126,7 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly membership: DeckMembershipService,
     private readonly cache: EnrichmentCacheService,
     private readonly cefr: CefrEstimatorService,
+    private readonly examples: ExampleRetrievalService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -361,15 +371,38 @@ export class EnrichmentProcessor extends WorkerHost {
       enriched.posGroups.map((g) => [g.partOfSpeech, g.senses]),
     );
 
+    // Examples come from the corpus, not Gemma: fetch one ranked pool for the
+    // whole word and hand each sense a distinct slice (a bare concordance can't
+    // disambiguate senses). When the pool runs out — notably before the corpus
+    // is loaded — each sense falls back to the Gemma examples already present in
+    // this batch (fetched anyway for gloss/translation, so no extra call), so
+    // examples never regress while the corpus is being populated.
+    const totalSenses = inputGroups.reduce((n, g) => n + g.capped.length, 0);
+    const corpusPool = await this.examples.retrieve(
+      language,
+      lemma,
+      totalSenses * EXAMPLES_PER_SENSE,
+    );
+    let exampleCursor = 0;
+
     const drafts: DraftInput[] = [];
     for (const { group, pos, capped } of inputGroups) {
       const enrichedSenses = sensesByPos.get(pos);
       if (!enrichedSenses) continue;
 
       const senses: PersistSense[] = capped.map((dictSense, i) => {
-        const examples = (enrichedSenses[i]?.examples ?? []).map(
-          (sentence) => ({ sentence, source: 'gemma' }),
+        const slice = corpusPool.slice(
+          exampleCursor,
+          exampleCursor + EXAMPLES_PER_SENSE,
         );
+        exampleCursor += slice.length;
+        const examples =
+          slice.length > 0
+            ? slice.map((sentence) => ({ sentence, source: 'corpus' }))
+            : (enrichedSenses[i]?.examples ?? []).map((sentence) => ({
+                sentence,
+                source: 'gemma',
+              }));
         // Keep the dictionary's own example sentence too, when present.
         if (dictSense.example) {
           examples.push({ sentence: dictSense.example, source: 'dictionary' });
