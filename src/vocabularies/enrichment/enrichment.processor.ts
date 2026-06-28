@@ -34,6 +34,11 @@ import {
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import { CefrEstimatorService } from '@/vocabularies/enrichment/sources/cefr-estimator.service';
 import { ExampleRetrievalService } from '@/vocabularies/enrichment/sources/example-retrieval.service';
+import {
+  ResolvedTranslation,
+  TranslationService,
+} from '@/vocabularies/enrichment/sources/translation.service';
+import { WiktionaryDictionaryProvider } from '@/vocabularies/enrichment/sources/wiktionary-dictionary.provider';
 import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
@@ -94,6 +99,20 @@ export function enrichmentBackoff(attemptsMade: number): number {
   return Math.round(exp * (0.5 + Math.random() * 0.5));
 }
 
+// Cheap extractive gloss (a 1-4 word label) from a definition, used in place of
+// Gemma's gloss. Drops a leading article/"to", keeps the first few words, trims
+// trailing punctuation. Returns null for an empty definition.
+export function deriveGloss(definition: string | undefined): string | null {
+  if (!definition) return null;
+  const cleaned = definition.trim().replace(/^(a|an|the|to)\s+/i, '');
+  const gloss = cleaned
+    .split(/\s+/)
+    .slice(0, 4)
+    .join(' ')
+    .replace(/[.,;:]+$/, '');
+  return gloss ? gloss.slice(0, 128) : null;
+}
+
 @Processor(ENRICHMENT_QUEUE, {
   concurrency: CONCURRENCY,
   limiter: { max: RPM, duration: 60_000 },
@@ -127,6 +146,8 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly cache: EnrichmentCacheService,
     private readonly cefr: CefrEstimatorService,
     private readonly examples: ExampleRetrievalService,
+    private readonly translations: TranslationService,
+    private readonly wiktionary: WiktionaryDictionaryProvider,
     private readonly config: ConfigService,
   ) {
     super();
@@ -261,14 +282,35 @@ export class EnrichmentProcessor extends WorkerHost {
     return target;
   }
 
-  // Wrap a Gemma-produced translation as a single PersistTranslation, or omit it
-  // when there is no target language or the model returned nothing.
+  // Build the per-sense translation: prefer the resolved lexicon/MT result, then
+  // fall back to Gemma's per-sense translation, else omit (no target language or
+  // nothing resolved). The lexicon result carries its own provenance source.
   private buildTranslations(
     language: string | null,
-    translation: string | undefined,
+    resolved: ResolvedTranslation | null,
+    gemmaFallback: string | undefined,
   ): PersistTranslation[] | undefined {
-    if (!language || !translation) return undefined;
-    return [{ language, translation, source: 'gemma' }];
+    if (!language) return undefined;
+    if (resolved) {
+      return [
+        {
+          language,
+          translation: resolved.translation,
+          source: resolved.source,
+        },
+      ];
+    }
+    if (gemmaFallback) {
+      return [{ language, translation: gemmaFallback, source: 'gemma' }];
+    }
+    return undefined;
+  }
+
+  // Master switch for the Gemma fallback. While true (default), the worker still
+  // calls Gemma to fill fields no dedicated source covered; false makes the
+  // pipeline fully Gemma-free (missing fields are left empty/editable).
+  private gemmaFallbackEnabled(): boolean {
+    return this.config.get<boolean>('enrichment.useGemmaFallback', true);
   }
 
   // Cache key bucket so only same-language/same-translation requests batch.
@@ -310,25 +352,41 @@ export class EnrichmentProcessor extends WorkerHost {
     return drafts;
   }
 
-  // Build draft inputs from the dictionary (English) plus Gemma, falling back to
-  // Gemma-only when the dictionary has no entry or the language is non-English.
+  // Resolve a dictionary entry, then build drafts from it. English tries the
+  // dictionary API first; any language then falls back to the locally-loaded
+  // multilingual dictionary (Wiktionary). Only when both miss do we resort to
+  // the Gemma scratch path.
   private async generateDrafts(
     lemma: string,
     language: string,
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
+    let groups: DictionaryPosGroup[] | null = null;
     if (language === 'en') {
-      const groups = await fetchDictionaryEntry(lemma, DICTIONARY_TIMEOUT_MS);
-      if (groups) {
-        return this.draftsFromDictionary(
-          lemma,
-          language,
-          groups,
-          translationLanguage,
-        );
-      }
+      groups = await fetchDictionaryEntry(lemma, DICTIONARY_TIMEOUT_MS);
     }
-    return this.draftsFromScratch(lemma, language, translationLanguage);
+    if (!groups) {
+      groups = await this.wiktionary.lookup(language, lemma);
+    }
+    if (groups) {
+      return this.draftsFromDictionary(
+        lemma,
+        language,
+        groups,
+        translationLanguage,
+      );
+    }
+    // No dictionary entry anywhere. The scratch path is Gemma, so take it only
+    // when the fallback is enabled; otherwise produce nothing (the job is marked
+    // failed) rather than silently calling Gemma.
+    if (this.gemmaFallbackEnabled()) {
+      return this.draftsFromScratch(lemma, language, translationLanguage);
+    }
+    this.logger.warn(
+      `no dictionary entry for "${lemma}" (${language}) and Gemma fallback ` +
+        `disabled; no drafts produced`,
+    );
+    return [];
   }
 
   private async draftsFromDictionary(
@@ -337,7 +395,8 @@ export class EnrichmentProcessor extends WorkerHost {
     groups: DictionaryPosGroup[],
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    // Resolve POS + cap senses up front; one batched Gemma call covers them all.
+    // Resolve POS + cap senses up front; the optional Gemma call (when the
+    // fallback is enabled) covers them all in a single batch.
     const inputGroups = groups
       .map((group) => {
         const pos = mapPartOfSpeech(group.partOfSpeechRaw);
@@ -351,32 +410,33 @@ export class EnrichmentProcessor extends WorkerHost {
       .filter((g): g is NonNullable<typeof g> => g !== null);
     if (inputGroups.length === 0) return [];
 
-    const wordInput: BatchExamplesWordInput = {
-      lemma,
-      language,
-      translationLanguage: translationLanguage ?? undefined,
-      posGroups: inputGroups.map(({ pos, capped }) => ({
-        partOfSpeech: pos,
-        senses: capped.map((s) => ({ definition: s.definition })),
-      })),
-    };
-
-    const enriched = await this.examplesBatcher.submit(
-      this.batchKey(language, translationLanguage),
-      wordInput,
-    );
-    // The parser keeps posGroups aligned to the request and guarantees enough
-    // senses per group, so this lookup always resolves for a successful word.
-    const sensesByPos = new Map(
-      enriched.posGroups.map((g) => [g.partOfSpeech, g.senses]),
-    );
+    // Gemma is an optional fallback: when enabled it supplies gloss, example, and
+    // per-sense translation candidates for fields the dedicated sources miss.
+    // When disabled (steady state) the dictionary path is fully Gemma-free.
+    const useGemma = this.gemmaFallbackEnabled();
+    const enriched = useGemma
+      ? await this.examplesBatcher.submit(
+          this.batchKey(language, translationLanguage),
+          {
+            lemma,
+            language,
+            translationLanguage: translationLanguage ?? undefined,
+            posGroups: inputGroups.map(({ pos, capped }) => ({
+              partOfSpeech: pos,
+              senses: capped.map((s) => ({ definition: s.definition })),
+            })),
+          },
+        )
+      : null;
+    const sensesByPos = enriched
+      ? new Map(enriched.posGroups.map((g) => [g.partOfSpeech, g.senses]))
+      : null;
 
     // Examples come from the corpus, not Gemma: fetch one ranked pool for the
     // whole word and hand each sense a distinct slice (a bare concordance can't
-    // disambiguate senses). When the pool runs out — notably before the corpus
-    // is loaded — each sense falls back to the Gemma examples already present in
-    // this batch (fetched anyway for gloss/translation, so no extra call), so
-    // examples never regress while the corpus is being populated.
+    // disambiguate senses). When the pool runs out and Gemma is enabled, each
+    // sense falls back to the Gemma examples in this batch (fetched anyway, so no
+    // extra call); otherwise it keeps only its dictionary example.
     const totalSenses = inputGroups.reduce((n, g) => n + g.capped.length, 0);
     const corpusPool = await this.examples.retrieve(
       language,
@@ -384,11 +444,28 @@ export class EnrichmentProcessor extends WorkerHost {
       totalSenses * EXAMPLES_PER_SENSE,
     );
     let exampleCursor = 0;
+    // Coverage counters (observability): how often each non-Gemma source hit, so
+    // the Gemma-fallback reliance is measurable before flipping it off for good.
+    let corpusSenses = 0;
+    let lexiconTranslations = 0;
+    let lexiconCefr = 0;
 
     const drafts: DraftInput[] = [];
     for (const { group, pos, capped } of inputGroups) {
-      const enrichedSenses = sensesByPos.get(pos);
-      if (!enrichedSenses) continue;
+      const enrichedSenses = sensesByPos?.get(pos);
+
+      // Word-level translation for this POS (shared by all its senses): a bare
+      // lexicon/MT translation can't be sense-specific. Falls back to Gemma's
+      // per-sense translation inside buildTranslations when this is null.
+      const resolvedTranslation = translationLanguage
+        ? await this.translations.translate(
+            language,
+            translationLanguage,
+            lemma,
+            pos,
+          )
+        : null;
+      if (resolvedTranslation) lexiconTranslations++;
 
       const senses: PersistSense[] = capped.map((dictSense, i) => {
         const slice = corpusPool.slice(
@@ -396,10 +473,11 @@ export class EnrichmentProcessor extends WorkerHost {
           exampleCursor + EXAMPLES_PER_SENSE,
         );
         exampleCursor += slice.length;
+        if (slice.length > 0) corpusSenses++;
         const examples =
           slice.length > 0
             ? slice.map((sentence) => ({ sentence, source: 'corpus' }))
-            : (enrichedSenses[i]?.examples ?? []).map((sentence) => ({
+            : (enrichedSenses?.[i]?.examples ?? []).map((sentence) => ({
                 sentence,
                 source: 'gemma',
               }));
@@ -408,22 +486,27 @@ export class EnrichmentProcessor extends WorkerHost {
           examples.push({ sentence: dictSense.example, source: 'dictionary' });
         }
         return {
-          gloss: enrichedSenses[i]?.gloss || null,
+          // Gemma's gloss when present, else a cheap extractive gloss from the
+          // definition — no model needed.
+          gloss:
+            enrichedSenses?.[i]?.gloss || deriveGloss(dictSense.definition),
           definition: dictSense.definition,
           synonyms: dictSense.synonyms,
           antonyms: dictSense.antonyms,
           examples,
           translations: this.buildTranslations(
             translationLanguage,
-            enrichedSenses[i]?.translation,
+            resolvedTranslation,
+            enrichedSenses?.[i]?.translation,
           ),
         };
       });
 
-      // CEFR comes from the deterministic wordlist when available; Gemma's
-      // estimate is only the fallback for words the lexicon doesn't cover.
-      const cefrLevel =
-        (await this.cefr.estimate(language, lemma, pos)) ?? enriched.cefr;
+      // CEFR from the deterministic wordlist; Gemma's estimate is the fallback,
+      // and null (unknown, editable) when neither is available.
+      const estimatedCefr = await this.cefr.estimate(language, lemma, pos);
+      if (estimatedCefr) lexiconCefr++;
+      const cefrLevel = estimatedCefr ?? enriched?.cefr ?? null;
       drafts.push({
         partOfSpeech: pos,
         ipa: group.ipa,
@@ -431,6 +514,13 @@ export class EnrichmentProcessor extends WorkerHost {
         senses,
       });
     }
+
+    this.logger.log(
+      `enriched "${lemma}" (${language}) via dictionary [gemma=${useGemma}]: ` +
+        `corpus ${corpusSenses}/${totalSenses} senses, ` +
+        `lexicon-translation ${lexiconTranslations}/${inputGroups.length} POS, ` +
+        `lexicon-cefr ${lexiconCefr}/${inputGroups.length} POS`,
+    );
     return drafts;
   }
 
@@ -464,26 +554,37 @@ export class EnrichmentProcessor extends WorkerHost {
     }
 
     return Promise.all(
-      groups.map(async (group) => ({
-        partOfSpeech: group.partOfSpeech,
-        ipa: composedIpa ?? group.ipa,
-        // Deterministic wordlist first; Gemma's per-word CEFR is the fallback.
-        cefrLevel:
-          (await this.cefr.estimate(language, lemma, group.partOfSpeech)) ??
-          group.cefr,
-        senses: group.senses.map((s) => ({
-          gloss: s.gloss || null,
-          definition: s.definition,
-          examples: s.examples.map((sentence) => ({
-            sentence,
-            source: 'gemma',
+      groups.map(async (group) => {
+        const resolvedTranslation = translationLanguage
+          ? await this.translations.translate(
+              language,
+              translationLanguage,
+              lemma,
+              group.partOfSpeech,
+            )
+          : null;
+        return {
+          partOfSpeech: group.partOfSpeech,
+          ipa: composedIpa ?? group.ipa,
+          // Deterministic wordlist first; Gemma's per-word CEFR is the fallback.
+          cefrLevel:
+            (await this.cefr.estimate(language, lemma, group.partOfSpeech)) ??
+            group.cefr,
+          senses: group.senses.map((s) => ({
+            gloss: s.gloss || null,
+            definition: s.definition,
+            examples: s.examples.map((sentence) => ({
+              sentence,
+              source: 'gemma',
+            })),
+            translations: this.buildTranslations(
+              translationLanguage,
+              resolvedTranslation,
+              s.translation,
+            ),
           })),
-          translations: this.buildTranslations(
-            translationLanguage,
-            s.translation,
-          ),
-        })),
-      })),
+        };
+      }),
     );
   }
 

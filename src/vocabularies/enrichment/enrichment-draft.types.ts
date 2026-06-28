@@ -15,6 +15,8 @@ import { PersistSense } from '@/vocabularies/vocabulary-persistence.service';
 export interface DraftInput {
   partOfSpeech: PartOfSpeech;
   ipa: string | null;
-  cefrLevel: ProficiencyLevel;
+  // Null when no source (CEFR wordlist, then Gemma) could estimate it — the word
+  // is created with an unknown, editable level rather than blocking enrichment.
+  cefrLevel: ProficiencyLevel | null;
   senses: PersistSense[];
 }
