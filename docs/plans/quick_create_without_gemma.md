@@ -1,6 +1,7 @@
 # Quick-create vocabulary without Gemma (production-ready)
 
-**Status:** proposed · **Owner:** vocabularies module · **Created:** 2026-06-28
+**Status:** implemented (phases 1–5; Gemma fallback on by default until data is
+loaded) · **Owner:** vocabularies module · **Created:** 2026-06-28
 
 ## Goal
 
@@ -182,15 +183,24 @@ order:
 
 ## Rollout
 
-Phased, behind a config flag, keeping Gemma retirable rather than ripped out:
+Phased, behind the `enrichment.useGemmaFallback` config flag, keeping Gemma
+retirable rather than ripped out. All phases are now implemented:
 
-1. **Non-generative fields first** — CEFR (frequency), examples (retrieval),
-   translation (lookup+MT). Run alongside Gemma; compare outputs.
-2. **Multilingual dictionary** (Wiktionary) to shrink the from-scratch path.
-3. **Flip the default** so the steady-state path is Gemma-free; Gemma only fires
-   on a flagged total-miss fallback.
-4. **Remove Gemma** (enricher, batcher, RPM/key-rotation config) once miss-rate
-   metrics show the fallback is effectively never hit.
+1. ✅ **Non-generative fields first** — CEFR (`cefr_lexicon`), examples
+   (`corpus_sentence` retrieval), translation (`bilingual_lexicon` + OPUS-MT).
+2. ✅ **Multilingual dictionary** (`dictionary_entry`/Wiktionary) routes
+   non-English + dictionary-miss words through the dictionary path; the
+   dictionary path itself is Gemma-optional (extractive gloss, nullable CEFR).
+3. ✅ **The flag** gates every Gemma call (the dictionary batch and the scratch
+   path). **The default stays `true`** so a fresh deploy still falls back to
+   Gemma — flipping to Gemma-free is an **ops action**, not a code default:
+   set `ENRICHMENT_USE_GEMMA_FALLBACK=false` **after** loading the data
+   (`cefr_lexicon`, `corpus_sentence`, `bilingual_lexicon`, `dictionary_entry`),
+   or the missed fields come back empty/editable. Per-word coverage is logged
+   (corpus/lexicon hit counts) so the fallback reliance is measurable first.
+4. ⏳ **Remove Gemma** (enricher, batcher) — deferred until production metrics
+   show the fallback is effectively never hit. Note `gemma.config.ts` is shared
+   with practice scoring, so it stays regardless.
 
 ## Evaluation / success criteria
 

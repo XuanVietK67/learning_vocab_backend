@@ -376,7 +376,17 @@ export class EnrichmentProcessor extends WorkerHost {
         translationLanguage,
       );
     }
-    return this.draftsFromScratch(lemma, language, translationLanguage);
+    // No dictionary entry anywhere. The scratch path is Gemma, so take it only
+    // when the fallback is enabled; otherwise produce nothing (the job is marked
+    // failed) rather than silently calling Gemma.
+    if (this.gemmaFallbackEnabled()) {
+      return this.draftsFromScratch(lemma, language, translationLanguage);
+    }
+    this.logger.warn(
+      `no dictionary entry for "${lemma}" (${language}) and Gemma fallback ` +
+        `disabled; no drafts produced`,
+    );
+    return [];
   }
 
   private async draftsFromDictionary(
@@ -385,7 +395,8 @@ export class EnrichmentProcessor extends WorkerHost {
     groups: DictionaryPosGroup[],
     translationLanguage: string | null,
   ): Promise<DraftInput[]> {
-    // Resolve POS + cap senses up front; one batched Gemma call covers them all.
+    // Resolve POS + cap senses up front; the optional Gemma call (when the
+    // fallback is enabled) covers them all in a single batch.
     const inputGroups = groups
       .map((group) => {
         const pos = mapPartOfSpeech(group.partOfSpeechRaw);
@@ -433,6 +444,11 @@ export class EnrichmentProcessor extends WorkerHost {
       totalSenses * EXAMPLES_PER_SENSE,
     );
     let exampleCursor = 0;
+    // Coverage counters (observability): how often each non-Gemma source hit, so
+    // the Gemma-fallback reliance is measurable before flipping it off for good.
+    let corpusSenses = 0;
+    let lexiconTranslations = 0;
+    let lexiconCefr = 0;
 
     const drafts: DraftInput[] = [];
     for (const { group, pos, capped } of inputGroups) {
@@ -449,6 +465,7 @@ export class EnrichmentProcessor extends WorkerHost {
             pos,
           )
         : null;
+      if (resolvedTranslation) lexiconTranslations++;
 
       const senses: PersistSense[] = capped.map((dictSense, i) => {
         const slice = corpusPool.slice(
@@ -456,6 +473,7 @@ export class EnrichmentProcessor extends WorkerHost {
           exampleCursor + EXAMPLES_PER_SENSE,
         );
         exampleCursor += slice.length;
+        if (slice.length > 0) corpusSenses++;
         const examples =
           slice.length > 0
             ? slice.map((sentence) => ({ sentence, source: 'corpus' }))
@@ -486,10 +504,9 @@ export class EnrichmentProcessor extends WorkerHost {
 
       // CEFR from the deterministic wordlist; Gemma's estimate is the fallback,
       // and null (unknown, editable) when neither is available.
-      const cefrLevel =
-        (await this.cefr.estimate(language, lemma, pos)) ??
-        enriched?.cefr ??
-        null;
+      const estimatedCefr = await this.cefr.estimate(language, lemma, pos);
+      if (estimatedCefr) lexiconCefr++;
+      const cefrLevel = estimatedCefr ?? enriched?.cefr ?? null;
       drafts.push({
         partOfSpeech: pos,
         ipa: group.ipa,
@@ -497,6 +514,13 @@ export class EnrichmentProcessor extends WorkerHost {
         senses,
       });
     }
+
+    this.logger.log(
+      `enriched "${lemma}" (${language}) via dictionary [gemma=${useGemma}]: ` +
+        `corpus ${corpusSenses}/${totalSenses} senses, ` +
+        `lexicon-translation ${lexiconTranslations}/${inputGroups.length} POS, ` +
+        `lexicon-cefr ${lexiconCefr}/${inputGroups.length} POS`,
+    );
     return drafts;
   }
 
