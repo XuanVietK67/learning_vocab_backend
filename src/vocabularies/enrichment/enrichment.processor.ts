@@ -34,6 +34,10 @@ import {
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import { CefrEstimatorService } from '@/vocabularies/enrichment/sources/cefr-estimator.service';
 import { ExampleRetrievalService } from '@/vocabularies/enrichment/sources/example-retrieval.service';
+import {
+  ResolvedTranslation,
+  TranslationService,
+} from '@/vocabularies/enrichment/sources/translation.service';
 import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
@@ -127,6 +131,7 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly cache: EnrichmentCacheService,
     private readonly cefr: CefrEstimatorService,
     private readonly examples: ExampleRetrievalService,
+    private readonly translations: TranslationService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -261,14 +266,28 @@ export class EnrichmentProcessor extends WorkerHost {
     return target;
   }
 
-  // Wrap a Gemma-produced translation as a single PersistTranslation, or omit it
-  // when there is no target language or the model returned nothing.
+  // Build the per-sense translation: prefer the resolved lexicon/MT result, then
+  // fall back to Gemma's per-sense translation, else omit (no target language or
+  // nothing resolved). The lexicon result carries its own provenance source.
   private buildTranslations(
     language: string | null,
-    translation: string | undefined,
+    resolved: ResolvedTranslation | null,
+    gemmaFallback: string | undefined,
   ): PersistTranslation[] | undefined {
-    if (!language || !translation) return undefined;
-    return [{ language, translation, source: 'gemma' }];
+    if (!language) return undefined;
+    if (resolved) {
+      return [
+        {
+          language,
+          translation: resolved.translation,
+          source: resolved.source,
+        },
+      ];
+    }
+    if (gemmaFallback) {
+      return [{ language, translation: gemmaFallback, source: 'gemma' }];
+    }
+    return undefined;
   }
 
   // Cache key bucket so only same-language/same-translation requests batch.
@@ -390,6 +409,18 @@ export class EnrichmentProcessor extends WorkerHost {
       const enrichedSenses = sensesByPos.get(pos);
       if (!enrichedSenses) continue;
 
+      // Word-level translation for this POS (shared by all its senses): a bare
+      // lexicon/MT translation can't be sense-specific. Falls back to Gemma's
+      // per-sense translation inside buildTranslations when this is null.
+      const resolvedTranslation = translationLanguage
+        ? await this.translations.translate(
+            language,
+            translationLanguage,
+            lemma,
+            pos,
+          )
+        : null;
+
       const senses: PersistSense[] = capped.map((dictSense, i) => {
         const slice = corpusPool.slice(
           exampleCursor,
@@ -415,6 +446,7 @@ export class EnrichmentProcessor extends WorkerHost {
           examples,
           translations: this.buildTranslations(
             translationLanguage,
+            resolvedTranslation,
             enrichedSenses[i]?.translation,
           ),
         };
@@ -464,26 +496,37 @@ export class EnrichmentProcessor extends WorkerHost {
     }
 
     return Promise.all(
-      groups.map(async (group) => ({
-        partOfSpeech: group.partOfSpeech,
-        ipa: composedIpa ?? group.ipa,
-        // Deterministic wordlist first; Gemma's per-word CEFR is the fallback.
-        cefrLevel:
-          (await this.cefr.estimate(language, lemma, group.partOfSpeech)) ??
-          group.cefr,
-        senses: group.senses.map((s) => ({
-          gloss: s.gloss || null,
-          definition: s.definition,
-          examples: s.examples.map((sentence) => ({
-            sentence,
-            source: 'gemma',
+      groups.map(async (group) => {
+        const resolvedTranslation = translationLanguage
+          ? await this.translations.translate(
+              language,
+              translationLanguage,
+              lemma,
+              group.partOfSpeech,
+            )
+          : null;
+        return {
+          partOfSpeech: group.partOfSpeech,
+          ipa: composedIpa ?? group.ipa,
+          // Deterministic wordlist first; Gemma's per-word CEFR is the fallback.
+          cefrLevel:
+            (await this.cefr.estimate(language, lemma, group.partOfSpeech)) ??
+            group.cefr,
+          senses: group.senses.map((s) => ({
+            gloss: s.gloss || null,
+            definition: s.definition,
+            examples: s.examples.map((sentence) => ({
+              sentence,
+              source: 'gemma',
+            })),
+            translations: this.buildTranslations(
+              translationLanguage,
+              resolvedTranslation,
+              s.translation,
+            ),
           })),
-          translations: this.buildTranslations(
-            translationLanguage,
-            s.translation,
-          ),
-        })),
-      })),
+        };
+      }),
     );
   }
 

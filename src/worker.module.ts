@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import audioConfig from './config/audio.config';
 import databaseConfig from './config/database.config';
+import enrichmentConfig from './config/enrichment.config';
 import gemmaConfig from './config/gemma.config';
 import imageConfig from './config/image.config';
 import redisConfig from './config/redis.config';
@@ -19,6 +20,8 @@ import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.con
 import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
 import { CefrEstimatorService } from './vocabularies/enrichment/sources/cefr-estimator.service';
 import { ExampleRetrievalService } from './vocabularies/enrichment/sources/example-retrieval.service';
+import { TranslationService } from './vocabularies/enrichment/sources/translation.service';
+import { BilingualLexiconEntry } from './vocabularies/entities/bilingual-lexicon.entity';
 import { CefrLexiconEntry } from './vocabularies/entities/cefr-lexicon.entity';
 import { CorpusSentence } from './vocabularies/entities/corpus-sentence.entity';
 import { VocabEnrichmentCache } from './vocabularies/entities/vocab-enrichment-cache.entity';
@@ -43,6 +46,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
         databaseConfig,
         redisConfig,
         audioConfig,
+        enrichmentConfig,
         gemmaConfig,
         imageConfig,
       ],
@@ -75,6 +79,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
       VocabEnrichmentCache,
       CefrLexiconEntry,
       CorpusSentence,
+      BilingualLexiconEntry,
       ProductionAttempt,
     ]),
     BullModule.forRootAsync({
@@ -100,6 +105,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
     EnrichmentCacheService,
     CefrEstimatorService,
     ExampleRetrievalService,
+    TranslationService,
     VocabularyPersistenceService,
     // The enrichment worker enqueues audio for auto-approved user words and
     // appends bulk-imported words to their target deck.

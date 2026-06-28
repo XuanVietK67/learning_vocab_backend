@@ -7,6 +7,7 @@ import { HealthController } from './health/health.controller';
 import audioConfig from './config/audio.config';
 import authConfig from './config/auth.config';
 import databaseConfig from './config/database.config';
+import enrichmentConfig from './config/enrichment.config';
 import gemmaConfig from './config/gemma.config';
 import groqConfig from './config/groq.config';
 import imageConfig from './config/image.config';
@@ -38,6 +39,7 @@ import { VocabulariesModule } from './vocabularies/vocabularies.module';
         mailConfig,
         redisConfig,
         audioConfig,
+        enrichmentConfig,
         gemmaConfig,
         groqConfig,
         imageConfig,
