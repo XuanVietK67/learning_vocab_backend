@@ -32,6 +32,7 @@ import {
   ScratchPosGroup,
 } from '@/vocabularies/enrichment/gemma-enricher';
 import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
+import { CefrEstimatorService } from '@/vocabularies/enrichment/sources/cefr-estimator.service';
 import { DeckMembershipService } from '@/decks/deck-membership.service';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import {
@@ -115,6 +116,7 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly audioProducer: AudioQueueProducer,
     private readonly membership: DeckMembershipService,
     private readonly cache: EnrichmentCacheService,
+    private readonly cefr: CefrEstimatorService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -385,10 +387,14 @@ export class EnrichmentProcessor extends WorkerHost {
         };
       });
 
+      // CEFR comes from the deterministic wordlist when available; Gemma's
+      // estimate is only the fallback for words the lexicon doesn't cover.
+      const cefrLevel =
+        (await this.cefr.estimate(language, lemma, pos)) ?? enriched.cefr;
       drafts.push({
         partOfSpeech: pos,
         ipa: group.ipa,
-        cefrLevel: enriched.cefr,
+        cefrLevel,
         senses,
       });
     }
@@ -424,20 +430,28 @@ export class EnrichmentProcessor extends WorkerHost {
       }
     }
 
-    return groups.map((group) => ({
-      partOfSpeech: group.partOfSpeech,
-      ipa: composedIpa ?? group.ipa,
-      cefrLevel: group.cefr,
-      senses: group.senses.map((s) => ({
-        gloss: s.gloss || null,
-        definition: s.definition,
-        examples: s.examples.map((sentence) => ({ sentence, source: 'gemma' })),
-        translations: this.buildTranslations(
-          translationLanguage,
-          s.translation,
-        ),
+    return Promise.all(
+      groups.map(async (group) => ({
+        partOfSpeech: group.partOfSpeech,
+        ipa: composedIpa ?? group.ipa,
+        // Deterministic wordlist first; Gemma's per-word CEFR is the fallback.
+        cefrLevel:
+          (await this.cefr.estimate(language, lemma, group.partOfSpeech)) ??
+          group.cefr,
+        senses: group.senses.map((s) => ({
+          gloss: s.gloss || null,
+          definition: s.definition,
+          examples: s.examples.map((sentence) => ({
+            sentence,
+            source: 'gemma',
+          })),
+          translations: this.buildTranslations(
+            translationLanguage,
+            s.translation,
+          ),
+        })),
       })),
-    }));
+    );
   }
 
   private gemmaOptions(): GemmaClientOptions {

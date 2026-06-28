@@ -17,6 +17,8 @@ import { AudioProcessor } from './vocabularies/audio/audio.processor';
 import { EnrichmentCacheService } from './vocabularies/enrichment/enrichment-cache.service';
 import { ENRICHMENT_QUEUE } from './vocabularies/enrichment/enrichment-queue.constants';
 import { EnrichmentProcessor } from './vocabularies/enrichment/enrichment.processor';
+import { CefrEstimatorService } from './vocabularies/enrichment/sources/cefr-estimator.service';
+import { CefrLexiconEntry } from './vocabularies/entities/cefr-lexicon.entity';
 import { VocabEnrichmentCache } from './vocabularies/entities/vocab-enrichment-cache.entity';
 import { VocabEnrichmentJob } from './vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularySense } from './vocabularies/entities/vocabulary-sense.entity';
@@ -69,6 +71,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
       VocabularySense,
       VocabEnrichmentJob,
       VocabEnrichmentCache,
+      CefrLexiconEntry,
       ProductionAttempt,
     ]),
     BullModule.forRootAsync({
@@ -92,6 +95,7 @@ import { DeckMembershipService } from './decks/deck-membership.service';
     EnrichmentProcessor,
     ImageProcessor,
     EnrichmentCacheService,
+    CefrEstimatorService,
     VocabularyPersistenceService,
     // The enrichment worker enqueues audio for auto-approved user words and
     // appends bulk-imported words to their target deck.
