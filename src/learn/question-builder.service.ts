@@ -291,6 +291,7 @@ export class QuestionBuilderService {
           end: exampleWithSpan.end,
         },
         options,
+        sentenceTranslation: exampleWithSpan.example.translation ?? null,
       };
       return {
         type: QuestionType.MEANING_IN_CONTEXT,
@@ -373,6 +374,7 @@ export class QuestionBuilderService {
         ? { highlightedSpan: { start: span.start, end: span.end } }
         : {}),
       options,
+      sentenceTranslation: exA.translation ?? null,
     };
     return {
       type: QuestionType.SENSE_DISAMBIGUATION,

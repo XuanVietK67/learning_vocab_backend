@@ -157,6 +157,28 @@ describe('QuestionBuilderService — buildLadder', () => {
     );
   });
 
+  it('meaning_in_context surfaces the example translation as sentenceTranslation', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({
+        vocab: makeVocab({
+          audioUrl: 'https://cdn/audio.mp3',
+          senses: [
+            makeSense(
+              'sense-1',
+              [makeExample('ex-1', 'I run every morning', 'Tôi chạy mỗi sáng')],
+              [{ language: 'vi', translation: 'chạy' }],
+            ),
+          ],
+        }),
+        translationLang: 'vi',
+      }),
+    );
+    const mic = ladder.find((q) => q.type === QuestionType.MEANING_IN_CONTEXT);
+    expect(mic).toBeDefined();
+    const prompt = mic!.prompt as { sentenceTranslation: string | null };
+    expect(prompt.sentenceTranslation).toBe('Tôi chạy mỗi sáng');
+  });
+
   it('caps the cloze family per lesson', async () => {
     const ladder = await service.buildLadder(
       makeCtx({ vocab: richVocab(), translationLang: 'vi' }),
@@ -209,6 +231,7 @@ describe('QuestionBuilderService — buildLadder', () => {
       sentence: string;
       options: string[];
       sentences?: unknown;
+      sentenceTranslation: string | null;
     };
     // Single sentence, not the old two-sentence matching array.
     expect(typeof prompt.sentence).toBe('string');
@@ -218,6 +241,39 @@ describe('QuestionBuilderService — buildLadder', () => {
     expect(prompt.options).toContain('điều hành');
     expect(prompt.options.length).toBeGreaterThan(2);
     expect(prompt.options.length).toBeLessThanOrEqual(4);
+    // richVocab's example carries no translation → null, never a sense fallback.
+    expect(prompt.sentenceTranslation).toBeNull();
+  });
+
+  it('sense_disambiguation surfaces the example translation as sentenceTranslation', async () => {
+    const ladder = await service.buildLadder(
+      makeCtx({
+        vocab: makeVocab({
+          senses: [
+            makeSense(
+              'sense-1',
+              [
+                makeExample(
+                  'ex-1',
+                  'They run a company',
+                  'Họ điều hành công ty',
+                ),
+              ],
+              [{ language: 'vi', translation: 'điều hành' }],
+            ),
+            makeSense(
+              'sense-2',
+              [makeExample('ex-2', 'I run every morning')],
+              [{ language: 'vi', translation: 'chạy' }],
+            ),
+          ],
+        }),
+        translationLang: 'vi',
+        status: ProgressStatus.MASTERED,
+      }),
+    );
+    const prompt = ladder[0].prompt as { sentenceTranslation: string | null };
+    expect(prompt.sentenceTranslation).toBe('Họ điều hành công ty');
   });
 
   it('sense_disambiguation needs a same-word trap (single-sense word → not built)', async () => {
