@@ -39,8 +39,12 @@ RUN python clear_execstack.py /usr/local/lib/python3.11/site-packages
 COPY --from=builder /models /models
 COPY app.py .
 
-# Railway injects $PORT; default 8001 for local `docker run`. Bind IPv6 (`::`) so
-# the service is reachable over Railway's private network (IPv6) AND IPv4.
+# Railway injects $PORT; default 8001 for local `docker run`. Bind 0.0.0.0 (IPv4):
+# Railway's healthcheck proxy connects over IPv4, and an IPv6-only `::` listener
+# fails every healthcheck attempt ("service unavailable"). Trade-off: an IPv4-only
+# listener is NOT reachable over Railway's IPv6 private network
+# (`<service>.railway.internal`), so clients must target this service's PUBLIC URL
+# in `OPUS_MT_SERVICE_URL`.
 ENV PORT=8001
 EXPOSE 8001
-CMD ["sh", "-c", "uvicorn app:app --host :: --port ${PORT:-8001}"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8001}"]
