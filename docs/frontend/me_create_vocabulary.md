@@ -302,7 +302,7 @@ form gives faster feedback and avoids a round-trip.
 | `senses[].imageUrl` | — | 1–512 chars |
 | `senses[].synonyms` / `antonyms` | — | up to 32 items, each 1–64 chars |
 | `senses[].translations` | — | up to 16; each needs `language` (lang code) + `translation` (1–255 chars); `note` (≤2000) and `source` (≤32) optional |
-| `senses[].examples` | ✅ | **2–16** items; each needs `sentence` (1–1000 chars); `translation` (≤1000) and `source` (≤32) optional |
+| `senses[].examples` | ✅ | **2–16** items; each needs `sentence` (1–1000 chars); `translation` (≤1000) and `source` (≤32) optional. Omitting `translation` triggers server-side auto-translation (see notes) |
 
 > ⚠️ **The two most common form mistakes:** (1) sending only **one** example per
 > sense — the minimum is **2** (the extra example is held out as a hidden test
@@ -344,7 +344,7 @@ Returns the complete, hydrated word (same shape as `GET /v1/me/vocabularies/:id`
       ],
       "examples": [
         { "id": "…", "sentence": "She is remarkably resilient.", "translation": "Cô ấy kiên cường đến đáng kinh ngạc.", "source": "manual" },
-        { "id": "…", "sentence": "A resilient economy bounces back fast.", "translation": null, "source": "manual" }
+        { "id": "…", "sentence": "A resilient economy bounces back fast.", "translation": "Một nền kinh tế kiên cường phục hồi nhanh chóng.", "source": "manual" }
       ]
     }
   ],
@@ -368,6 +368,7 @@ Notes for the UI:
 - **`senseOrder`** is assigned by the server (1-based), in the order you sent the senses.
 - **`topics`** comes back sorted by slug, each as a full topic object (not just the slug).
 - Translation/example `source` defaults to `"manual"` when you don't send one.
+- **Example translations you omit are auto-filled.** Any `examples[].translation` you leave out is machine-translated (OPUS-MT) into the default language and returned populated in this same response — unlike audio, you do **not** need to re-fetch. A translation you *do* send is kept verbatim. If the translation service is unavailable the field stays `null` and the word is still created.
 
 ## Error handling
 
@@ -464,13 +465,17 @@ Layout / UX rules that fall directly out of the contract:
 2. The body is validated against the rules above (`400`).
 3. It checks whether **this user** already owns a word with the same
    `(language, lemma, partOfSpeech)` → `409` if so.
-4. In a single DB transaction it writes the vocabulary (as `source: user`, private,
+4. For every example missing a `translation`, it calls the OPUS-MT sidecar once
+   (one batched request for all blank sentences) to translate them into the
+   default language; failures leave those translations `null` and never fail the
+   request.
+5. In a single DB transaction it writes the vocabulary (as `source: user`, private,
    owned by the caller), its senses, each sense's translations and examples, and
    the topic links. If any step fails, the whole thing rolls back.
-5. After commit, if you didn't supply `audioUrl`, it queues a background
+6. After commit, if you didn't supply `audioUrl`, it queues a background
    audio-generation job (keyed by the word id, so it won't duplicate). A queue
    outage never fails the request.
-6. It returns the freshly re-read, fully-populated word.
+7. It returns the freshly re-read, fully-populated word.
 
 Service: [vocabularies.service.ts](../../src/vocabularies/vocabularies.service.ts) (`createUserVocabulary`).
 

@@ -10,6 +10,8 @@ import { ENRICHMENT_QUEUE } from '@/vocabularies/enrichment/enrichment-queue.con
 import { EnrichmentQueueProducer } from '@/vocabularies/enrichment/enrichment-queue.producer';
 import { IMAGE_QUEUE } from '@/vocabularies/images/image-queue.constants';
 import { ImageQueueProducer } from '@/vocabularies/images/image-queue.producer';
+import { TranslationService } from '@/vocabularies/enrichment/sources/translation.service';
+import { BilingualLexiconEntry } from '@/vocabularies/entities/bilingual-lexicon.entity';
 import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
 import { VocabularySense } from '@/vocabularies/entities/vocabulary-sense.entity';
@@ -33,6 +35,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
       VocabularyTranslation,
       VocabularyExample,
       VocabEnrichmentJob,
+      BilingualLexiconEntry,
       Topic,
       VocabularyTopic,
     ]),
@@ -62,6 +65,7 @@ import { VocabulariesService } from '@/vocabularies/vocabularies.service';
   providers: [
     VocabulariesService,
     VocabularyPersistenceService,
+    TranslationService,
     AudioQueueProducer,
     EnrichmentQueueProducer,
     ImageQueueProducer,
