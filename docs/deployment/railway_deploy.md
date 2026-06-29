@@ -53,9 +53,15 @@ not run migrations.
    **config file** to `railway.json`.
 3. **Add the `worker` service** from the same repo. Set its **config file** to
    `railway.worker.json`.
-4. **Add the `opus-mt` service** from the same repo with **root directory**
-   `services/opus-mt` (so Railway builds its Dockerfile). No public domain; set
-   the healthcheck path to `/health`. Set these variables on it: `OPUS_MT_TOKEN`
+4. **Add the `opus-mt` service** from the same repo. Set its **root directory** to
+   `services/opus-mt` (so the build context holds `app.py` / `requirements.txt`
+   for the Dockerfile's `COPY` steps) **and** its **config file** to
+   [services/opus-mt/railway.json](../../services/opus-mt/railway.json). Both are
+   essential: without the per-service config the build falls back to the repo-root
+   `railway.json` and deploys the **Node** image instead of the Python sidecar
+   (the build log will show `npm install` / `WORKDIR /app` — that's the wrong
+   image). The config pins the Dockerfile build and the `/health` healthcheck.
+   No public domain needed for prod. Set these variables on it: `OPUS_MT_TOKEN`
    (the shared secret) and `PORT=8001` (explicit, so the app binds a fixed port
    the worker can target over the private network — without it Railway picks a
    random port and the `:8001` internal URL breaks). The service binds IPv6

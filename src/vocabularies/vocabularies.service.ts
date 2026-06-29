@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
@@ -71,6 +72,7 @@ import {
 } from '@/vocabularies/enrichment/import/lemma-extractor';
 import { normalizeLemmas } from '@/vocabularies/enrichment/import/normalize';
 import { ExtractMode } from '@/vocabularies/enrichment/import/tokenize';
+import { TranslationService } from '@/vocabularies/enrichment/sources/translation.service';
 import { VocabEnrichmentJobStatus } from '@/vocabularies/entities/vocab-enrichment-job-status.enum';
 import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { VocabularyExample } from '@/vocabularies/entities/vocabulary-example.entity';
@@ -109,6 +111,8 @@ export class VocabulariesService {
     private readonly audioProducer: AudioQueueProducer,
     private readonly enrichmentProducer: EnrichmentQueueProducer,
     private readonly imageProducer: ImageQueueProducer,
+    private readonly translations: TranslationService,
+    private readonly config: ConfigService,
   ) {}
 
   async findAll(
@@ -344,6 +348,11 @@ export class VocabulariesService {
         `vocabulary already exists for (${dto.language}, ${dto.lemma}, ${dto.partOfSpeech}) — use bulk-import for upsert`,
       );
     }
+
+    // Auto-translate example sentences the caller left blank before persisting,
+    // so study/reveal can show a translation. Runs outside the transaction (it
+    // makes a network call) and degrades to null when MT is unavailable.
+    await this.fillMissingExampleTranslations(dto);
 
     const outcome = await this.dataSource.transaction((manager) =>
       this.upsertVocabulary(manager, dto, { source: VocabularySource.SYSTEM }),
@@ -874,6 +883,16 @@ export class VocabulariesService {
     vocabId: string,
     dto: CreateAdminSenseDto,
   ): Promise<VocabularySenseResponseDto> {
+    // Auto-translate blank example sentences before the transaction (network
+    // call). Needs the vocab's language, which doubles as the existence check.
+    if (dto.examples?.length) {
+      const vocab = await this.vocabRepo.findOne({
+        where: { id: vocabId },
+        select: { id: true, language: true },
+      });
+      if (!vocab) throw new NotFoundException('vocabulary not found');
+      await this.fillBlankExampleTranslations(vocab.language, dto.examples);
+    }
     return this.dataSource.transaction(async (manager) => {
       await this.assertVocabExists(manager, vocabId);
       const senseRepo = manager.getRepository(VocabularySense);
@@ -1110,6 +1129,9 @@ export class VocabulariesService {
     senseId: string,
     dto: CreateAdminExampleDto,
   ): Promise<VocabularyExampleResponseDto> {
+    // Resolve the translation before opening the transaction (auto-translate
+    // makes a network call); keep an admin-supplied one as-is.
+    const translation = await this.resolveExampleTranslation(vocabId, dto);
     return this.dataSource.transaction(async (manager) => {
       await this.assertSenseBelongsToVocab(manager, vocabId, senseId);
       const repo = manager.getRepository(VocabularyExample);
@@ -1117,7 +1139,7 @@ export class VocabulariesService {
         repo.create({
           senseId,
           sentence: dto.sentence,
-          translation: dto.translation ?? null,
+          translation,
           source: dto.source ?? 'manual',
         }),
       );
@@ -1278,6 +1300,9 @@ export class VocabulariesService {
         `you already have a vocabulary for (${dto.language}, ${dto.lemma}, ${dto.partOfSpeech})`,
       );
     }
+
+    // See createSystemVocabulary: fill blank example translations before commit.
+    await this.fillMissingExampleTranslations(dto);
 
     const outcome = await this.dataSource.transaction((manager) =>
       this.upsertVocabulary(manager, dto, {
@@ -1615,6 +1640,83 @@ export class VocabulariesService {
     );
     await repo.save(rows);
     return rows.length;
+  }
+
+  // ---- Example-sentence auto-translation (mirrors the enrichment path) ----
+
+  // Fill the missing example translations across every sense of a create DTO.
+  private async fillMissingExampleTranslations(
+    dto: CreateVocabularyDto,
+  ): Promise<void> {
+    await this.fillBlankExampleTranslations(
+      dto.language,
+      dto.senses.flatMap((sense) => sense.examples ?? []),
+    );
+  }
+
+  // Fill, in place, the translation of every example left blank, translating its
+  // sentence into the configured default language via OPUS-MT. One batched call
+  // covers all distinct sentences; caller-supplied translations are untouched.
+  // Best-effort — sentences MT can't resolve stay null.
+  private async fillBlankExampleTranslations<
+    T extends { sentence: string; translation?: string },
+  >(sourceLanguage: string, examples: T[]): Promise<void> {
+    const target = this.resolveExampleTranslationLanguage(sourceLanguage);
+    if (!target) return;
+
+    const blanks = examples.filter((example) => !example.translation);
+    if (blanks.length === 0) return;
+
+    const sentences = [...new Set(blanks.map((e) => e.sentence))];
+    const translated = await this.translations.translateSentences(
+      sourceLanguage,
+      target,
+      sentences,
+    );
+    const bySentence = new Map<string, string>();
+    sentences.forEach((sentence, i) => {
+      const t = translated[i];
+      if (t) bySentence.set(sentence, t);
+    });
+
+    for (const example of blanks) {
+      const t = bySentence.get(example.sentence);
+      if (t) example.translation = t;
+    }
+  }
+
+  // Translation for a single added example: keep an admin-supplied one, else
+  // auto-translate the sentence into the configured default language. Returns
+  // null when MT is disabled/unavailable or the vocab can't be resolved.
+  private async resolveExampleTranslation(
+    vocabId: string,
+    dto: CreateAdminExampleDto,
+  ): Promise<string | null> {
+    if (dto.translation) return dto.translation;
+    const vocab = await this.vocabRepo.findOne({
+      where: { id: vocabId },
+      select: { id: true, language: true },
+    });
+    if (!vocab) return null;
+    const target = this.resolveExampleTranslationLanguage(vocab.language);
+    if (!target) return null;
+    const [translated] = await this.translations.translateSentences(
+      vocab.language,
+      target,
+      [dto.sentence],
+    );
+    return translated ?? null;
+  }
+
+  // Target language for auto-translated example sentences: the configured
+  // default (ENRICHMENT_TRANSLATION_LANGUAGE, default 'vi'), but never the
+  // word's own language. Null skips auto-translation.
+  private resolveExampleTranslationLanguage(
+    sourceLanguage: string,
+  ): string | null {
+    const target = this.config.get<string>('gemma.translationLanguage', 'vi');
+    if (!target || target === sourceLanguage) return null;
+    return target;
   }
 
   private async assertVocabExists(

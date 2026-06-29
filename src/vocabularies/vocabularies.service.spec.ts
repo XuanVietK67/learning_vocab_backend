@@ -1,10 +1,12 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { Topic } from '@/topics/entities/topic.entity';
 import { VocabularyTopic } from '@/topics/entities/vocabulary-topic.entity';
 import { AudioQueueProducer } from '@/vocabularies/audio/audio-queue.producer';
 import { EnrichmentQueueProducer } from '@/vocabularies/enrichment/enrichment-queue.producer';
+import { TranslationService } from '@/vocabularies/enrichment/sources/translation.service';
 import { VocabEnrichmentJob } from '@/vocabularies/entities/vocab-enrichment-job.entity';
 import { Vocabulary } from '@/vocabularies/entities/vocabulary.entity';
 import { ImageQueueProducer } from '@/vocabularies/images/image-queue.producer';
@@ -46,6 +48,8 @@ describe('VocabulariesService — quick-create & approve', () => {
   const audioProducer = { enqueue: jest.fn() };
   const enrichmentProducer = { enqueue: jest.fn() };
   const imageProducer = { enqueue: jest.fn() };
+  const translations = { translateSentences: jest.fn() };
+  const config = { get: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -61,6 +65,8 @@ describe('VocabulariesService — quick-create & approve', () => {
         { provide: AudioQueueProducer, useValue: audioProducer },
         { provide: EnrichmentQueueProducer, useValue: enrichmentProducer },
         { provide: ImageQueueProducer, useValue: imageProducer },
+        { provide: TranslationService, useValue: translations },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile();
     service = moduleRef.get(VocabulariesService);
