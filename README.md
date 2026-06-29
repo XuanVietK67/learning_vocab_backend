@@ -1,115 +1,147 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Learning Vocab — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API for an English‑vocabulary learning platform: curated topic/deck catalogs, spaced‑repetition study sessions, speaking + pronunciation practice, gamified progress, and AI‑assisted vocabulary enrichment. Built with **NestJS 11 + TypeORM + PostgreSQL**, with a **Redis/BullMQ** background worker for the heavy/async work (text‑to‑speech, sense images, AI enrichment, practice scoring).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The mobile/web client is a separate Next.js app ([XuanVietK67/learning_vocab_frontend_v2](https://github.com/XuanVietK67/learning_vocab_frontend_v2)).
 
-## Description
+## Features
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Auth** — email/password with JWT access + refresh tokens, plus Google / Apple / GitHub OAuth and email verification (SMTP).
+- **Vocabulary catalog** — topics, vocabularies with senses (IPA, audio, example sentences + translations, CEFR level, images), and decks. Admin CRUD + a "quick‑create" flow that auto‑enriches a bare word.
+- **Learn** — signed, server‑validated study sessions (HMAC) over a user's decks.
+- **Practice & pronunciation** — production attempts scored by an LLM, plus a phoneme‑level pronunciation‑scoring microservice.
+- **Speaking room** — LLM‑driven live conversation practice with an end‑of‑session report.
+- **Progress & leaderboard** — per‑user progress tracking and rankings.
+- **Background worker** — TTS audio (Edge‑TTS → Cloudinary), sense images (Pexels → Cloudinary), AI enrichment (Gemini), and practice scoring, all via BullMQ queues.
 
-## Project setup
+## Tech stack
 
-```bash
-$ npm install
-```
+| Area | Choice |
+|---|---|
+| Framework | NestJS 11 (URI versioning, default `v1`) |
+| Language | TypeScript (strict) |
+| Database | PostgreSQL 16 + TypeORM (migrations, UUID PKs, `snake_case`, `timestamptz`) |
+| Queue | Redis 7 + BullMQ |
+| Auth | JWT (`@nestjs/jwt` + Passport) + OAuth |
+| Media/CDN | Cloudinary |
+| AI | Google Gemini (enrichment/scoring), Groq (speaking room), self‑hosted OPUS‑MT (translation) |
 
-## Database
+## Prerequisites
 
-```bash
-# start Postgres (and pgAdmin) via docker compose
-$ npm run db:up
+- **Node.js ≥ 20** and npm
+- **Docker** + Docker Compose (for Postgres, pgAdmin, Redis)
+- Optional API keys for the AI/media features (Cloudinary, Gemini, Groq, Pexels) — the core API runs without them; only the relevant async features are disabled.
 
-# run / revert migrations
-$ npm run db:migration:run
-$ npm run db:migration:revert
-
-# seed the curated vocabulary catalog (topics, vocabularies, decks)
-# - idempotent: safe to re-run; existing rows are upserted in place
-$ npm run db:seed
-```
-
-Seed data lives under [src/database/seeds/data/](src/database/seeds/data/) — edit those JSON files to extend the catalog, then re-run `npm run db:seed`.
-
-## Compile and run the project
+## Installation
 
 ```bash
-# development
-$ npm run start
+# 1. install dependencies
+npm install
 
-# watch mode
-$ npm run start:dev
+# 2. create your env file from the template and fill in secrets
+cp .env.example .env
+# generate strong secrets for JWT_* and LEARN_HMAC_SECRET, e.g.:
+#   openssl rand -base64 48
 
-# production mode
-$ npm run start:prod
+# 3. start Postgres, pgAdmin and Redis
+npm run db:up
+
+# 4. run database migrations
+npm run db:migration:run
+
+# 5. (optional) seed the curated topic/vocabulary/deck catalog — idempotent
+npm run db:seed
 ```
 
-## Run tests
+`.env.example` documents every variable. The essentials are `DB_*`, `JWT_*`, `LEARN_HMAC_SECRET`, and `REDIS_*`; the rest enable optional integrations (see comments in the file).
+
+## Running the app
 
 ```bash
-# unit tests
-$ npm run test
+# HTTP API
+npm run start          # one-off
+npm run start:dev      # watch mode
+npm run start:prod     # compiled (run `npm run build` first)
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# background worker (TTS, images, enrichment, scoring) — separate process
+npm run start:worker
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+The API listens on `PORT` (default **3000**). Routes are versioned under `/v1/...`; the liveness probe is version‑neutral at **`/health`**.
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl http://localhost:3000/health   # -> {"status":"ok"}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+pgAdmin is available at `http://localhost:5050` (credentials from `PGADMIN_EMAIL` / `PGADMIN_PASSWORD`).
 
-## Resources
+## Database & data scripts
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+npm run db:up                    # start postgres + pgadmin + redis (docker)
+npm run db:down                  # stop them
+npm run db:logs                  # tail postgres logs
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+npm run db:migration:run         # apply migrations
+npm run db:migration:revert      # roll back the last migration
+npm run db:migration:generate -- src/database/migrations/<Name>   # generate from entity changes
+npm run db:seed                  # upsert the curated catalog (idempotent)
 
-## Support
+# one-off backfills for previously-imported rows
+npm run db:backfill-audio
+npm run db:backfill-images
+npm run db:backfill-ipa
+npm run db:backfill-example-translations
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Migrations live in [src/database/migrations/](src/database/migrations/); seed data is the JSON under [src/database/seeds/data/](src/database/seeds/data/) — edit those and re‑run `npm run db:seed` to extend the catalog.
 
-## Stay in touch
+## Companion microservices
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Some async features call out to small self‑hosted services (URLs/tokens configured in `.env`; leaving a URL blank disables that feature):
 
-## License
+- **OPUS‑MT** ([services/opus-mt/](services/opus-mt/)) — machine‑translation sidecar for the enrichment path (`OPUS_MT_SERVICE_URL`, default `http://localhost:8001`).
+- **Pronunciation scoring** — phoneme‑scoring microservice exposing `POST /score` (`PRONUNCIATION_SERVICE_URL`, default `http://localhost:8000`).
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Tests & quality
+
+```bash
+npm run test       # unit tests
+npm run test:e2e   # end-to-end tests
+npm run test:cov   # coverage
+npm run lint       # eslint --fix
+npm run build      # type-check + compile to dist/
+```
+
+## Project structure
+
+```
+src/
+  auth/            JWT + OAuth + email verification
+  users/           user accounts & profile
+  vocabularies/    vocabularies, senses, enrichment, audio/image workers
+  topics/          topic catalog
+  decks/           decks & membership
+  learn/           signed study sessions
+  practice/        production attempts + LLM scoring
+  pronunciation/   pronunciation scoring
+  speaking-room/   LLM live conversation practice
+  progress/        per-user progress
+  leaderboard/     rankings
+  mailer/          SMTP email
+  health/          liveness probe
+  config/          typed config namespaces (loaded by ConfigModule)
+  database/        data-source, migrations, seeds, backfill scripts
+  common/          shared guards, pipes, decorators
+  main.ts          HTTP API entrypoint
+  worker.ts        background worker entrypoint
+services/opus-mt/  self-hosted translation sidecar
+docs/              backend / frontend / deployment / plans / report docs
+```
+
+## Documentation
+
+- **API contract** — [docs/backend/api-endpoints.md](docs/backend/api-endpoints.md) (single source of truth for the HTTP surface).
+- **Frontend handoff** — [docs/frontend/frontend_handoff.md](docs/frontend/frontend_handoff.md) (per‑feature request/response guides).
+- **Deployment** — [docs/deployment/](docs/deployment/).
+- **Design & plans** — [docs/plans/](docs/plans/).
