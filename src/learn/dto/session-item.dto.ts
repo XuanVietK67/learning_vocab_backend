@@ -73,6 +73,11 @@ export interface MeaningInContextPrompt {
   sentence: string;
   highlightedSpan: { start: number; end: number };
   options: string[]; // translation candidates in target language
+  // The example sentence's stored translation, revealed AFTER the user answers.
+  // Distinct from the cloze `hintTranslation` (a pre-answer scaffold): this is a
+  // post-answer gloss, and unlike the cloze field it never falls back to a sense
+  // translation — null when the example has no translation of its own.
+  sentenceTranslation: string | null;
 }
 
 // Show ONE example sentence and ask which meaning fits it. The distractors are
@@ -85,6 +90,9 @@ export interface SenseDisambiguationPrompt {
   sentence: string;
   highlightedSpan?: { start: number; end: number };
   options: string[]; // meaning candidates in the session's translationLang
+  // The example sentence's stored translation, revealed AFTER the user answers.
+  // Post-answer gloss (not a hint); null when the example has no translation.
+  sentenceTranslation: string | null;
 }
 
 export interface ListeningClozePrompt {
