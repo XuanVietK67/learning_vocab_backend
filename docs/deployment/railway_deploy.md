@@ -61,11 +61,13 @@ not run migrations.
    `railway.json` and deploys the **Node** image instead of the Python sidecar
    (the build log will show `npm install` / `WORKDIR /app` — that's the wrong
    image). The config pins the Dockerfile build and the `/health` healthcheck.
-   No public domain needed for prod. Set these variables on it: `OPUS_MT_TOKEN`
-   (the shared secret) and `PORT=8001` (explicit, so the app binds a fixed port
-   the worker can target over the private network — without it Railway picks a
-   random port and the `:8001` internal URL breaks). The service binds IPv6
-   (`::`) for Railway's private network.
+   Generate a **public domain** for it (see note below on why). Set these variables
+   on it: `OPUS_MT_TOKEN` (the shared secret) and `PORT=8001` (explicit, so the app
+   binds a fixed, known port). The app binds `0.0.0.0` (IPv4): Railway's healthcheck
+   proxy connects over IPv4, so an IPv6-only `::` listener fails every healthcheck.
+   The trade-off is that an IPv4-only listener is **not** reachable over Railway's
+   IPv6 private network (`opus-mt.railway.internal`), so the worker must call the
+   sidecar over its **public** URL — hence the public domain above.
 5. For **all** services, turn **off** "Deploy on push" (GitHub Actions drives
    deploys, gated on green checks — see below).
 6. **Create a deploy token:** Project → Settings → Tokens → new token. Add it to
@@ -93,7 +95,7 @@ Reference the plugin-provided values so they stay in sync:
 | `REDIS_PORT` | `${{Redis.REDISPORT}}` | |
 | `REDIS_PASSWORD` | `${{Redis.REDISPASSWORD}}` | |
 | `CORS_ORIGINS` | deployed frontend origin(s), comma-separated | required for browser calls |
-| `OPUS_MT_SERVICE_URL` | `http://opus-mt.railway.internal:8001` | worker → sidecar over the private network (Railway internal host) |
+| `OPUS_MT_SERVICE_URL` | the `opus-mt` service's **public** URL, e.g. `https://opus-mt-production.up.railway.app` | worker → sidecar; the sidecar binds IPv4 (`0.0.0.0`) for healthchecks, so the IPv6 `*.railway.internal` host is not reachable — use the public URL |
 | `OPUS_MT_TOKEN` | shared secret | must match the value set on the `opus-mt` service; gates the sidecar |
 
 Plus every app secret from [.env.example](../../.env.example): `JWT_*`,
