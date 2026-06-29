@@ -6,7 +6,9 @@ import { TranslationService } from '@/vocabularies/enrichment/sources/translatio
 
 function buildSvc(opts: {
   find: jest.Mock;
-  baseUrl?: string;
+  serviceUrl?: string;
+  token?: string;
+  maxAttempts?: number;
   insertExecute?: jest.Mock;
 }): TranslationService {
   const qb = {
@@ -21,11 +23,27 @@ function buildSvc(opts: {
     createQueryBuilder: jest.fn().mockReturnValue(qb),
   } as unknown as Repository<BilingualLexiconEntry>;
   const config = {
-    get: jest.fn((key: string, def?: unknown) =>
-      key === 'enrichment.opusMtBaseUrl' ? (opts.baseUrl ?? '') : def,
-    ),
+    get: jest.fn((key: string, def?: unknown) => {
+      switch (key) {
+        case 'enrichment.opusMtServiceUrl':
+          return opts.serviceUrl ?? '';
+        case 'enrichment.opusMtToken':
+          return opts.token ?? '';
+        case 'enrichment.opusMtMaxAttempts':
+          return opts.maxAttempts ?? 1;
+        default:
+          return def;
+      }
+    }),
   } as unknown as ConfigService;
   return new TranslationService(repo, config);
+}
+
+function sidecarOk(texts: (string | null)[]): jest.Mock {
+  return jest.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve({ translations: texts }),
+  });
 }
 
 describe('TranslationService', () => {
@@ -39,12 +57,10 @@ describe('TranslationService', () => {
       { partOfSpeech: '', translation: 'chung', source: 'opus-mt' },
       { partOfSpeech: 'verb', translation: 'học', source: 'dictionary' },
     ]);
-    const svc = buildSvc({ find });
 
-    expect(await svc.translate('en', 'vi', 'study', 'verb')).toEqual({
-      translation: 'học',
-      source: 'dictionary',
-    });
+    expect(
+      await buildSvc({ find }).translate('en', 'vi', 'study', 'verb'),
+    ).toEqual({ translation: 'học', source: 'dictionary' });
   });
 
   it('returns null without translating into the same language', async () => {
@@ -55,42 +71,83 @@ describe('TranslationService', () => {
     expect(find).not.toHaveBeenCalled();
   });
 
-  it('returns null on a miss when the OPUS-MT sidecar is not configured', async () => {
+  it('returns null on a miss when no service URL is configured', async () => {
     const find = jest.fn().mockResolvedValue([]);
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
     expect(
       await buildSvc({ find }).translate('en', 'vi', 'study', 'verb'),
     ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('falls back to OPUS-MT on a lexicon miss and caches the result', async () => {
+  it('falls back to the sidecar on a lexicon miss and caches the result', async () => {
     const find = jest.fn().mockResolvedValue([]);
     const insertExecute = jest.fn().mockResolvedValue(undefined);
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ translation: 'học' }),
-    });
+    const fetchMock = sidecarOk(['học']);
     global.fetch = fetchMock;
 
     const svc = buildSvc({
       find,
-      baseUrl: 'http://opus-mt:8000/',
+      serviceUrl: 'http://opus-mt:8001',
+      token: 'secret',
       insertExecute,
     });
     const result = await svc.translate('en', 'vi', 'study', 'verb');
 
     expect(result).toEqual({ translation: 'học', source: 'opus-mt' });
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://opus-mt:8000/translate',
-      expect.objectContaining({ method: 'POST' }),
+      'http://opus-mt:8001/translate',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: 'Bearer secret',
+        },
+      }),
     );
     expect(insertExecute).toHaveBeenCalled();
   });
 
-  it('returns null when the OPUS-MT call throws', async () => {
+  it('returns null when the sidecar call throws', async () => {
     const find = jest.fn().mockResolvedValue([]);
-    global.fetch = jest.fn().mockRejectedValue(new Error('connrefused'));
+    global.fetch = jest.fn().mockRejectedValue(new Error('unreachable'));
 
-    const svc = buildSvc({ find, baseUrl: 'http://opus-mt:8000' });
-    expect(await svc.translate('en', 'vi', 'study', 'verb')).toBeNull();
+    expect(
+      await buildSvc({
+        find,
+        serviceUrl: 'http://opus-mt:8001',
+      }).translate('en', 'vi', 'study', 'verb'),
+    ).toBeNull();
+  });
+
+  describe('translateSentences', () => {
+    it('batch-translates, returning results aligned to the input', async () => {
+      global.fetch = sidecarOk(['Cô ấy học y khoa.', 'Tôi học vào buổi tối.']);
+
+      const svc = buildSvc({
+        find: jest.fn(),
+        serviceUrl: 'http://opus-mt:8001',
+      });
+      const out = await svc.translateSentences('en', 'vi', [
+        'She studies medicine.',
+        'I study at night.',
+      ]);
+
+      expect(out).toEqual(['Cô ấy học y khoa.', 'Tôi học vào buổi tối.']);
+    });
+
+    it('returns all-null without calling out for the same language', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock;
+
+      expect(
+        await buildSvc({ find: jest.fn() }).translateSentences('en', 'en', [
+          'a',
+          'b',
+        ]),
+      ).toEqual([null, null]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });

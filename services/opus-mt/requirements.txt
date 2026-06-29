@@ -1,0 +1,13 @@
+# OPUS-MT sidecar RUNTIME deps (shipped in the final image — no Torch).
+# The builder stage also installs CPU Torch for the one-time model conversion;
+# see the Dockerfile. transformers here only loads the SentencePiece tokenizer.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+# CTranslate2's wheel marks its native lib as needing an executable stack, which
+# some kernels (e.g. Docker Desktop / WSL2) reject at load ("cannot enable
+# executable stack ... Invalid argument"). The Dockerfile clears that flag via
+# clear_execstack.py, so this works regardless of version; 4.4.0 is pinned for
+# reproducibility.
+ctranslate2==4.4.0
+transformers==4.47.1
+sentencepiece==0.2.0

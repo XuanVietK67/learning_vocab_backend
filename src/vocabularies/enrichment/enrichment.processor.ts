@@ -341,6 +341,11 @@ export class EnrichmentProcessor extends WorkerHost {
       translationLanguage,
     );
     if (drafts.length > 0) {
+      // Translate the example sentences before caching so the cached drafts
+      // carry them too. (Word/sense translations are already filled per POS.)
+      if (translationLanguage) {
+        await this.translateExamples(drafts, language, translationLanguage);
+      }
       await this.cache.put(
         language,
         lemma,
@@ -350,6 +355,49 @@ export class EnrichmentProcessor extends WorkerHost {
       );
     }
     return drafts;
+  }
+
+  // Fill each example's translation from one batched MT call per word. Examples
+  // are sentence-level, so they go through the OPUS-MT sidecar (not the word
+  // lexicon); the enrichment cache stores the result, so a repeated word costs
+  // nothing.
+  private async translateExamples(
+    drafts: DraftInput[],
+    sourceLanguage: string,
+    targetLanguage: string,
+  ): Promise<void> {
+    const pending = new Set<string>();
+    for (const draft of drafts) {
+      for (const sense of draft.senses) {
+        for (const example of sense.examples) {
+          if (!example.translation) pending.add(example.sentence);
+        }
+      }
+    }
+    if (pending.size === 0) return;
+
+    const sentences = [...pending];
+    const translated = await this.translations.translateSentences(
+      sourceLanguage,
+      targetLanguage,
+      sentences,
+    );
+    const bySentence = new Map<string, string>();
+    sentences.forEach((sentence, i) => {
+      const t = translated[i];
+      if (t) bySentence.set(sentence, t);
+    });
+
+    for (const draft of drafts) {
+      for (const sense of draft.senses) {
+        for (const example of sense.examples) {
+          if (!example.translation) {
+            const t = bySentence.get(example.sentence);
+            if (t) example.translation = t;
+          }
+        }
+      }
+    }
   }
 
   // Resolve a dictionary entry, then build drafts from it. English tries the

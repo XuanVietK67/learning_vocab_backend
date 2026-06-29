@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { BilingualLexiconEntry } from '@/vocabularies/entities/bilingual-lexicon.entity';
 
-// Matches the translation column / CreateAdminTranslationDto cap.
+// Matches the bilingual_lexicon.translation column cap (word-level only).
 const TRANSLATION_MAX = 255;
 
 export interface ResolvedTranslation {
@@ -12,14 +12,22 @@ export interface ResolvedTranslation {
   source: string;
 }
 
+interface OpusMtResponse {
+  translations?: unknown[];
+}
+
 /**
- * Resolves a word/sense-level translation without Gemma:
- *   1. bilingual_lexicon lookup (POS-specific row preferred over the generic '');
- *   2. on a miss, the OPUS-MT sidecar (if configured), whose result is written
- *      back into the lexicon so the next request is a cheap lookup.
- * Returns null when nothing resolves, so the caller can fall back (to Gemma
- * during the transition) or leave the field blank/editable. A bad sidecar call
- * never throws — translation must never fail the whole enrichment.
+ * Translation without Gemma, backed by a self-hosted OPUS-MT (Marian) sidecar:
+ *   - translate(): word/sense-level. bilingual_lexicon lookup first
+ *     (POS-specific row preferred over the generic ''); on a miss, the sidecar
+ *     translates the lemma and the result is written back into the lexicon, so
+ *     the next request is a cheap lookup. Returns null when nothing resolves so
+ *     the caller can fall back (to Gemma during the transition).
+ *   - translateSentences(): batch sentence translation for example sentences
+ *     (no lexicon/cache — sentences aren't word entries; the enrichment cache
+ *     dedupes repeats per word).
+ * A bad/unreachable sidecar call never throws — translation must never fail
+ * enrichment; an empty OPUS_MT_SERVICE_URL disables MT (lexicon-only).
  */
 @Injectable()
 export class TranslationService {
@@ -50,18 +58,29 @@ export class TranslationService {
     );
     if (hit) return hit;
 
-    const mt = await this.translateViaOpusMt(
-      sourceLanguage,
-      targetLanguage,
-      norm,
-    );
+    const [mt] = await this.callOpusMt(sourceLanguage, targetLanguage, [norm]);
     if (mt) {
-      // Cache MT word-level ('' POS): it carried no POS context, so it should
-      // serve every part of speech for this lemma on the next lookup.
-      await this.cacheTranslation(sourceLanguage, targetLanguage, norm, mt);
-      return { translation: mt, source: 'opus-mt' };
+      const capped = mt.slice(0, TRANSLATION_MAX);
+      // Cache MT word-level ('' POS): no POS context, so serve every POS next time.
+      await this.cacheTranslation(sourceLanguage, targetLanguage, norm, capped);
+      return { translation: capped, source: 'opus-mt' };
     }
     return null;
+  }
+
+  /**
+   * Translate a batch of sentences (example sentences) in one API call. Returns
+   * an array aligned to `texts`, with null where a translation isn't available.
+   */
+  async translateSentences(
+    sourceLanguage: string,
+    targetLanguage: string,
+    texts: string[],
+  ): Promise<(string | null)[]> {
+    if (!targetLanguage || targetLanguage === sourceLanguage) {
+      return texts.map(() => null);
+    }
+    return this.callOpusMt(sourceLanguage, targetLanguage, texts);
   }
 
   private async lookup(
@@ -86,45 +105,91 @@ export class TranslationService {
     return row ? { translation: row.translation, source: row.source } : null;
   }
 
-  private async translateViaOpusMt(
+  // POST the batch to the OPUS-MT sidecar; returns translations aligned to `q`,
+  // null per item on any failure. Disabled (all null) when no service URL is
+  // set. Retries cold-start/5xx up to opusMtMaxAttempts; never throws.
+  private async callOpusMt(
     sourceLanguage: string,
     targetLanguage: string,
-    text: string,
-  ): Promise<string | null> {
-    const baseUrl = this.config.get<string>('enrichment.opusMtBaseUrl', '');
-    if (!baseUrl) return null;
+    q: string[],
+  ): Promise<(string | null)[]> {
+    const url = this.config
+      .get<string>('enrichment.opusMtServiceUrl', '')
+      .replace(/\/+$/, '');
+    if (!url || q.length === 0) return q.map(() => null);
 
+    const token = this.config.get<string>('enrichment.opusMtToken', '');
     const timeoutMs = this.config.get<number>(
       'enrichment.opusMtTimeoutMs',
-      10_000,
+      15_000,
     );
+    const maxAttempts = Math.max(
+      1,
+      this.config.get<number>('enrichment.opusMtMaxAttempts', 2),
+    );
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const result = await this.requestOpusMt(
+        url,
+        token,
+        timeoutMs,
+        sourceLanguage,
+        targetLanguage,
+        q,
+      );
+      if (result) return result;
+      // null result = cold-start/5xx/timeout; back off (2s, 4s, …) and retry.
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+    return q.map(() => null);
+  }
+
+  // One POST attempt. Returns the aligned translations on success, or null to
+  // signal a retryable failure (the caller decides whether to retry or give up).
+  private async requestOpusMt(
+    url: string,
+    token: string,
+    timeoutMs: number,
+    sourceLanguage: string,
+    targetLanguage: string,
+    q: string[],
+  ): Promise<(string | null)[] | null> {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/translate`, {
+      const res = await fetch(`${url}/translate`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          text,
           source: sourceLanguage,
           target: targetLanguage,
+          texts: q,
         }),
         signal: controller.signal,
       });
       if (!res.ok) {
         this.logger.warn(
-          `opus-mt ${res.status} for "${text}" ${sourceLanguage}->${targetLanguage}`,
+          `opus-mt ${res.status} for ${sourceLanguage}->${targetLanguage} (${q.length} item(s))`,
         );
         return null;
       }
-      const body = (await res.json()) as { translation?: unknown };
-      const t =
-        typeof body.translation === 'string' ? body.translation.trim() : '';
-      return t ? t.slice(0, TRANSLATION_MAX) : null;
+      const body = (await res.json()) as OpusMtResponse;
+      const translations = body.translations ?? [];
+      return q.map((_, i) => {
+        const t = translations[i];
+        return typeof t === 'string' && t.trim() ? t.trim() : null;
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(
-        `opus-mt call failed for "${text}" ${sourceLanguage}->${targetLanguage}: ${msg}`,
+        `opus-mt call failed for ${sourceLanguage}->${targetLanguage}: ${msg}`,
       );
       return null;
     } finally {
@@ -158,9 +223,7 @@ export class TranslationService {
         .execute();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `failed to cache opus-mt translation for "${lemma}": ${msg}`,
-      );
+      this.logger.warn(`failed to cache translation for "${lemma}": ${msg}`);
     }
   }
 }
