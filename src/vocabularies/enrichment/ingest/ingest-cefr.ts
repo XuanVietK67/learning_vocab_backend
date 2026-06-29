@@ -3,54 +3,71 @@ import 'tsconfig-paths/register';
 import { readFileSync } from 'node:fs';
 import dataSource from '@/database/data-source';
 import { ProficiencyLevel } from '@/users/entities/proficiency-level.enum';
+import { mapPartOfSpeech } from '@/vocabularies/enrichment/pos-map';
 import { CefrLexiconEntry } from '@/vocabularies/entities/cefr-lexicon.entity';
 
 /**
- * One-off loader for the cefr_lexicon reference table.
+ * One-off loader for the cefr_lexicon reference table from an English Vocabulary
+ * Profile-style export.
  *
- *   npx ts-node src/vocabularies/enrichment/ingest/ingest-cefr.ts <file.tsv>
+ *   npx ts-node src/vocabularies/enrichment/ingest/ingest-cefr.ts <file.csv> [lang]
  *
- * Input is a headerless, tab-separated file with columns:
- *   language <TAB> lemma <TAB> part_of_speech <TAB> cefr <TAB> frequency_rank
- * `part_of_speech` and `frequency_rank` may be empty ('' = applies to every
- * POS / unknown rank). Rows with a missing language/lemma or an invalid CEFR
- * band are skipped. Existing rows are left untouched (insert-or-ignore on the
- * unique key) — TRUNCATE the table first to do a clean reload.
+ * Input is a semicolon-delimited file WITH a header row, columns:
+ *   headword ; pos ; CEFR ; ...(ignored)...
+ * `lang` defaults to 'en' (the EVP list is English). The POS is mapped onto our
+ * PartOfSpeech vocabulary; words whose POS we don't model (determiner, number,
+ * …) are stored generic ('' = applies to any POS) so the lemma still gets a
+ * CEFR. The header and any row with a missing headword or invalid CEFR band are
+ * skipped, and duplicate (lang, lemma, pos) keys are de-duped in memory.
+ * Existing rows are left untouched (insert-or-ignore) — TRUNCATE to reload.
  */
 const VALID_CEFR = new Set<string>(Object.values(ProficiencyLevel));
 const CHUNK = 500;
+
+// Strip a leading UTF-8 BOM (U+FEFF) the export may carry on its first line.
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
 
 async function main(): Promise<void> {
   const file = process.argv[2];
   if (!file) {
     console.error(
-      'usage: ts-node src/vocabularies/enrichment/ingest/ingest-cefr.ts <file.tsv>',
+      'usage: ts-node src/vocabularies/enrichment/ingest/ingest-cefr.ts <file.csv> [lang]',
     );
     process.exitCode = 1;
     return;
   }
+  const language = process.argv[3] ?? 'en';
 
   const entities: Partial<CefrLexiconEntry>[] = [];
+  const seen = new Set<string>();
   let skipped = 0;
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+  const content = stripBom(readFileSync(file, 'utf8'));
+  for (const line of content.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const cols = line.split('\t');
-    const language = (cols[0] ?? '').trim();
-    const lemma = (cols[1] ?? '').trim().toLowerCase();
-    const partOfSpeech = (cols[2] ?? '').trim().toLowerCase();
-    const cefrLevel = (cols[3] ?? '').trim().toUpperCase();
-    const freqRaw = (cols[4] ?? '').trim();
-    if (!language || !lemma || !VALID_CEFR.has(cefrLevel)) {
+    const cols = line.split(';');
+    const lemma = (cols[0] ?? '').trim().toLowerCase();
+    const rawPos = (cols[1] ?? '').trim();
+    const cefrLevel = (cols[2] ?? '').trim().toUpperCase();
+    // Skips the header ('CEFR') and any malformed row.
+    if (!lemma || !VALID_CEFR.has(cefrLevel)) {
       skipped++;
       continue;
     }
-    const freq = freqRaw ? parseInt(freqRaw, 10) : NaN;
+    const partOfSpeech = mapPartOfSpeech(rawPos) ?? '';
+    const key = `${lemma} ${partOfSpeech}`;
+    if (seen.has(key)) {
+      skipped++;
+      continue;
+    }
+    seen.add(key);
     entities.push({
       language,
       lemma,
       partOfSpeech,
       cefrLevel,
-      frequencyRank: Number.isFinite(freq) ? freq : null,
+      frequencyRank: null,
     });
   }
 

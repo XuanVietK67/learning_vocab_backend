@@ -89,9 +89,12 @@ no model:
 1. **Lookup** in a bilingual lexicon (Wiktionary translation tables via
    wiktextract/DBnary, or PanLex — CC0). Prefer sense-keyed entries; disambiguate
    with the definition where possible.
-2. **OPUS-MT fallback** for misses — a Marian model run via a **CTranslate2
-   Python sidecar** (int8-quantized, CPU-friendly) called over HTTP from NestJS.
-   OPUS-MT is **CC-BY** (commercial-OK); avoid NLLB (CC-BY-NC).
+2. **OPUS-MT fallback** for misses — a Marian model run via a **CTranslate2 +
+   FastAPI sidecar** (int8-quantized, CPU-friendly) called over HTTP from the
+   NestJS worker. Implemented in [services/opus-mt/](../../services/opus-mt/) and
+   deployed as its own always-on **Railway service** (private networking), not a
+   cloud translation API. OPUS-MT is **CC-BY** (commercial-OK); avoid NLLB
+   (CC-BY-NC).
 3. **Cache** the `(lemma, sense, targetLanguage) → translation` result in the
    translation table. Vocabulary is finite, so warm-cache hit rate approaches
    100% and the sidecar is rarely called.

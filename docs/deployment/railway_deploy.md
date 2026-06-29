@@ -8,7 +8,7 @@ image / enrichment / scoring queues) — both backed by **PostgreSQL** and
 
 ## Topology
 
-One Railway **project** with four components:
+One Railway **project** with five components:
 
 | Component | What | Source |
 | --- | --- | --- |
@@ -16,9 +16,13 @@ One Railway **project** with four components:
 | `Redis` | Managed key-value plugin (BullMQ) | Railway plugin |
 | `api` service | HTTP API; public domain; runs migrations on deploy | this repo, [Dockerfile](../../Dockerfile), config [railway.json](../../railway.json) |
 | `worker` service | Queue consumer; no public port | this repo, same [Dockerfile](../../Dockerfile), config [railway.worker.json](../../railway.worker.json) |
+| `opus-mt` service | OPUS-MT translation sidecar; no public port; healthcheck `/health` | this repo, [services/opus-mt/Dockerfile](../../services/opus-mt/Dockerfile) |
 
-Both services build the **same image** and differ only in start command
-(`node dist/main.js` vs `node dist/worker.js`).
+The `api` and `worker` services build the **same image** and differ only in start
+command (`node dist/main.js` vs `node dist/worker.js`). The `opus-mt` service is a
+separate Python image (FastAPI + CTranslate2) that the **worker** calls over the
+private network for enrichment translation — see
+[services/opus-mt/README.md](../../services/opus-mt/README.md).
 
 ## Build
 
@@ -49,14 +53,21 @@ not run migrations.
    **config file** to `railway.json`.
 3. **Add the `worker` service** from the same repo. Set its **config file** to
    `railway.worker.json`.
-4. For **both** services, turn **off** "Deploy on push" (GitHub Actions drives
+4. **Add the `opus-mt` service** from the same repo with **root directory**
+   `services/opus-mt` (so Railway builds its Dockerfile). No public domain; set
+   the healthcheck path to `/health`. Set these variables on it: `OPUS_MT_TOKEN`
+   (the shared secret) and `PORT=8001` (explicit, so the app binds a fixed port
+   the worker can target over the private network — without it Railway picks a
+   random port and the `:8001` internal URL breaks). The service binds IPv6
+   (`::`) for Railway's private network.
+5. For **all** services, turn **off** "Deploy on push" (GitHub Actions drives
    deploys, gated on green checks — see below).
-5. **Create a deploy token:** Project → Settings → Tokens → new token. Add it to
+6. **Create a deploy token:** Project → Settings → Tokens → new token. Add it to
    the GitHub repo as the **`RAILWAY_TOKEN`** secret
    (Settings → Secrets and variables → Actions).
-6. **Set environment variables** (project-level shared variables, inherited by
-   both services — see the table below).
-7. **Protect `master`:** require the `build` check to pass before merging.
+7. **Set environment variables** (project-level shared variables, inherited by
+   the services — see the table below).
+8. **Protect `master`:** require the `build` check to pass before merging.
 
 ## Environment variables
 
@@ -76,11 +87,15 @@ Reference the plugin-provided values so they stay in sync:
 | `REDIS_PORT` | `${{Redis.REDISPORT}}` | |
 | `REDIS_PASSWORD` | `${{Redis.REDISPASSWORD}}` | |
 | `CORS_ORIGINS` | deployed frontend origin(s), comma-separated | required for browser calls |
+| `OPUS_MT_SERVICE_URL` | `http://opus-mt.railway.internal:8001` | worker → sidecar over the private network (Railway internal host) |
+| `OPUS_MT_TOKEN` | shared secret | must match the value set on the `opus-mt` service; gates the sidecar |
 
 Plus every app secret from [.env.example](../../.env.example): `JWT_*`,
 `LEARN_HMAC_SECRET`, `CLOUDINARY_*`, `GEMMA_*`, `PEXELS_API_KEY`, `TTS_VOICE`,
-the worker concurrency knobs, `PRONUNCIATION_*` (+ the HF Space token), and
-`SMTP_*` / `MAIL_FROM`.
+the worker concurrency knobs, `PRONUNCIATION_*` (+ the HF Space token),
+`OPUS_MT_*` (`SERVICE_URL`, `TOKEN`, `TIMEOUT_MS`, `MAX_ATTEMPTS`), and
+`SMTP_*` / `MAIL_FROM`. The `opus-mt` service itself only needs `OPUS_MT_TOKEN`
+(and Railway's injected `PORT`).
 
 ## CI/CD pipeline
 
@@ -94,6 +109,10 @@ the worker concurrency knobs, `PRONUNCIATION_*` (+ the HF Space token), and
   already-tested commit on Railway; the api's pre-deploy command runs migrations
   before cutover. **Service names must match** the names created in the project
   (`api`, `worker`).
+- The **`opus-mt`** sidecar is **not** part of this pipeline — its model/code
+  change rarely, so redeploy it from the Railway dashboard (or add a third
+  `railway up --service opus-mt`) when [services/opus-mt/](../../services/opus-mt/)
+  actually changes.
 
 ## Rollback
 
