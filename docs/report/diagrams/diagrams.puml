@@ -79,6 +79,7 @@ if (Có thẻ để học?) then (không)
 else (có)
 endif
 :Mở rộng mỗi từ thành chuỗi câu hỏi\n(dễ -> khó, ký HMAC);
+:Sắp xếp thành vòng theo dạng câu hỏi\n(type-major, độ khó tăng dần);
 repeat
   :Hiển thị câu hỏi;
   :Người học trả lời;
@@ -113,7 +114,12 @@ else (không)
 endif
 |Worker|
 :Lấy job khỏi hàng đợi;
-:Tra từ điển + gọi Gemma 3\n(nghĩa, ví dụ, bản dịch);
+:Phân giải từ điển\n(Free Dictionary / Wiktionary);
+:Điền nghĩa, ví dụ (kho ngữ liệu),\ndịch (OPUS-MT), CEFR (bảng từ vựng);
+if (Còn trường trống & bật Gemma fallback?) then (có)
+  :Gọi Gemma 3 bù trường còn thiếu;
+else (không)
+endif
 :Sinh âm thanh (TTS) + tải lên Cloudinary;
 :Tạo bản ghi từ vựng (1 / từ loại);
 :Cập nhật job = completed\n+ resultVocabularyIds;
@@ -308,7 +314,9 @@ package "Backend (NestJS)" {
 }
 database "PostgreSQL" as PG
 queue "Redis (BullMQ)" as Redis
-cloud "Gemma 3\n(Google AI Studio)" as Gemma
+cloud "Từ điển ngoài\n(Free Dictionary)" as Dict
+cloud "OPUS-MT\n(dịch máy)" as OpusMt
+cloud "Gemma 3 (dự phòng)\n(Google AI Studio)" as Gemma
 cloud "Groq\n(Llama 3.3)" as Groq
 cloud "DV chấm phát âm\n(FastAPI)" as Pron
 cloud "Cloudinary\n(media)" as CDN
@@ -324,7 +332,9 @@ API --> OAuth
 API --> Mail
 API --> Pron
 API --> Groq : hội thoại theo lượt + báo cáo
-Worker --> Gemma
+Worker --> Dict : làm giàu từ vựng
+Worker --> OpusMt : dịch từ / câu
+Worker --> Gemma : dự phòng làm giàu
 Worker --> TTS
 Worker --> CDN
 @enduml
