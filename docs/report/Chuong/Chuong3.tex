@@ -49,40 +49,33 @@ phân quyền, công nghệ trí tuệ nhân tạo và bộ công cụ phát tri
 \subsection{Ôn tập ngắt quãng và đường cong lãng quên}
 \label{subsec:srs-theory}
 
-Cơ sở khoa học của động cơ học trong hệ thống là hiện tượng
-\textit{đường cong lãng quên} (forgetting curve) do Ebbinghaus phát hiện:
-khả năng ghi nhớ một thông tin mới suy giảm theo hàm mũ theo thời gian nếu
-không được củng cố \cite{ebbinghaus1913memory}. Một cách mô hình hoá đơn
-giản, mức ghi nhớ \( R \) còn lại sau khoảng thời gian \( t \) kể từ lần
-học gần nhất được biểu diễn qua công thức~\eqref{eq:forgetting}:
+Cơ sở khoa học của động cơ học là hiện tượng \textit{đường cong lãng quên}
+(forgetting curve) do Ebbinghaus phát hiện: khả năng ghi nhớ suy giảm theo
+hàm mũ theo thời gian nếu không được củng cố \cite{ebbinghaus1913memory},
+mô hình hoá đơn giản qua công thức~\eqref{eq:forgetting}:
 
 \begin{equation}
   \label{eq:forgetting}
   R(t) = e^{-\,t/S},
 \end{equation}
 
-trong đó \( S \) là \textit{độ bền trí nhớ} (memory stability) --- càng ôn
-tập đúng lúc, \( S \) càng lớn và thông tin được giữ lâu hơn. Hệ quả thực
-tiễn là: thay vì học nhồi nhét, người học nên ôn lại mỗi từ tại những
-\textit{thời điểm đến hạn} được giãn dần. Các nghiên cứu về hiệu ứng giãn
-cách (spacing effect) khẳng định ôn tập ngắt quãng cải thiện rõ rệt khả
-năng ghi nhớ dài hạn so với học dồn \cite{cepeda2006distributed}. Đây là
-nền tảng lý thuyết cho \textit{hệ thống ôn tập ngắt quãng} (Spaced
-Repetition System --- SRS) mà hệ thống hiện thực hoá.
+với \( R \) là mức ghi nhớ còn lại sau thời gian \( t \) và \( S \) là
+\textit{độ bền trí nhớ} (memory stability). Hiệu ứng giãn cách (spacing
+effect) cho thấy ôn tập ngắt quãng cải thiện ghi nhớ dài hạn rõ rệt so với
+học dồn \cite{cepeda2006distributed}; đây là nền tảng của \textit{hệ thống
+ôn tập ngắt quãng} (Spaced Repetition System --- SRS) mà hệ thống hiện thực
+hoá.
 
 \subsection{Thuật toán lập lịch ôn tập SM-2}
 \label{subsec:sm2-theory}
 
 Để quyết định \textit{khi nào} ôn lại mỗi từ, hệ thống áp dụng thuật toán
-\textbf{SM-2} có nguồn gốc từ dự án SuperMemo \cite{wozniak1990optimization}.
-Mỗi cặp (người dùng, từ) được mô tả bằng ba đại lượng: hệ số dễ nhớ
-\textit{easiness factor} \( EF \) (khởi tạo \( 2{,}5 \)), số lần ôn đúng
-liên tiếp \( n \) và khoảng cách ôn tập \( I \) (tính theo ngày). Sau mỗi
-lượt ôn, người học (ở đây là kết quả trả lời trong phiên) được quy về một
-\textit{điểm chất lượng} \( q \in \{0,1,\dots,5\} \).
-
-Hệ số \( EF \) được cập nhật theo công thức~\eqref{eq:sm2-ef}, có chặn dưới
-\( 1{,}3 \) để khoảng ôn tập không co lại quá nhanh:
+\textbf{SM-2} từ dự án SuperMemo \cite{wozniak1990optimization}. Mỗi cặp
+(người dùng, từ) được mô tả bằng hệ số dễ nhớ \( EF \) (khởi tạo \( 2{,}5 \)),
+số lần ôn đúng liên tiếp \( n \) và khoảng cách ôn \( I \) (ngày); mỗi lượt
+trả lời được quy về một \textit{điểm chất lượng} \( q \in \{0,1,\dots,5\} \).
+Hệ số \( EF \) cập nhật theo công thức~\eqref{eq:sm2-ef} (chặn dưới
+\( 1{,}3 \) để khoảng ôn không co lại quá nhanh):
 
 \begin{equation}
   \label{eq:sm2-ef}
@@ -102,99 +95,81 @@ Khoảng cách ôn tập kế tiếp được tính theo công thức~\eqref{eq:
   \end{cases}
 \end{equation}
 
-Nếu người học trả lời sai (\( q < 3 \)), bộ đếm \( n \) được đặt lại về 0 và
-từ phải học lại từ đầu; ngược lại \( n \) tăng và khoảng ôn tập giãn dần
-theo \( EF' \). Trong hệ thống, SM-2 được \textbf{mở rộng bằng các bước học}
-(learning steps): một từ mới phải vượt qua một chuỗi câu hỏi từ dễ đến khó
-trong phiên trước khi được giao cho SM-2 lập lịch dài hạn; điểm chất lượng
-\( q \) được suy ra từ độ chính xác ở bước cuối của mỗi từ. Trạng thái thẻ
-nhờ đó chuyển dịch \code{new} \( \to \) \code{learning} \( \to \)
-\code{review} \( \to \) \code{mastered}, phù hợp với biểu đồ hoạt động đã
-trình bày ở Chương~\ref{chuong:phan-tich-thiet-ke}.
+Khi trả lời sai (\( q < 3 \)), \( n \) đặt lại về 0; ngược lại \( n \) tăng
+và khoảng ôn giãn dần theo \( EF' \). Hệ thống \textbf{mở rộng SM-2 bằng các
+bước học} (learning steps): một từ mới phải vượt một chuỗi câu hỏi từ dễ đến
+khó trong phiên trước khi được SM-2 lập lịch dài hạn, với \( q \) suy từ độ
+chính xác ở bước cuối; nhờ đó trạng thái thẻ chuyển dịch \code{new} \( \to \)
+\code{learning} \( \to \) \code{review} \( \to \) \code{mastered} theo biểu
+đồ hoạt động ở Chương~\ref{chuong:phan-tich-thiet-ke}.
 
 \subsection{Khung tham chiếu trình độ ngôn ngữ CEFR}
 \label{subsec:cefr-theory}
 
-Hệ thống chuẩn hoá độ khó của từ vựng và trình độ người học theo
-\textbf{Khung tham chiếu trình độ ngôn ngữ chung châu Âu} (Common European
-Framework of Reference for Languages --- CEFR) do Hội đồng châu Âu ban hành
-\cite{coe2001cefr}. CEFR chia năng lực ngôn ngữ thành sáu bậc từ
-\( A1, A2 \) (sơ cấp), \( B1, B2 \) (trung cấp) đến \( C1, C2 \) (cao cấp).
-Mỗi từ trong kho được gắn một bậc CEFR và mỗi người học khai báo trình độ
-của mình; nhờ đó hệ thống lựa chọn từ và gợi ý bộ thẻ phù hợp với năng lực
-hiện tại, đồng thời mô hình ngôn ngữ chấm điểm bậc CEFR mà một câu luyện
-tập thể hiện.
+Độ khó từ vựng và trình độ người học được chuẩn hoá theo \textbf{Khung tham
+chiếu trình độ ngôn ngữ chung châu Âu} (CEFR) của Hội đồng châu Âu
+\cite{coe2001cefr}, gồm sáu bậc từ \( A1 \) đến \( C2 \). Mỗi từ được gắn
+một bậc CEFR và mỗi người học khai báo trình độ, nhờ đó hệ thống chọn từ,
+gợi ý bộ thẻ phù hợp năng lực và để mô hình ngôn ngữ chấm bậc CEFR cho câu
+luyện tập.
 
 \subsection{Kiến trúc REST và dịch vụ web}
 \label{subsec:rest-theory}
 
-Giao diện lập trình ứng dụng (API) của hệ thống tuân theo phong cách kiến
-trúc \textbf{REST} (Representational State Transfer) do Fielding đề xuất
-\cite{fielding2000rest}. Các ràng buộc cốt lõi của REST mà hệ thống áp dụng
-gồm: mô hình \textit{client--server} tách bạch máy khách và máy chủ; tính
-\textit{phi trạng thái} (stateless) --- mỗi yêu cầu tự mang đủ thông tin xác
-thực (token), máy chủ không lưu trạng thái phiên; định danh tài nguyên bằng
-\textit{URI} và thao tác qua các phương thức HTTP chuẩn (GET, POST, PATCH,
-DELETE) với ngữ nghĩa thống nhất; và trao đổi dữ liệu dưới dạng
-\textbf{JSON}. Tính phi trạng thái là điều kiện để mở rộng tầng API theo
-chiều ngang (đáp ứng yêu cầu NFR-03 trong
-Bảng~\ref{tab:nfr}). API còn được \textit{phiên bản hoá theo URI}
-(tiền tố \code{/v1}) nhằm tiến hoá hợp đồng mà không phá vỡ máy khách cũ.
+API của hệ thống tuân theo phong cách kiến trúc \textbf{REST}
+(Representational State Transfer) do Fielding đề xuất \cite{fielding2000rest}:
+mô hình \textit{client--server} tách bạch; tính \textit{phi trạng thái}
+(stateless) --- mỗi yêu cầu tự mang token, máy chủ không lưu trạng thái
+phiên; định danh tài nguyên bằng \textit{URI} thao tác qua các phương thức
+HTTP chuẩn (GET, POST, PATCH, DELETE); và trao đổi dữ liệu \textbf{JSON}.
+Tính phi trạng thái là điều kiện mở rộng tầng API theo chiều ngang (NFR-03,
+Bảng~\ref{tab:nfr}); API được \textit{phiên bản hoá theo URI} (tiền tố
+\code{/v1}) để tiến hoá hợp đồng mà không phá vỡ máy khách cũ.
 
 \subsection{Ánh xạ đối tượng--quan hệ (ORM)}
 \label{subsec:orm-theory}
 
-Để thu hẹp khoảng cách giữa mô hình hướng đối tượng trong mã nguồn và mô
-hình quan hệ trong cơ sở dữ liệu, hệ thống dùng kỹ thuật \textbf{ánh xạ đối
-tượng--quan hệ} (Object--Relational Mapping --- ORM). Mỗi bảng được khai
-báo dưới dạng một lớp \textit{thực thể} (entity), mỗi dòng tương ứng một đối
-tượng và các quan hệ khoá ngoại được biểu diễn bằng liên kết giữa các thực
-thể. ORM giúp lập trình viên thao tác dữ liệu bằng mã có kiểu (typed) thay
-vì viết câu lệnh SQL thủ công, đồng thời quản lý tiến hoá lược đồ bằng cơ
-chế \textit{migration} có thể phiên bản hoá. Đánh đổi của ORM là một lớp
-trừu tượng phụ và nguy cơ truy vấn kém hiệu quả nếu lạm dụng; hệ thống khắc
-phục bằng cách đánh chỉ mục các truy vấn nóng và truy vấn tường minh khi cần.
+Hệ thống dùng kỹ thuật \textbf{ánh xạ đối tượng--quan hệ} (Object--Relational
+Mapping --- ORM) để thu hẹp khoảng cách giữa mô hình hướng đối tượng trong
+mã nguồn và mô hình quan hệ trong cơ sở dữ liệu: mỗi bảng là một lớp
+\textit{thực thể} (entity), mỗi dòng một đối tượng, khoá ngoại là liên kết
+giữa các thực thể; lược đồ tiến hoá qua cơ chế \textit{migration} phiên bản
+hoá được. Đánh đổi của ORM là một lớp trừu tượng phụ và nguy cơ truy vấn kém
+hiệu quả nếu lạm dụng, được khắc phục bằng đánh chỉ mục truy vấn nóng và truy
+vấn tường minh khi cần.
 
 \subsection{Mô hình ngôn ngữ lớn và sinh nội dung}
 \label{subsec:llm-theory}
 
 Các chức năng hỗ trợ bằng AI (làm giàu dữ liệu từ điển, chấm điểm câu luyện
 tập, hội thoại luyện nói) dựa trên \textbf{mô hình ngôn ngữ lớn} (Large
-Language Model --- LLM). LLM là mạng nơ-ron kiến trúc \textit{Transformer}
-\cite{vaswani2017attention} được huấn luyện trên khối dữ liệu văn bản khổng
-lồ để dự đoán token kế tiếp, nhờ đó có khả năng sinh văn bản mạch lạc, dịch
-và đánh giá ngôn ngữ theo chỉ dẫn (prompt). Hệ thống sử dụng hai họ mô hình
-mở: \textbf{Gemma} của Google DeepMind \cite{gemma2025technical} cho làm giàu
-dữ liệu và chấm điểm câu, và \textbf{Llama~3} của Meta
-\cite{grattafiori2024llama3} cho hội thoại luyện nói theo lượt. Trong nghiệp
-vụ, LLM được giao vai trò có kiểm soát: sinh nghĩa, ví dụ, bản dịch theo định
-dạng yêu cầu, chấm điểm câu theo \textit{rubric}, hoặc đóng vai đối thoại
-trong một kịch bản cho trước. Kết quả do AI sinh ra đối với kho hệ thống luôn
-phải qua bước \textit{duyệt} của quản trị viên trước khi xuất bản, nhằm kiểm
-soát chất lượng và hạn chế lỗi "ảo giác" (hallucination) của mô hình.
+Language Model --- LLM) --- mạng nơ-ron kiến trúc \textit{Transformer}
+\cite{vaswani2017attention} huấn luyện trên khối văn bản lớn để dự đoán token
+kế tiếp, nhờ đó sinh, dịch và đánh giá ngôn ngữ theo chỉ dẫn (prompt). Hệ
+thống dùng hai họ mô hình mở: \textbf{Gemma} của Google DeepMind
+\cite{gemma2025technical} cho chấm điểm câu và dự phòng làm giàu dữ liệu, và
+\textbf{Llama~3} của Meta \cite{grattafiori2024llama3} cho hội thoại luyện
+nói. LLM được giao vai trò có kiểm soát theo định dạng/\textit{rubric} yêu
+cầu; nội dung AI sinh cho kho hệ thống luôn phải qua bước \textit{duyệt} của
+quản trị viên trước khi xuất bản, nhằm kiểm soát chất lượng và hạn chế lỗi
+"ảo giác" (hallucination).
 
 \subsection{Học ngôn ngữ giao tiếp và luyện nói nhập vai}
 \label{subsec:clt-theory}
 
-Chức năng phòng luyện nói được đặt nền trên \textbf{đường hướng dạy ngôn ngữ
-giao tiếp} (Communicative Language Teaching --- CLT) và \textbf{dạy ngôn ngữ
-theo nhiệm vụ} (Task-Based Language Teaching --- TBLT)
-\cite{richards2014approaches, ellis2003task}. Quan điểm chung của hai đường
-hướng này là: năng lực ngôn ngữ được hình thành tốt nhất thông qua việc
-\textit{sử dụng} ngôn ngữ để hoàn thành một nhiệm vụ giao tiếp có mục đích,
-thay vì chỉ ghi nhớ từ và quy tắc rời rạc. \textit{Nhập vai} (role-play) là
-một kỹ thuật tiêu biểu của CLT: người học đảm nhận một vai trong một tình
-huống mô phỏng (gọi món tại nhà hàng, phỏng vấn xin việc\ldots) và phải vận
-dụng vốn từ, mẫu câu phù hợp để đạt mục tiêu hội thoại.
-
-Một hạn chế cố hữu của nhập vai trong lớp học truyền thống là cần một bạn
-luyện tập (interlocutor) luôn sẵn sàng và đủ kiên nhẫn. Mô hình ngôn ngữ lớn
-khắc phục được hạn chế này: nó có thể đóng vai đối thoại ở mọi thời điểm,
-điều chỉnh độ khó ngôn ngữ theo trình độ CEFR của người học
-(mục~\ref{subsec:cefr-theory}) và đưa ra phản hồi chỉnh lỗi mang tính xây dựng. Đây
-là cơ sở lý thuyết cho thiết kế: mỗi kịch bản mô tả một nhiệm vụ giao tiếp,
-hệ thống dẫn dắt người học qua nhiều lượt nói và tổng kết bằng một báo cáo
-phản hồi định hướng luyện tập tiếp.
+Phòng luyện nói đặt nền trên \textbf{đường hướng dạy ngôn ngữ giao tiếp}
+(Communicative Language Teaching --- CLT) và \textbf{dạy ngôn ngữ theo nhiệm
+vụ} (Task-Based Language Teaching --- TBLT)
+\cite{richards2014approaches, ellis2003task}: năng lực ngôn ngữ hình thành
+tốt nhất qua việc \textit{sử dụng} ngôn ngữ để hoàn thành một nhiệm vụ giao
+tiếp có mục đích, thay vì ghi nhớ rời rạc; \textit{nhập vai} (role-play) là
+kỹ thuật tiêu biểu. Hạn chế cố hữu của nhập vai trong lớp truyền thống ---
+cần một bạn luyện tập (interlocutor) luôn sẵn sàng --- được mô hình ngôn ngữ
+lớn khắc phục: nó đóng vai đối thoại mọi lúc, điều chỉnh độ khó theo bậc CEFR
+của người học (mục~\ref{subsec:cefr-theory}) và phản hồi chỉnh lỗi mang tính
+xây dựng. Đây là cơ sở thiết kế: mỗi kịch bản là một nhiệm vụ giao tiếp, hệ
+thống dẫn dắt qua nhiều lượt nói và tổng kết bằng một báo cáo phản hồi định
+hướng luyện tập tiếp.
 
 % =====================================================================
 \section{Tổng quan công nghệ sử dụng}
@@ -224,7 +199,7 @@ tiếp theo phân tích chi tiết từng nhóm công nghệ.
     \hline
     Xác thực & JWT, Passport, bcrypt, OAuth/OIDC & Xác thực, phân quyền và bảo vệ tài khoản. \\
     \hline
-    Trí tuệ nhân tạo & Gemma~3 (Google AI Studio), Groq (Llama~3.3), Edge TTS, vi dịch vụ chấm phát âm & Sinh nội dung, hội thoại luyện nói, sinh âm thanh, chấm điểm luyện tập. \\
+    Trí tuệ nhân tạo & Gemma~3 (dự phòng), Groq (Llama~3.3), OPUS-MT, Edge TTS, vi dịch vụ chấm phát âm & Làm giàu/dịch dữ liệu từ vựng, hội thoại luyện nói, sinh âm thanh, chấm điểm luyện tập. \\
     \hline
     Hạ tầng phụ trợ & Cloudinary, SMTP, Docker & Lưu trữ media, gửi email, đóng gói triển khai. \\
     \hline
@@ -306,38 +281,29 @@ tuân thủ chuẩn SQL và hỗ trợ tốt các đặc tính mà thiết kế 
         thái ôn tập, thời điểm đến hạn) để bảo đảm hiệu năng khi dữ liệu lớn.
 \end{itemize}
 
-Bên cạnh PostgreSQL, hệ thống dùng \textbf{Redis} làm kho khoá--giá trị
-trong bộ nhớ, đóng vai trò \textit{nơi lưu trữ hàng đợi} cho BullMQ
-\cite{redis2024}. Việc truy cập cơ sở dữ liệu từ phía backend được thực hiện
-qua \textbf{TypeORM} --- một thư viện ORM cho TypeScript/Node.js
-\cite{typeorm2024} --- sẽ được trình bày ở mục~\ref{sec:cong-nghe-backend}.
-Lược đồ cơ sở dữ liệu được quản lý bằng các \textit{migration} đặt trong thư
-mục mã nguồn và chạy qua công cụ dòng lệnh của TypeORM, giúp tiến hoá lược
-đồ một cách có kiểm soát và tái lập được giữa các môi trường.
+Hệ thống còn dùng \textbf{Redis} làm kho khoá--giá trị trong bộ nhớ cho hàng
+đợi BullMQ \cite{redis2024}, và truy cập cơ sở dữ liệu qua \textbf{TypeORM}
+\cite{typeorm2024} (mục~\ref{sec:cong-nghe-backend}); lược đồ được quản lý
+bằng các \textit{migration} chạy qua công cụ dòng lệnh của TypeORM, giúp tiến
+hoá có kiểm soát và tái lập giữa các môi trường.
 
 % =====================================================================
 \section{Công nghệ Frontend}
 \label{sec:cong-nghe-frontend}
 
-Ứng dụng khách (frontend) là một dự án độc lập, đóng vai trò bên tiêu thụ
-API REST của backend. Frontend được xây dựng bằng \textbf{Next.js 16} theo
-mô hình \textit{App Router} --- framework React hỗ trợ kết xuất phía máy chủ
-(Server-Side Rendering --- SSR), \textit{thành phần phía máy chủ} (Server
-Components) và \textit{hành động phía máy chủ} (Server Actions)
-\cite{nextjs2024} --- trên nền thư viện giao diện \textbf{React~19}
-\cite{react2024} và ngôn ngữ \textbf{TypeScript} (chế độ \textit{strict}).
-Việc dùng chung TypeScript ở cả frontend và backend giúp thống nhất kiểu dữ
-liệu của hợp đồng API giữa hai phía. Phần tạo kiểu giao diện dùng
-\textbf{Tailwind CSS v4} --- framework CSS theo hướng tiện ích (utility-first),
-cấu hình bằng CSS \cite{tailwind2024} --- kết hợp bộ thành phần
-\textbf{shadcn/ui} dựng trên các primitive khả truy cập của \textbf{Base UI}.
-Ràng buộc và kiểm tra dữ liệu biểu mẫu dùng \code{zod} \cite{zod2024}, được
-dùng lại giữa kiểm tra phía máy khách và Server Action. Một quyết định đáng
-chú ý là các biểu đồ trực quan hoá tiến độ (chuỗi ngày học, biểu đồ hoạt động
-dạng heatmap) được \textit{dựng thủ công} bằng CSS/SVG thay vì nhúng một thư
-viện biểu đồ, nhằm giữ kích thước gói tải (bundle) nhỏ và toàn quyền kiểm soát
-bố cục theo hệ thống thiết kế. Bảng~\ref{tab:frontend-libs} liệt kê các thư
-viện frontend chính.
+Ứng dụng khách (frontend) là một dự án độc lập tiêu thụ API REST của backend,
+xây dựng bằng \textbf{Next.js 16} theo mô hình \textit{App Router} (hỗ trợ
+Server-Side Rendering, Server Components, Server Actions) \cite{nextjs2024}
+trên nền \textbf{React~19} \cite{react2024} và \textbf{TypeScript} chế độ
+\textit{strict}; dùng chung TypeScript ở hai phía giúp thống nhất kiểu của
+hợp đồng API. Giao diện tạo kiểu bằng \textbf{Tailwind CSS v4} (utility-first)
+\cite{tailwind2024} với bộ thành phần \textbf{shadcn/ui} trên các primitive
+khả truy cập của \textbf{Base UI}; biểu mẫu được kiểm tra bằng \code{zod}
+\cite{zod2024}, dùng lại giữa máy khách và Server Action. Đáng chú ý, các
+biểu đồ tiến độ (chuỗi ngày học, heatmap) được \textit{dựng thủ công} bằng
+CSS/SVG thay vì nhúng thư viện biểu đồ, nhằm giữ gói tải (bundle) nhỏ và kiểm
+soát bố cục theo hệ thống thiết kế. Bảng~\ref{tab:frontend-libs} liệt kê các
+thư viện frontend chính.
 
 \begin{table}[h]
   \centering
@@ -368,28 +334,23 @@ viện frontend chính.
   \label{tab:frontend-libs}
 \end{table}
 
-Mục này chỉ giới thiệu \textit{ngăn xếp công nghệ} frontend; quá trình hiện
-thực hoá tầng giao diện (cấu trúc App Router, tầng truy cập API phía máy chủ,
-quản lý phiên và động cơ phiên học phía máy khách) được trình bày ở
-mục~\ref{sec:hien-thuc-frontend}, Chương~\ref{chuong:hien-thuc-hoa}. Trong mọi
-trường hợp, frontend giao tiếp với backend hoàn toàn qua các API đã đặc tả,
-không truy cập trực tiếp cơ sở dữ liệu.
+Quá trình hiện thực hoá tầng giao diện được trình bày ở
+mục~\ref{sec:hien-thuc-frontend}, Chương~\ref{chuong:hien-thuc-hoa}; frontend
+giao tiếp với backend hoàn toàn qua các API đã đặc tả, không truy cập trực
+tiếp cơ sở dữ liệu.
 
 % =====================================================================
 \section{Công nghệ Backend}
 \label{sec:cong-nghe-backend}
 
-Backend được xây dựng bằng \textbf{NestJS}, một framework Node.js cho
-TypeScript theo hướng mô-đun, dựa trên các nguyên lý \textit{tiêm phụ thuộc}
-(dependency injection) và lập trình hướng khía cạnh \cite{nestjs2024}.
-NestJS phù hợp với kiến trúc phân tầng đã nêu ở
-mục~\ref{sec:kien-truc-tong-quan}: mỗi mô-đun đóng gói controller, service
-và provider riêng; các \textit{guard}, \textit{pipe} và
-\textit{interceptor} xử lý những mối quan tâm xuyên suốt (xác thực, kiểm tra
-đầu vào, biến đổi phản hồi) một cách khai báo. Toàn bộ mã nguồn viết bằng
-\textbf{TypeScript} ở chế độ \textit{strict}, giúp phát hiện lỗi kiểu ngay
-khi biên dịch. Bảng~\ref{tab:backend-libs} liệt kê các thành phần backend
-chính.
+Backend được xây dựng bằng \textbf{NestJS} --- framework Node.js cho
+TypeScript theo hướng mô-đun, dựa trên \textit{tiêm phụ thuộc} (dependency
+injection) và lập trình hướng khía cạnh \cite{nestjs2024}. NestJS phù hợp
+với kiến trúc phân tầng ở mục~\ref{sec:kien-truc-tong-quan}: mỗi mô-đun đóng
+gói controller, service, provider riêng; các \textit{guard}, \textit{pipe},
+\textit{interceptor} xử lý mối quan tâm xuyên suốt (xác thực, kiểm tra đầu
+vào, biến đổi phản hồi) một cách khai báo. Bảng~\ref{tab:backend-libs} liệt
+kê các thành phần backend chính.
 
 \begin{table}[h]
   \centering
@@ -504,7 +465,7 @@ vụ này.
     \hline
     \textbf{Dịch vụ} & \textbf{Loại} & \textbf{Vai trò trong hệ thống} \\
     \hline
-    Gemma~3 (Google AI Studio) & Mô hình ngôn ngữ lớn (LLM) & Sinh nghĩa, ví dụ, bản dịch; chấm điểm câu luyện viết theo rubric kèm bậc CEFR. \\
+    Gemma~3 (Google AI Studio) & Mô hình ngôn ngữ lớn (LLM) & Dự phòng làm giàu dữ liệu từ vựng (bù trường các nguồn xác định không có); chấm điểm câu luyện viết theo rubric kèm bậc CEFR. \\
     \hline
     Groq (Llama~3.3) & Mô hình ngôn ngữ lớn (LLM) hội thoại & Đóng vai đối thoại theo lượt trong phòng luyện nói; sinh nháp kịch bản; sinh báo cáo phản hồi cuối phiên. \\
     \hline
@@ -521,13 +482,15 @@ vụ này.
 \label{subsec:gemma}
 
 Hệ thống gọi mô hình \textbf{Gemma~3} qua nền tảng Google AI Studio
-\cite{gemma2025technical}. Mô hình được sử dụng cho hai nhóm tác vụ:
-(i)~\textit{làm giàu dữ liệu từ điển} --- từ một lemma, sinh các nghĩa, câu
-ví dụ và bản dịch theo định dạng có cấu trúc; và (ii)~\textit{chấm điểm câu
-luyện tập} --- đánh giá câu người học đặt theo thang điểm 0--100 kèm bậc
-CEFR và nhận xét. Mọi lời gọi LLM đều là tác vụ nặng nên được đẩy sang
-worker xử lý bất đồng bộ và bị giới hạn theo hạn mức ngày để bảo vệ khoá API
-dùng chung.
+\cite{gemma2025technical} cho hai nhóm tác vụ: (i)~\textit{làm giàu dữ liệu
+từ điển} và (ii)~\textit{chấm điểm câu luyện tập} --- đánh giá câu người học
+đặt theo thang điểm 0--100 kèm bậc CEFR và nhận xét. Riêng ở khâu làm giàu dữ
+liệu, Gemma nay chỉ đóng \textbf{vai trò dự phòng}: pipeline ưu tiên các nguồn
+xác định (từ điển, kho ngữ liệu, từ điển song ngữ và dịch máy OPUS-MT, bảng
+CEFR) và chỉ gọi Gemma để bù những trường không nguồn nào phủ được, sau một cờ
+cấu hình có thể tắt hẳn (chi tiết ở mục~\ref{subsec:impl-enrich}). Mọi lời gọi
+LLM đều là tác vụ nặng nên được đẩy sang worker xử lý bất đồng bộ và bị giới
+hạn theo hạn mức ngày để bảo vệ khoá API dùng chung.
 
 \subsection{Hội thoại luyện nói bằng Groq và Llama~3.3}
 \label{subsec:groq}
@@ -597,15 +560,12 @@ việc.
   \label{tab:dev-tools}
 \end{table}
 
-Mã nguồn được quản lý bằng \textbf{Git} và lưu trên GitHub; mỗi tính năng
-hoặc sửa lỗi được phát triển trên một nhánh riêng rồi hợp nhất qua pull
-request. Môi trường phụ thuộc (PostgreSQL, Redis, pgAdmin) được mô tả bằng
-\textbf{Docker Compose} \cite{docker2024}, giúp tái lập nhanh và đồng nhất
-giữa các máy. Chất lượng mã được kiểm soát bằng kiểm tra kiểu của TypeScript,
-\textbf{ESLint} và \textbf{Prettier}; phần kiểm thử dùng \textbf{Jest} cho
-kiểm thử đơn vị và \textbf{Supertest} cho kiểm thử tích hợp các điểm cuối
-API. Cuối cùng, báo cáo đồ án được biên soạn bằng \textbf{\LaTeX} trên
-Overleaf theo đúng mẫu quy định.
+Mã nguồn được quản lý bằng \textbf{Git}/GitHub theo quy trình nhánh -- pull
+request; môi trường phụ thuộc (PostgreSQL, Redis, pgAdmin) được mô tả bằng
+\textbf{Docker Compose} \cite{docker2024} để tái lập đồng nhất giữa các máy.
+Chất lượng mã được kiểm soát bằng kiểm tra kiểu TypeScript,
+\textbf{ESLint}/\textbf{Prettier} và bộ kiểm thử \textbf{Jest}/\textbf{Supertest};
+báo cáo được biên soạn bằng \textbf{\LaTeX} trên Overleaf theo mẫu quy định.
 
 % =====================================================================
 \section{Kết chương}
