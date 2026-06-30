@@ -484,7 +484,7 @@ quán cho mọi worker:
     \hline
     \textbf{Hàng đợi} & \textbf{Kích hoạt bởi} & \textbf{Công việc của worker} \\
     \hline
-    Làm giàu từ vựng & Tạo nhanh / nhập hàng loạt & Tra từ điển + gọi LLM sinh nghĩa, ví dụ, bản dịch, CEFR; tạo bản ghi từ vựng. \\
+    Làm giàu từ vựng & Tạo nhanh / nhập hàng loạt & Tra từ điển, truy hồi ví dụ từ kho ngữ liệu, dịch và gắn CEFR từ các nguồn xác định (LLM chỉ là dự phòng); tạo bản ghi từ vựng. \\
     \hline
     Sinh âm thanh & Sau khi tạo/duyệt từ & Lấy bản ghi âm thật hoặc tổng hợp giọng nói, tải lên kho media. \\
     \hline
@@ -497,10 +497,12 @@ quán cho mọi worker:
   \label{tab:async-jobs}
 \end{table}
 
-\paragraph{Lưu ý về mô hình ngôn ngữ.} Các lời gọi LLM được thực hiện qua API
-\code{generateContent} của nền tảng \textbf{Google AI Studio}, dùng họ mô
-hình mở \textbf{Gemma} của Google DeepMind~\cite{gemma2025technical} làm nền
-tảng tham chiếu. Vì mô hình được cấu hình qua biến môi trường
+\paragraph{Lưu ý về mô hình ngôn ngữ.} Khi cần đến LLM --- nay chủ yếu là
+đường \textit{dự phòng} của pipeline làm giàu (mục~\ref{subsec:impl-enrich})
+và việc chấm điểm câu luyện tập (mục~\ref{subsec:impl-judge}) --- các lời gọi
+được thực hiện qua API \code{generateContent} của nền tảng \textbf{Google AI
+Studio}, dùng họ mô hình mở \textbf{Gemma} của Google
+DeepMind~\cite{gemma2025technical} làm nền tảng tham chiếu. Vì mô hình được cấu hình qua biến môi trường
 (\code{GEMMA_MODEL}), thiết kế là \textit{độc lập mô hình}; trong cấu hình
 triển khai mặc định, do dòng \code{gemma-3-*} đã ngừng phục vụ trên tầng miễn
 phí của AI Studio, hệ thống dùng một mô hình Gemini Flash nhẹ tương đương.
@@ -509,33 +511,69 @@ Một chi tiết hiện thực quan trọng để tiết kiệm hạn mức: cá
 nếu không, mô hình suy luận sẽ tiêu hết hạn mức đầu ra cho phần suy nghĩ và
 cắt cụt JSON kết quả.
 
-\subsection{Làm giàu dữ liệu từ điển tự động bằng LLM}
+\subsection{Làm giàu dữ liệu từ vựng tự động từ nhiều nguồn}
 \label{subsec:impl-enrich}
 
-Đây là tính năng AI trung tâm: từ một \textit{lemma} đơn lẻ, hệ thống tự
-dựng nên một bản ghi từ vựng đầy đủ (use case ở Bảng~\ref{tab:uc-quickcreate}).
-\code{EnrichmentProcessor} chọn một trong hai đường đi tuỳ dữ liệu sẵn có:
+Đây là tính năng cốt lõi của tạo nhanh từ vựng: từ một \textit{lemma} đơn lẻ,
+hệ thống tự dựng nên một bản ghi từ vựng đầy đủ (use case ở
+Bảng~\ref{tab:uc-quickcreate}). Nguyên tắc thiết kế hiện tại là \textbf{ưu
+tiên các nguồn dữ liệu xác định (deterministic) thay vì sinh bằng LLM}: mỗi
+trường được lấy từ một nguồn tra cứu hoặc truy hồi chuyên trách, còn
+\textbf{Gemma chỉ còn đóng vai trò dự phòng} cho những trường mà không nguồn
+nào phủ được. Cơ chế dự phòng này nằm sau một cờ cấu hình
+(\code{enrichment.useGemmaFallback}): khi tắt, pipeline chạy \textit{hoàn toàn
+không gọi Gemma} và để trống các trường còn thiếu cho người dùng tự sửa, thay
+vì sinh nội dung không chắc chắn.
 
-\begin{itemize}
-  \item \textbf{Đường có từ điển (tiếng Anh):} truy vấn Free Dictionary
-        API~\cite{freedictionaryapi} để lấy từ loại, định nghĩa, phiên âm
-        \textbf{IPA} và từ đồng/trái nghĩa; sau đó LLM chỉ cần bổ sung một
-        \textit{gloss} ngắn, \textit{tối thiểu hai câu ví dụ} cho mỗi nghĩa,
-        một bản dịch ngắn và ước lượng bậc CEFR. Cách kết hợp này tận dụng dữ
-        liệu từ điển chính xác cho phần "khó tin tưởng AI" (định nghĩa, phiên
-        âm) và chỉ giao cho AI phần nó làm tốt (ví dụ tự nhiên, bản dịch).
-  \item \textbf{Đường chỉ dùng LLM (phi tiếng Anh hoặc từ điển không có):}
-        LLM sinh toàn bộ cấu trúc nghĩa theo từng từ loại.
-\end{itemize}
+\code{EnrichmentProcessor} điều phối các nguồn theo
+Bảng~\ref{tab:enrich-sources}. Trước hết nó \textit{phân giải mục từ điển}:
+tiếng Anh tra Free Dictionary API~\cite{freedictionaryapi}, các ngôn ngữ khác
+--- hoặc khi API trên không có mục --- tra tập dữ liệu từ điển đa ngữ
+\textbf{Wiktionary} (qua wiktextract~\cite{ylonen2022wiktextract}) đã nạp sẵn
+trong cơ sở dữ liệu. Khi có mục từ điển, các trường còn lại được điền từ các
+nguồn xác định riêng; chỉ khi \textit{cả hai} từ điển đều không có mục (đường
+\textit{from-scratch}) và cờ dự phòng đang bật, worker mới gọi Gemma sinh toàn
+bộ cấu trúc nghĩa --- nếu cờ tắt, công việc kết thúc không tạo bản ghi (đánh
+dấu thất bại) thay vì âm thầm gọi Gemma.
 
-Vì Gemma trên AI Studio không hỗ trợ \code{responseSchema} hay vai trò
-\textit{hệ thống} (system role), lược đồ JSON mong muốn được \textbf{nhúng
-thẳng vào prompt} và phản hồi được \textbf{phân tích phòng thủ}. Bộ phân tích
-bóc bỏ dấu rào ```\code{```json}```, dung thứ phần văn xuôi thừa, cắt và giới
-hạn độ dài các trường, và --- quan trọng nhất --- \textit{từ chối} một CEFR
-sai hoặc thiếu hay một nghĩa có dưới hai ví dụ bằng cách ném lỗi, để worker
-\textit{thử lại} thay vì lưu dữ liệu rác. Đoạn dưới minh hoạ lược đồ được yêu
-cầu và một phần kiểm tra phòng thủ:
+\begin{table}[h]
+  \centering
+  \small
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{|p{2.9cm}|p{7.0cm}|p{4.0cm}|}
+    \hline
+    \textbf{Trường} & \textbf{Nguồn xác định (không LLM)} & \textbf{Gemma (chỉ khi dự phòng bật)} \\
+    \hline
+    Từ loại, định nghĩa, đồng/trái nghĩa & Từ điển (Free Dictionary API cho tiếng Anh; Wiktionary đa ngữ) & --- \\
+    \hline
+    Phiên âm IPA & Từ điển; ghép IPA theo từng từ cho cụm từ; G2P \code{espeak-ng}~\cite{espeakng} làm phương án cuối & IPA "best-effort" khi các nguồn trên đều trống \\
+    \hline
+    Câu ví dụ & Truy hồi từ kho ngữ liệu (\code{corpus_sentence} dựng từ Tatoeba~\cite{tatoeba}/OpenSubtitles) bằng tìm kiếm toàn văn khớp dạng biến cách, xếp theo điểm GDEX & Sinh ví dụ khi kho ngữ liệu không đủ \\
+    \hline
+    Bản dịch từ/nghĩa & Tra từ điển song ngữ (\code{bilingual_lexicon}) $\rightarrow$ dịch máy OPUS-MT~\cite{tiedemann2020opusmt} rồi ghi đệm lại & Bản dịch theo nghĩa khi hai nguồn trên trống \\
+    \hline
+    Bậc CEFR & Tra bảng từ vựng CEFR xác định (\code{cefr_lexicon}) theo lemma + từ loại & Ước lượng CEFR khi không có trong bảng \\
+    \hline
+    Gloss (nhãn ngắn) & Trích cơ học vài từ đầu của định nghĩa (\code{deriveGloss}) & Gloss khi mô hình trả về \\
+    \hline
+  \end{tabular}
+  \caption{Nguồn dữ liệu của từng trường khi làm giàu từ vựng và vai trò dự phòng của Gemma}
+  \label{tab:enrich-sources}
+\end{table}
+
+Câu ví dụ lấy từ kho ngữ liệu được dịch sang ngôn ngữ đích bằng một lời gọi
+OPUS-MT theo lô cho mỗi từ. Mọi kết quả --- bất kể nguồn --- đều đi qua bộ nhớ
+đệm làm giàu (\code{enrichment-cache}) trước khi lưu, nên một từ lặp lại không
+tốn thêm lời gọi mạng nào; worker còn ghi nhật ký \textit{tỉ lệ phủ} của từng
+nguồn xác định để đo mức phụ thuộc còn lại vào Gemma trước khi gỡ bỏ hẳn.
+
+\paragraph{Phân tích phòng thủ trên đường dự phòng Gemma.} Khi đường dự phòng
+được dùng, vì Gemma trên AI Studio không hỗ trợ \code{responseSchema} hay vai
+trò \textit{hệ thống} (system role), lược đồ JSON mong muốn được \textbf{nhúng
+thẳng vào prompt} và phản hồi được \textbf{phân tích phòng thủ}: bóc bỏ dấu rào
+```\code{```json}```, dung thứ văn xuôi thừa, kẹp độ dài các trường, và ---
+quan trọng nhất --- \textit{từ chối} một CEFR sai/thiếu hay một nghĩa có dưới
+hai ví dụ bằng cách ném lỗi để worker \textit{thử lại} thay vì lưu dữ liệu rác:
 
 \begin{verbatim}
 // Lược đồ JSON nhúng trong prompt (rút gọn)
@@ -551,7 +589,7 @@ if (examples.length < 2)
   throw new Error(`sense ${i + 1} returned fewer than 2 examples`);
 \end{verbatim}
 
-\paragraph{Vòng kiểm soát chất lượng.} Kết quả do AI sinh ra luôn được kiểm soát theo
+\paragraph{Vòng kiểm soát chất lượng.} Kết quả làm giàu luôn được kiểm soát theo
 \textit{quyền sở hữu}, đúng tinh thần mục~\ref{subsec:llm-theory}: công việc do
 \textit{quản trị viên} tạo sẽ sinh ra \textbf{bản nháp} thuộc kho hệ thống ở
 trạng thái \code{is_approved = false} --- không xuất hiện trong phiên học của
@@ -560,6 +598,20 @@ riêng tư và tự duyệt. Nhờ \textit{chỉ mục duy nhất bộ phận}
 (mục~\ref{sec:hien-thuc-du-lieu}), worker bỏ qua mọi từ loại đã tồn tại nên
 không bao giờ ghi đè dữ liệu sẵn có. Các từ được duyệt/tự duyệt tiếp tục kích
 hoạt hàng đợi sinh âm thanh.
+
+Hình~\ref{fig:qc-confirm}--\ref{fig:qc-list} minh hoạ luồng tạo nhanh và làm
+giàu từ vựng từ phía người dùng: xác nhận danh sách từ cần làm giàu
+(Hình~\ref{fig:qc-confirm}), tiến trình xử lý nền sau khi gửi
+(Hình~\ref{fig:qc-processing}), thông báo hoàn tất (Hình~\ref{fig:qc-finish})
+và danh sách từ vừa được tạo (Hình~\ref{fig:qc-list}).
+
+\figph{confirm_word_to_enrich.jpg}{0.85}{Xác nhận danh sách từ cần làm giàu}{fig:qc-confirm}
+
+\figph{processing_enrich_vocabulary.jpg}{0.85}{Tiến trình làm giàu từ vựng xử lý nền}{fig:qc-processing}
+
+\figph{finish_quick_create_vocabulary.jpg}{0.85}{Thông báo hoàn tất tạo nhanh từ vựng}{fig:qc-finish}
+
+\figph{list_vocabulary_just_created.jpg}{0.85}{Danh sách từ vựng vừa được tạo}{fig:qc-list}
 
 \subsection{Nhập từ vựng hàng loạt tự động}
 \label{subsec:impl-bulk}
@@ -825,10 +877,9 @@ biến môi trường phía máy chủ, cố tình không gắn tiền tố \cod
         cookie token đã xoay.
 \end{itemize}
 
-Cả hai chuẩn hoá thân lỗi của NestJS thành một kiểu \code{ApiResult} thống nhất
-(cờ \code{ok}, mã trạng thái, dữ liệu, thân lỗi), nhờ đó tầng gọi xử lý lỗi
-theo \textit{giá trị trả về} thay vì ngoại lệ --- khớp với triết lý phân biệt
-lỗi \textit{dự kiến} và \textit{không dự kiến} của App Router.
+Cả hai chuẩn hoá thân lỗi của NestJS thành một kiểu \code{ApiResult} thống
+nhất (cờ \code{ok}, mã trạng thái, dữ liệu, thân lỗi), nên tầng gọi xử lý lỗi
+theo \textit{giá trị trả về} thay vì ngoại lệ.
 
 \subsection{Quản lý phiên và xác thực phía máy khách}
 \label{subsec:fe-session}
@@ -889,29 +940,25 @@ export const getStats = cache(async (): Promise<StatsResponse | null> => {
 });
 \end{verbatim}
 
-Sau mỗi thao tác \textit{ghi} (qua Server Action), giao diện được làm tươi bằng
-cách \textit{vô hiệu hoá bộ nhớ đệm} của đúng những tuyến bị ảnh hưởng:
-\code{revalidatePath} đánh dấu trang danh sách và trang chi tiết cần kết xuất
-lại ở lần truy cập kế tiếp, nhờ đó dữ liệu hiển thị luôn nhất quán với máy chủ
-mà không cần quản lý trạng thái phía máy khách. Những phần dữ liệu chậm được
-bọc trong ranh giới \textit{Suspense} (\code{loading.tsx}) để truyền dòng
-(streaming) giao diện khung trước, rồi mới điền dữ liệu.
+Sau mỗi thao tác \textit{ghi} (qua Server Action), \code{revalidatePath} vô
+hiệu hoá bộ nhớ đệm của đúng các tuyến bị ảnh hưởng để dữ liệu luôn nhất quán
+với máy chủ mà không cần quản lý trạng thái phía máy khách; phần dữ liệu chậm
+được bọc trong ranh giới \textit{Suspense} (\code{loading.tsx}) để truyền dòng
+(streaming) giao diện khung trước.
 
 \subsection{Biểu mẫu với Server Action và kiểm tra bằng \code{zod}}
 \label{subsec:fe-forms}
 
 Mọi thao tác ghi đều đi qua một \textbf{Server Action} thay vì điểm cuối API
-phía máy khách. Biểu mẫu được nối với Server Action bằng các hook của
-\textbf{React~19}: \code{useActionState} giữ trạng thái trả về của hành động
-(cờ \code{ok}, thông báo lỗi, lỗi theo từng trường và giá trị đã nhập để điền
-lại), còn \code{useFormStatus} điều khiển trạng thái chờ của nút gửi. Cùng một
-lược đồ \code{zod} trong \code{src/lib/validations/} được dùng để kiểm tra ở
-Server Action; lỗi đầu tiên được ánh xạ về đúng trường để hiển thị nội tuyến
-kèm thuộc tính khả truy cập (\code{aria-invalid}, \code{aria-describedby}). Một
-thành phần bao mỏng \code{ActionForm} (dùng ở khu vực quản trị) đóng gói khuôn
-mẫu này: tự đặt lại biểu mẫu khi thành công, hiện thông báo nổi (toast) và phát
-tín hiệu để thu gọn trình soạn nội tuyến. Vì kiểm tra nằm ở phía máy chủ, biểu
-mẫu vẫn an toàn ngay cả khi JavaScript phía máy khách chưa kịp tải.
+phía máy khách, nối với biểu mẫu bằng các hook \textbf{React~19}
+(\code{useActionState} giữ trạng thái trả về và lỗi theo từng trường,
+\code{useFormStatus} cho trạng thái chờ của nút gửi). Cùng lược đồ \code{zod}
+trong \code{src/lib/validations/} kiểm tra ở Server Action; lỗi được ánh xạ về
+đúng trường kèm thuộc tính khả truy cập (\code{aria-invalid},
+\code{aria-describedby}). Một thành phần bao mỏng \code{ActionForm} đóng gói
+khuôn mẫu này (tự đặt lại biểu mẫu, hiện toast khi thành công). Vì kiểm tra
+nằm phía máy chủ, biểu mẫu an toàn ngay cả khi JavaScript phía máy khách chưa
+tải.
 
 \subsection{Bảo vệ tuyến bằng bố cục thay vì middleware}
 \label{subsec:fe-guard}

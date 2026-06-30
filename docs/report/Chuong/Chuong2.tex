@@ -72,7 +72,7 @@ kê các tác nhân này.
     \hline
     Quản trị viên (Admin) & Chính & Biên tập và quản lý kho từ vựng hệ thống, chủ đề, bộ thẻ mẫu; soạn và xuất bản kịch bản luyện nói; duyệt nội dung do AI sinh ra; quản lý tài khoản người dùng. \\
     \hline
-    Dịch vụ AI sinh ngôn ngữ (Gemma~3) & Phụ & Mô hình ngôn ngữ lớn (LLM) trên Google AI Studio: làm giàu dữ liệu từ điển, sinh bản dịch và chấm điểm câu luyện tập. \\
+    Dịch vụ AI sinh ngôn ngữ (Gemma~3) & Phụ & Mô hình ngôn ngữ lớn (LLM) trên Google AI Studio: dự phòng làm giàu dữ liệu từ điển (bù các trường nguồn xác định không có) và chấm điểm câu luyện tập. \\
     \hline
     Dịch vụ AI hội thoại (Groq) & Phụ & Nền tảng suy luận LLM tốc độ cao chạy các mô hình Llama~3.3: đóng vai đối thoại trong phiên luyện nói, sinh phản hồi và gợi ý chỉnh lỗi theo lượt, sinh nháp kịch bản và báo cáo cuối phiên. \\
     \hline
@@ -448,14 +448,14 @@ Các use case còn lại có cấu trúc tương tự.
     \hline
     \textbf{Mã use case} & UC-QUICKCREATE \\ \hline
     \textbf{Tên} & Tạo nhanh từ vựng bằng AI \\ \hline
-    \textbf{Tác nhân} & Quản trị viên (hoặc Người học cho từ cá nhân), Gemma~3 \\ \hline
-    \textbf{Mô tả} & Từ một lemma, hệ thống tự sinh dữ liệu từ điển và âm thanh cho từ vựng. \\ \hline
+    \textbf{Tác nhân} & Quản trị viên (hoặc Người học cho từ cá nhân); các nguồn làm giàu xác định (từ điển, kho ngữ liệu, dịch máy OPUS-MT); Gemma~3 (dự phòng) \\ \hline
+    \textbf{Mô tả} & Từ một lemma, hệ thống tự dựng dữ liệu từ điển và âm thanh cho từ vựng, ưu tiên các nguồn tra cứu xác định. \\ \hline
     \textbf{Tiền điều kiện} & Tác nhân đã đăng nhập với quyền phù hợp. \\ \hline
     \textbf{Hậu điều kiện} & Một hoặc nhiều bản ghi từ vựng (một cho mỗi từ loại) được tạo; với quản trị là bản nháp chờ duyệt, với người học là từ cá nhân được tự duyệt. \\ \hline
     \textbf{Luồng chính} &
       1.~Tác nhân gửi lemma (kèm ngôn ngữ, ngôn ngữ dịch tuỳ chọn). \newline
       2.~Hệ thống tạo công việc làm giàu trạng thái "đang chờ" và trả về mã 202 kèm mã công việc. \newline
-      3.~Worker tra từ điển và gọi Gemma~3 để sinh nghĩa, ví dụ, bản dịch; sinh âm thanh phát âm. \newline
+      3.~Worker phân giải mục từ điển rồi điền nghĩa, ví dụ (kho ngữ liệu), bản dịch (từ điển song ngữ/OPUS-MT) và bậc CEFR từ các nguồn xác định, chỉ dùng Gemma~3 dự phòng cho trường còn thiếu; sinh âm thanh phát âm. \newline
       4.~Worker tạo các bản ghi từ vựng và cập nhật kết quả công việc. \newline
       5.~Tác nhân thăm dò công việc để lấy danh sách từ vựng đã tạo. \\ \hline
     \textbf{Luồng thay thế} &
@@ -543,8 +543,10 @@ theo kết quả ôn tập.
 \label{subsec:activity-ai}
 
 Hình~\ref{fig:activity-ai} mô tả luồng bất đồng bộ của chức năng tạo nhanh
-từ vựng: API chỉ tạo công việc và trả về ngay, còn việc làm giàu dữ liệu
-nặng do worker đảm nhiệm.
+từ vựng: API chỉ tạo công việc và trả về ngay, còn việc làm giàu dữ liệu do
+worker đảm nhiệm bằng cách điền từng trường từ các nguồn xác định (từ điển,
+kho ngữ liệu, dịch máy, bảng CEFR) và chỉ gọi Gemma dự phòng cho trường còn
+thiếu.
 
 % --- PlantUML gợi ý ---------------------------------------------------
 % @startuml
@@ -561,7 +563,12 @@ nặng do worker đảm nhiệm.
 % endif
 % |Worker|
 % :Lấy job khỏi hàng đợi;
-% :Tra từ điển + gọi Gemma 3 (nghĩa, ví dụ, bản dịch);
+% :Phân giải từ điển (Free Dictionary / Wiktionary);
+% :Điền nghĩa/ví dụ (kho ngữ liệu)/dịch (OPUS-MT)/CEFR từ nguồn xác định;
+% if (Còn trường trống & bật Gemma fallback?) then (có)
+%   :Gọi Gemma 3 bù trường thiếu;
+% else (không)
+% endif
 % :Sinh âm thanh phát âm (TTS) + tải lên kho media;
 % :Tạo bản ghi từ vựng (1 / từ loại);
 % :Cập nhật job = completed + resultVocabularyIds;
@@ -1523,28 +1530,24 @@ trên toàn API.
 \section{Thiết kế giao diện người dùng}
 \label{sec:thiet-ke-giao-dien}
 
-Như đã nêu ở phạm vi đề tài (mục~\ref{sec:muc-tieu}), trọng tâm \textit{trình
-bày} của báo cáo là hệ thống phía máy chủ; tuy vậy hệ thống còn bao gồm một
-ứng dụng giao diện người dùng hoàn chỉnh tiêu thụ các API đó, mà quá trình hiện
-thực hoá được trình bày ở mục~\ref{sec:hien-thuc-frontend}
-(Chương~\ref{chuong:hien-thuc-hoa}). Phần này trình bày \textit{thiết kế}
-giao diện: hệ thống thiết kế (design system) làm nền cho diện mạo nhất quán,
-bản đồ điều hướng, phác thảo và ảnh chụp các màn hình chính, cùng ánh xạ giữa
-màn hình và API.
+Trọng tâm trình bày của báo cáo là backend (mục~\ref{sec:muc-tieu}), nhưng
+hệ thống còn có một ứng dụng giao diện người dùng hoàn chỉnh tiêu thụ các API
+đó (hiện thực hoá ở mục~\ref{sec:hien-thuc-frontend},
+Chương~\ref{chuong:hien-thuc-hoa}). Phần này trình bày \textit{thiết kế} giao
+diện: hệ thống thiết kế, bản đồ điều hướng, phác thảo và ảnh chụp các màn
+hình chính, và ánh xạ màn hình--API.
 
 \subsection{Hệ thống thiết kế}
 \label{subsec:design-system}
 
-Giao diện được dựng trên một \textbf{hệ thống thiết kế} thống nhất thay vì tạo
-kiểu rời rạc từng trang. Nền tảng là bộ \textit{biến thiết kế} (design token)
-khai báo bằng biến CSS theo không gian màu \textbf{OKLCH}~\cite{w3ccsscolor4}
---- không gian màu đồng đều về cảm nhận, thuận lợi cho việc dựng các thang màu
-nhất quán. Hệ thống định nghĩa song song một bảng màu \textit{sáng} và một bảng
-màu \textit{tối}, nên đã sẵn sàng cho chế độ tối (theme-ready); một thang
-\textit{bo góc} (radius) suy ra theo bội số từ một giá trị gốc giúp độ bo của
-mọi thành phần đồng bộ. Bộ thành phần dùng \textbf{shadcn/ui}~\cite{shadcnui2024}
-dựng trên các primitive khả truy cập của \textbf{Base UI}~\cite{baseui2024},
-tạo kiểu bằng \textbf{Tailwind CSS v4}~\cite{tailwind2024}.
+Giao diện được dựng trên một \textbf{hệ thống thiết kế} thống nhất: bộ
+\textit{biến thiết kế} (design token) khai báo bằng biến CSS theo không gian
+màu đồng đều cảm nhận \textbf{OKLCH}~\cite{w3ccsscolor4}, với bảng màu sáng/tối
+song song (theme-ready) và một thang \textit{bo góc} suy theo bội số từ một
+giá trị gốc để đồng bộ toàn hệ thống. Bộ thành phần dùng
+\textbf{shadcn/ui}~\cite{shadcnui2024} trên các primitive khả truy cập của
+\textbf{Base UI}~\cite{baseui2024}, tạo kiểu bằng \textbf{Tailwind CSS
+v4}~\cite{tailwind2024}.
 
 Về \textit{nhận diện thương hiệu}, khu vực học của người dùng mang bộ token
 "Sprout" (tông bạc hà) được \textit{giới hạn phạm vi} vào lớp \code{.app-shell}
@@ -1624,31 +1627,55 @@ phương án trả lời).
 
 \figph{ui-learn.png}{0.55}{Phác thảo màn hình phiên học}{fig:ui-learn}
 
-Để minh hoạ kết quả hiện thực hoá, các hình tiếp theo là ảnh chụp một số màn
-hình chính của ứng dụng đã hoàn thiện, trải đều cả khu vực người học và khu vực
-quản trị. Hình~\ref{fig:ui-dashboard} là trang chủ ("Trophy Room") mang nhận
-diện Sprout; Hình~\ref{fig:ui-explore} là màn hình khám phá từ vựng và bộ thẻ;
-Hình~\ref{fig:ui-word} là chi tiết một từ. Hình~\ref{fig:ui-practice-write} và
-Hình~\ref{fig:ui-practice-speak} là hai chế độ luyện tập chủ động (viết câu và
-luyện phát âm); Hình~\ref{fig:ui-speaking-room} là phòng luyện nói với hội thoại
-theo lượt. Hình~\ref{fig:ui-admin-vocab} và Hình~\ref{fig:ui-admin-review} là
-trình soạn từ vựng và hàng đợi duyệt nội dung do AI sinh trong khu vực quản trị.
+Để minh hoạ kết quả hiện thực hoá, các hình tiếp theo là ảnh chụp từ ứng dụng
+đã hoàn thiện, được nhóm theo từng khu vực chức năng.
 
-\figph{ui-dashboard.png}{0.85}{Màn hình trang chủ (Trophy Room) của người học}{fig:ui-dashboard}
+\paragraph{Trải nghiệm người học.} Hình~\ref{fig:ui-dashboard} là trang chủ
+của người học mang nhận diện Sprout (chuỗi ngày học, mục tiêu ngày, vườn từ
+vựng); Hình~\ref{fig:ui-explore} là màn hình khám phá từ vựng và bộ thẻ cộng
+đồng. Một phiên học diễn ra qua Hình~\ref{fig:ui-learn-session} (giao diện
+phiên học), Hình~\ref{fig:ui-question} (một dạng câu hỏi) và
+Hình~\ref{fig:ui-learn-result} (kết quả cuối phiên). Hai chế độ luyện tập chủ
+động là luyện viết câu (Hình~\ref{fig:ui-practice-write}) và luyện phát âm có
+chấm điểm (Hình~\ref{fig:ui-practice-speak}).
 
-\figph{ui-explore.png}{0.85}{Màn hình khám phá từ vựng và bộ thẻ}{fig:ui-explore}
+\figph{homepage.jpg}{0.85}{Màn hình trang chủ của người học}{fig:ui-dashboard}
 
-\figph{ui-word-detail.png}{0.85}{Màn hình chi tiết một từ vựng}{fig:ui-word}
+\figph{explore_commmunity_list_vocabulary.jpg}{0.85}{Màn hình khám phá từ vựng và bộ thẻ cộng đồng}{fig:ui-explore}
 
-\figph{ui-practice-write.png}{0.85}{Màn hình luyện viết câu có chấm điểm}{fig:ui-practice-write}
+\figph{learnsession.jpg}{0.85}{Giao diện một phiên học}{fig:ui-learn-session}
 
-\figph{ui-practice-speak.png}{0.85}{Màn hình luyện phát âm}{fig:ui-practice-speak}
+\figph{question_per_sentence.jpg}{0.85}{Một dạng câu hỏi trong phiên học}{fig:ui-question}
 
-\figph{ui-speaking-room.png}{0.85}{Màn hình phòng luyện nói: hội thoại theo lượt với AI}{fig:ui-speaking-room}
+\figph{learning_session_result.jpg}{0.85}{Màn hình kết quả cuối phiên học}{fig:ui-learn-result}
 
-\figph{ui-admin-vocab.png}{0.85}{Trình soạn từ vựng trong khu vực quản trị}{fig:ui-admin-vocab}
+\figph{practice_vocabulary.jpg}{0.85}{Màn hình luyện viết câu có chấm điểm}{fig:ui-practice-write}
 
-\figph{ui-admin-review.png}{0.85}{Hàng đợi duyệt nội dung do AI sinh}{fig:ui-admin-review}
+\figph{pronunciation_score.jpg}{0.85}{Màn hình luyện phát âm và điểm phát âm}{fig:ui-practice-speak}
+
+\paragraph{Bộ thẻ, cộng đồng và xếp hạng.} Người học tự tạo bộ thẻ từ vựng
+(Hình~\ref{fig:ui-create-deck}), chia sẻ bộ thẻ ra cộng đồng
+(Hình~\ref{fig:ui-share-deck}) và theo dõi vị trí của mình trên bảng xếp hạng
+(Hình~\ref{fig:ui-leaderboard}).
+
+\figph{create_vocabulary_list.jpg}{0.85}{Màn hình tạo bộ thẻ từ vựng cá nhân}{fig:ui-create-deck}
+
+\figph{share_list_to_community.jpg}{0.85}{Chia sẻ bộ thẻ ra cộng đồng}{fig:ui-share-deck}
+
+\figph{leader_board.jpg}{0.85}{Màn hình bảng xếp hạng cộng đồng}{fig:ui-leaderboard}
+
+\paragraph{Khu vực quản trị.} Hình~\ref{fig:ui-admin-dashboard} là trang chủ
+khu vực quản trị; Hình~\ref{fig:ui-admin-vocab} là trình soạn từ vựng;
+Hình~\ref{fig:ui-admin-review} là hàng đợi duyệt bản nháp do AI sinh; và
+Hình~\ref{fig:ui-admin-scenario} là trình soạn kịch bản luyện nói.
+
+\figph{admin_dashboard.jpg}{0.85}{Trang chủ khu vực quản trị}{fig:ui-admin-dashboard}
+
+\figph{admin_create_vocabulary.jpg}{0.85}{Trình soạn từ vựng trong khu vực quản trị}{fig:ui-admin-vocab}
+
+\figph{review_draft.jpg}{0.85}{Hàng đợi duyệt nội dung do AI sinh}{fig:ui-admin-review}
+
+\figph{admin_create_scenario_for_speaking.jpg}{0.85}{Trình soạn kịch bản luyện nói trong khu vực quản trị}{fig:ui-admin-scenario}
 
 \subsection{Ánh xạ màn hình --- API}
 \label{subsec:anh-xa-man-hinh}
